@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # FastAPI 애플리케이션
+  plango-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: plango-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://plango:password@postgres:5432/plango_db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - plango-network
+
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: postgres:15-alpine
+    container_name: plango-postgres
+    environment:
+      POSTGRES_DB: plango_db
+      POSTGRES_USER: plango
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - plango-network
+
+  # Redis 캐시
+  redis:
+    image: redis:7-alpine
+    container_name: plango-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - plango-network
+
+  # Nginx (선택적 - 프로덕션 환경)
+  nginx:
+    image: nginx:alpine
+    container_name: plango-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - plango-api
+    restart: unless-stopped
+    networks:
+      - plango-network
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  plango-network:
+    driver: bridge 
