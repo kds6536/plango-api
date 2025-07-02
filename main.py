@@ -68,15 +68,19 @@ async def root():
     }
 
 if __name__ == "__main__":
+    # Railway 환경에서는 PORT 환경변수 사용, 로컬에서는 8005 사용
+    port = int(os.getenv("PORT", 8005))
+    host = "0.0.0.0" if os.getenv("RAILWAY_ENVIRONMENT") else "127.0.0.1"
+    
     print("🚀 Plango API 서버를 시작합니다...")
-    print("📍 서버 주소: http://127.0.0.1:8005")
-    print("📚 API 문서: http://127.0.0.1:8005/docs")
+    print(f"📍 서버 주소: http://{host}:{port}")
+    print(f"📚 API 문서: http://{host}:{port}/docs")
     print("🆕 새로운 엔드포인트:")
     print("   - POST /api/v1/itinerary/generate (4단계 일정 생성)")
     print("   - POST /api/v1/itinerary/optimize (경로 최적화)")
     uvicorn.run(
         "main:app",
-        host="127.0.0.1",
-        port=8005,
+        host=host,
+        port=port,
         reload=True if os.getenv("ENVIRONMENT") == "development" else False
     ) 
