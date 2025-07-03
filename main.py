@@ -45,7 +45,7 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(new_itinerary.router, tags=["새로운 여행 일정 API"])
-app.include_router(admin.router, tags=["관리자 API"])  # ��� 관리자 라우터 추가
+app.include_router(admin.router, prefix="/api/v1", tags=["관리자 API"])
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(itinerary.router, prefix="/api/v1", tags=["기존 Itinerary"])
 app.include_router(destinations.router, prefix="/api/v1", tags=["Destinations"])

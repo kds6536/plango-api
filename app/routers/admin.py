@@ -16,7 +16,7 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"])
 
 # --- 변경점 2: 파일 경로 대신 Supabase 클라이언트 설정 ---
 # 이 설정은 환경 변수에서 가져옵니다.
