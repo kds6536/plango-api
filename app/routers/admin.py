@@ -6,9 +6,11 @@ AI 제공자 설정, 시스템 설정 등을 관리합니다
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
 from typing import Dict, Any
-import json
-import os
 from pydantic import BaseModel
+
+# --- 변경점 1: 필요한 Supabase 라이브러리 import ---
+import os
+from supabase_py import create_client, Client
 
 from app.utils.logger import get_logger
 
@@ -16,95 +18,91 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
-# AI 설정 데이터를 저장할 파일 경로
-AI_SETTINGS_FILE = "app/data/ai_settings.json"
+# --- 변경점 2: 파일 경로 대신 Supabase 클라이언트 설정 ---
+# 이 설정은 환경 변수에서 가져옵니다.
+try:
+    url: str = os.environ.get("SUPABASE_URL")
+    key: str = os.environ.get("SUPABASE_KEY")
+    supabase: Client = create_client(url, key)
+    logger.info("Supabase 클라이언트가 성공적으로 초기화되었습니다.")
+except Exception as e:
+    logger.error(f"Supabase 클라이언트 초기화 실패: {e}")
+    supabase = None
 
 # AI 설정 요청/응답 모델
 class AISettingsRequest(BaseModel):
-    provider: str  # 'openai' 또는 'gemini'
-    updated_by: str
+    default_provider: str
+    openai_model_name: str
+    gemini_model_name: str
 
 class AISettingsResponse(BaseModel):
-    provider: str
-    last_updated: str
-    updated_by: str
+    default_provider: str
+    openai_model_name: str
+    gemini_model_name: str
+    # created_at: datetime  # DB에서 직접 가져오므로 모델에서 필요 없을 수 있음
 
-def ensure_data_directory():
-    """데이터 디렉토리가 존재하는지 확인하고 없으면 생성"""
-    os.makedirs("app/data", exist_ok=True)
-
-def load_ai_settings() -> Dict[str, Any]:
-    """AI 설정을 파일에서 로드"""
-    ensure_data_directory()
-    
+def load_ai_settings_from_db() -> Dict[str, Any]:
+    """AI 설정을 Supabase DB에서 로드"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="데이터베이스 연결이 설정되지 않았습니다.")
+        
     try:
-        if os.path.exists(AI_SETTINGS_FILE):
-            with open(AI_SETTINGS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+        # 'settings' 테이블에서 모든 데이터를 가져옵니다.
+        response = supabase.table('settings').select('key, value').execute()
+        data = response.get('data', [])
+        
+        # 키-값 리스트를 하나의 딕셔너리로 변환합니다.
+        # 예: [{'key': 'default_provider', 'value': 'openai'}] -> {'default_provider': 'openai'}
+        settings_dict = {item['key']: item['value'] for item in data}
+        
+        if not settings_dict:
+            logger.warning("DB에 설정이 없습니다. 기본 설정을 반환합니다.")
+            # DB에 데이터가 없을 경우를 대비한 기본값
+            return {
+                "default_provider": "openai",
+                "openai_model_name": "gpt-4o",
+                "gemini_model_name": "gemini-1.5-pro-latest"
+            }
+        
+        return settings_dict
     except Exception as e:
-        logger.error(f"AI 설정 로드 실패: {e}")
-    
-    # 기본 설정 반환
-    return {
-        "provider": "openai",
-        "last_updated": datetime.now().isoformat(),
-        "updated_by": "system"
-    }
+        logger.error(f"DB에서 AI 설정 로드 실패: {e}")
+        raise HTTPException(status_code=500, detail="데이터베이스에서 설정을 불러오는 데 실패했습니다.")
 
-def save_ai_settings(settings: Dict[str, Any]):
-    """AI 설정을 파일에 저장"""
-    ensure_data_directory()
-    
+def save_ai_settings_to_db(settings: AISettingsRequest):
+    """AI 설정을 Supabase DB에 저장"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="데이터베이스 연결이 설정되지 않았습니다.")
+
     try:
-        with open(AI_SETTINGS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, indent=2, ensure_ascii=False)
-        logger.info(f"AI 설정 저장 완료: {settings}")
-    except Exception as e:
-        logger.error(f"AI 설정 저장 실패: {e}")
-        raise HTTPException(status_code=500, detail="설정 저장에 실패했습니다")
+        # 받은 데이터를 기반으로 각 설정을 하나씩 업데이트합니다.
+        # .upsert()는 데이터가 있으면 update, 없으면 insert를 해줘서 더 안정적입니다.
+        supabase.table('settings').upsert({'key': 'default_provider', 'value': settings.default_provider}).execute()
+        supabase.table('settings').upsert({'key': 'openai_model_name', 'value': settings.openai_model_name}).execute()
+        supabase.table('settings').upsert({'key': 'gemini_model_name', 'value': settings.gemini_model_name}).execute()
 
-@router.get("/ai-settings", response_model=AISettingsResponse)
+        logger.info(f"DB에 AI 설정 저장 완료: {settings.dict()}")
+    except Exception as e:
+        logger.error(f"DB에 AI 설정 저장 실패: {e}")
+        raise HTTPException(status_code=500, detail="데이터베이스에 설정을 저장하는 데 실패했습니다.")
+
+@router.get("/ai-settings")
 async def get_ai_settings():
     """
-    현재 AI 제공자 설정을 조회합니다
+    현재 AI 제공자 설정을 DB에서 조회합니다.
     """
-    try:
-        settings = load_ai_settings()
-        logger.info(f"AI 설정 조회: {settings}")
-        return AISettingsResponse(**settings)
-    except Exception as e:
-        logger.error(f"AI 설정 조회 실패: {e}")
-        raise HTTPException(status_code=500, detail="설정 조회에 실패했습니다")
+    settings = load_ai_settings_from_db()
+    return settings
 
-@router.put("/ai-settings", response_model=AISettingsResponse)
+@router.put("/ai-settings")
 async def update_ai_settings(request: AISettingsRequest):
     """
-    AI 제공자 설정을 업데이트합니다
+    AI 제공자 설정을 DB에 업데이트합니다.
     """
-    if request.provider not in ['openai', 'gemini']:
-        raise HTTPException(
-            status_code=400, 
-            detail="provider는 'openai' 또는 'gemini'여야 합니다"
-        )
-    
-    try:
-        # 새로운 설정 생성
-        new_settings = {
-            "provider": request.provider,
-            "last_updated": datetime.now().isoformat(),
-            "updated_by": request.updated_by
-        }
-        
-        # 설정 저장
-        save_ai_settings(new_settings)
-        
-        logger.info(f"AI 제공자가 {request.provider}로 변경됨 (by: {request.updated_by})")
-        
-        return AISettingsResponse(**new_settings)
-        
-    except Exception as e:
-        logger.error(f"AI 설정 업데이트 실패: {e}")
-        raise HTTPException(status_code=500, detail="설정 업데이트에 실패했습니다")
+    save_ai_settings_to_db(request)
+    # 저장 후 최신 데이터를 다시 읽어서 반환
+    updated_settings = load_ai_settings_from_db()
+    return updated_settings
 
 @router.get("/health")
 async def admin_health():
@@ -122,12 +120,12 @@ async def admin_info():
     """
     관리자 API 정보 조회
     """
-    current_settings = load_ai_settings()
+    current_settings = load_ai_settings_from_db()
     
     return {
         "api_name": "Plango Admin API",
-        "version": "1.0.0",
-        "current_ai_provider": current_settings.get("provider", "openai"),
+        "version": "1.1.0 (DB-Connected)",
+        "current_ai_provider": current_settings.get("default_provider"),
         "supported_providers": ["openai", "gemini"],
         "endpoints": [
             "GET /api/v1/admin/ai-settings - AI 설정 조회",
