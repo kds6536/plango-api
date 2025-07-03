@@ -16,7 +16,7 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(tags=["admin"])
 
 # --- 변경점 2: 파일 경로 대신 Supabase 클라이언트 설정 ---
 # 이 설정은 환경 변수에서 가져옵니다.
@@ -86,7 +86,7 @@ def save_ai_settings_to_db(settings: AISettingsRequest):
         logger.error(f"DB에 AI 설정 저장 실패: {e}")
         raise HTTPException(status_code=500, detail="데이터베이스에 설정을 저장하는 데 실패했습니다.")
 
-@router.get("/ai-settings")
+@router.get("/admin/ai-settings")
 async def get_ai_settings():
     """
     현재 AI 제공자 설정을 DB에서 조회합니다.
@@ -94,7 +94,7 @@ async def get_ai_settings():
     settings = load_ai_settings_from_db()
     return settings
 
-@router.put("/ai-settings")
+@router.put("/admin/ai-settings")
 async def update_ai_settings(request: AISettingsRequest):
     """
     AI 제공자 설정을 DB에 업데이트합니다.
@@ -104,7 +104,7 @@ async def update_ai_settings(request: AISettingsRequest):
     updated_settings = load_ai_settings_from_db()
     return updated_settings
 
-@router.get("/health")
+@router.get("/admin/health")
 async def admin_health():
     """
     관리자 API 상태 확인
@@ -115,7 +115,7 @@ async def admin_health():
         "timestamp": datetime.now().isoformat()
     }
 
-@router.get("/info")
+@router.get("/admin/info")
 async def admin_info():
     """
     관리자 API 정보 조회
