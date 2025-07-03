@@ -11,21 +11,21 @@ from app.schemas.itinerary import (
     GenerateRequest, GenerateResponse, 
     OptimizeRequest, OptimizeResponse
 )
-from app.services.new_itinerary_service import NewItineraryService
+from app.services.advanced_itinerary_service import AdvancedItineraryService
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["새로운 여행 일정"])
 
 # 서비스 의존성
-def get_itinerary_service() -> NewItineraryService:
-    return NewItineraryService()
+def get_itinerary_service() -> AdvancedItineraryService:
+    return AdvancedItineraryService()
 
 
 @router.post("/itinerary/generate", response_model=GenerateResponse)
 async def generate_itinerary(
     request: GenerateRequest,
-    service: NewItineraryService = Depends(get_itinerary_service)
+    service: AdvancedItineraryService = Depends(get_itinerary_service)
 ):
     """
     4단계 프로세스로 여행 일정을 생성합니다:
@@ -67,7 +67,7 @@ async def generate_itinerary(
 @router.post("/itinerary/optimize", response_model=OptimizeResponse)
 async def optimize_itinerary(
     request: OptimizeRequest,
-    service: NewItineraryService = Depends(get_itinerary_service)
+    service: AdvancedItineraryService = Depends(get_itinerary_service)
 ):
     """
     선택된 장소들을 구글 다이렉션 API로 최적화합니다:
