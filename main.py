@@ -14,15 +14,15 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 애플리케이션 시작 시 실행되는 코드
-    print("��� Plango API 서버가 시작됩니다...")
-    print("��� 새로운 4단계 프로세스 엔드포인트 활성화:")
+    print("��� Plango API 서버가 시작됩니다...")
+    print("��� 새로운 4단계 프로세스 엔드포인트 활성화:")
     print("   - /api/v1/itinerary/generate (1안/2안 생성)")
     print("   - /api/v1/itinerary/optimize (경로 최적화)")
-    print("��� 관리자 AI 설정 엔드포인트 활성화:")
+    print("��� 관리자 AI 설정 엔드포인트 활성화:")
     print("   - GET/PUT /api/v1/admin/ai-settings (AI 제공자 관리)")
     yield
     # 애플리케이션 종료 시 실행되는 코드
-    print("��� Plango API 서버가 종료됩니다...")
+    print("��� Plango API 서버가 종료됩니다...")
 
 # FastAPI 애플리케이션 인스턴스 생성
 app = FastAPI(
@@ -45,7 +45,7 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(new_itinerary.router, tags=["새로운 여행 일정 API"])
-app.include_router(admin.router, tags=["관리자 API"])  # ��� 관리자 라우터 추가
+app.include_router(admin.router, tags=["관리자 API"])  # ��� 관리자 라우터 추가
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(itinerary.router, prefix="/api/v1", tags=["기존 Itinerary"])
 app.include_router(destinations.router, prefix="/api/v1", tags=["Destinations"])
@@ -55,7 +55,7 @@ app.include_router(places.router, prefix="/api/v1", tags=["Places"])
 async def root():
     """API 루트 엔드포인트"""
     return {
-        "message": "Plango API - Advanced Edition with Dynamic AI에 오신 것을 환영합니다! ������",
+        "message": "Plango API - Advanced Edition with Dynamic AI에 오신 것을 환영합니다! ������",
         "version": "2.1.0",
         "docs": "/docs",
         "features": {
@@ -79,10 +79,10 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8005))
     host = "0.0.0.0" if os.getenv("RAILWAY_ENVIRONMENT") else "127.0.0.1"
     
-    print("��� Plango API 서버를 시작합니다...")
-    print(f"��� 서버 주소: http://{host}:{port}")
-    print(f"��� API 문서: http://{host}:{port}/docs")
-    print("��� 주요 엔드포인트:")
+    print("��� Plango API 서버를 시작합니다...")
+    print(f"��� 서버 주소: http://{host}:{port}")
+    print(f"��� API 문서: http://{host}:{port}/docs")
+    print("��� 주요 엔드포인트:")
     print("   - POST /api/v1/itinerary/generate (4단계 일정 생성)")
     print("   - POST /api/v1/itinerary/optimize (경로 최적화)")
     print("   - GET/PUT /api/v1/admin/ai-settings (AI 제공자 관리)")

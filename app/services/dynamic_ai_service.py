@@ -43,15 +43,50 @@ class DynamicAIService:
         """현재 설정된 AI 제공자를 가져오기"""
         try:
             settings_file = "app/data/ai_settings.json"
-            if os.path.exists(settings_file):
-                with open(settings_file, 'r', encoding='utf-8') as f:
-                    settings_data = json.load(f)
-                    return settings_data.get("provider", "openai")
+            
+            # 파일이 없으면 기본 설정으로 생성
+            if not os.path.exists(settings_file):
+                self._create_default_settings_file(settings_file)
+            
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                settings_data = json.load(f)
+                return settings_data.get("provider", "openai")
         except Exception as e:
             logger.error(f"AI 설정 파일 읽기 실패: {e}")
         
         # 기본값은 OpenAI
         return "openai"
+    
+    def _create_default_settings_file(self, settings_file: str):
+        """기본 AI 설정 파일 생성"""
+        try:
+            # data 디렉토리가 없으면 생성
+            os.makedirs(os.path.dirname(settings_file), exist_ok=True)
+            
+            default_settings = {
+                "provider": "openai",
+                "last_updated": "2025-01-02T00:00:00Z",
+                "settings": {
+                    "openai": {
+                        "model": "gpt-3.5-turbo",
+                        "temperature": 0.7,
+                        "max_tokens": 2000
+                    },
+                    "gemini": {
+                        "model": "gemini-1.5-flash",
+                        "temperature": 0.7,
+                        "max_tokens": 2000
+                    }
+                }
+            }
+            
+            with open(settings_file, 'w', encoding='utf-8') as f:
+                json.dump(default_settings, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"기본 AI 설정 파일 생성 완료: {settings_file}")
+            
+        except Exception as e:
+            logger.error(f"기본 AI 설정 파일 생성 실패: {e}")
     
     async def generate_text(self, prompt: str, max_tokens: int = 2000) -> str:
         """
