@@ -13,15 +13,12 @@ import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
-# AI 라이브러리
-from openai import AsyncOpenAI
-import google.generativeai as genai
-
 from app.schemas.itinerary import (
     GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse,
     TravelPlan, DayPlan, ActivityDetail, PlaceData
 )
 from app.services.google_places_service import GooglePlacesService
+from app.services.dynamic_ai_service import dynamic_ai_service
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,23 +28,10 @@ class AdvancedItineraryService:
     """고급 여행 일정 생성 서비스"""
     
     def __init__(self):
-        # AI 클라이언트 초기화
-        self.openai_client = None
-        self.gemini_model = None
+        # 서비스 초기화
+        self.ai_service = dynamic_ai_service
         self.google_places = GooglePlacesService()
-        
-        # OpenAI 초기화
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key:
-            self.openai_client = AsyncOpenAI(api_key=openai_key)
-            logger.info("OpenAI 클라이언트 초기화 완료")
-        
-        # Gemini 초기화
-        gemini_key = os.getenv("GEMINI_API_KEY")
-        if gemini_key:
-            genai.configure(api_key=gemini_key)
-            self.gemini_model = genai.GenerativeModel('gemini-pro')
-            logger.info("Gemini 모델 초기화 완료")
+        logger.info("AdvancedItineraryService 초기화 완료 - Dynamic AI Service 연결됨")
 
     async def generate_itinerary(self, request: GenerateRequest) -> GenerateResponse:
         """
@@ -100,18 +84,8 @@ class AdvancedItineraryService:
    {{"관광": ["이름1", "이름2", ...], "맛집": ["이름3", "이름4", ...], ...}}"""
 
         try:
-            if self.gemini_model:
-                response = await self.gemini_model.generate_content_async(prompt1)
-                content = response.text
-            elif self.openai_client:
-                response = await self.openai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt1}],
-                    temperature=0.7
-                )
-                content = response.choices[0].message.content
-            else:
-                raise Exception("AI 클라이언트가 초기화되지 않았습니다")
+            # Dynamic AI Service 사용
+            content = await self.ai_service.generate_text(prompt1, max_tokens=1500)
             
             # JSON 파싱
             place_candidates = json.loads(content)
@@ -248,19 +222,8 @@ class AdvancedItineraryService:
 }}"""
 
         try:
-            if self.gemini_model:
-                response = await self.gemini_model.generate_content_async(prompt2)
-                content = response.text
-            elif self.openai_client:
-                response = await self.openai_client.chat.completions.create(
-                    model="gpt-4",  # 더 정확한 결과를 위해 GPT-4 사용
-                    messages=[{"role": "user", "content": prompt2}],
-                    temperature=0.7,
-                    max_tokens=4000
-                )
-                content = response.choices[0].message.content
-            else:
-                raise Exception("AI 클라이언트가 초기화되지 않았습니다")
+            # Dynamic AI Service 사용
+            content = await self.ai_service.generate_text(prompt2, max_tokens=4000)
             
             # JSON 파싱
             ai_plans = json.loads(content)
