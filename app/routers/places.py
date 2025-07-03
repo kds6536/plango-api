@@ -11,7 +11,7 @@ from app.services.google_places_service import google_places_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/places", tags=["Places"])
+router = APIRouter(prefix="/api/v1/places", tags=["Places"])
 
 @router.get("/search")
 async def search_places(

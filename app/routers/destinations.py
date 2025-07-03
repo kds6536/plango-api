@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.schemas.destination import Destination, DestinationList
 from app.utils.logger import get_logger
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1/destinations", tags=["Destinations"])
 logger = get_logger(__name__)
 
 

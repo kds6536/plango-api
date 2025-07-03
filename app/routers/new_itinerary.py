@@ -15,14 +15,14 @@ from app.services.advanced_itinerary_service import AdvancedItineraryService
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/v1", tags=["새로운 여행 일정"])
+router = APIRouter(prefix="/api/v1/itinerary", tags=["새로운 여행 일정"])
 
 # 서비스 의존성
 def get_itinerary_service() -> AdvancedItineraryService:
     return AdvancedItineraryService()
 
 
-@router.post("/itinerary/generate", response_model=GenerateResponse)
+@router.post("/generate", response_model=GenerateResponse)
 async def generate_itinerary(
     request: GenerateRequest,
     service: AdvancedItineraryService = Depends(get_itinerary_service)
@@ -64,7 +64,7 @@ async def generate_itinerary(
         )
 
 
-@router.post("/itinerary/optimize", response_model=OptimizeResponse)
+@router.post("/optimize", response_model=OptimizeResponse)
 async def optimize_itinerary(
     request: OptimizeRequest,
     service: AdvancedItineraryService = Depends(get_itinerary_service)
@@ -107,7 +107,7 @@ async def optimize_itinerary(
         )
 
 
-@router.get("/itinerary/health")
+@router.get("/health")
 async def health_check():
     """API 상태 확인"""
     return {
@@ -121,7 +121,7 @@ async def health_check():
     }
 
 
-@router.get("/itinerary/info")
+@router.get("/info")
 async def get_api_info():
     """API 정보 및 사용법"""
     return {

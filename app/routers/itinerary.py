@@ -22,7 +22,7 @@ from app.schemas.itinerary import (
     ActivityItem
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1/itinerary", tags=["여행 일정 API"])
 
 # === API 클라이언트 초기화 (지연 초기화) ===
 # OpenAI와 Gemini 클라이언트는 함수 호출 시점에 초기화됩니다.
@@ -370,7 +370,7 @@ async def call_gemini_api(prompt: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Gemini API 호출 중 오류가 발생했습니다: {str(e)}")
 
 
-@router.post("/itinerary/generate", response_model=ItineraryResponse)
+@router.post("/generate", response_model=ItineraryResponse)
 async def generate_itinerary(
     request: ItineraryRequest,
     provider: str = Query(
