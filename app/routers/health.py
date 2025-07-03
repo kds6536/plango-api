@@ -5,7 +5,7 @@ from datetime import datetime
 import psutil
 import os
 
-router = APIRouter(prefix="/api/v1/health", tags=["Health"])
+router = APIRouter(prefix="/api/v1", tags=["Health"])
 
 
 @router.get("/health")
