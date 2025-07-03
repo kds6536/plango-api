@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 # --- 변경점 1: 필요한 Supabase 라이브러리 import ---
 import os
-from supabase_py import create_client, Client
+from supabase import create_client, Client
 
 from app.utils.logger import get_logger
 
