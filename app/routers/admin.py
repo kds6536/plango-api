@@ -56,7 +56,8 @@ def load_ai_settings_from_db() -> Dict[str, Any]:
         response = supabase.table('settings').select('key, value').execute()
         logger.info(f"Supabase 응답: {response}")
         
-        data = response.get('data', [])
+        # Supabase 응답에서 데이터를 올바르게 추출
+        data = response.data if hasattr(response, 'data') else []
         logger.info(f"조회된 데이터: {data}")
         
         # 키-값 리스트를 하나의 딕셔너리로 변환합니다.
