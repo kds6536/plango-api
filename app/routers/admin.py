@@ -22,7 +22,11 @@ router = APIRouter(prefix="/api/v1/admin", tags=["관리자 API"])
 # 이 설정은 환경 변수에서 가져옵니다.
 try:
     url: str = os.environ.get("SUPABASE_URL")
-    key: str = os.environ.get("SUPABASE_KEY")
+    key: str = os.environ.get("SUPABASE_API_KEY")  # Railway에서 설정한 환경 변수명과 일치
+    
+    if not url or not key:
+        raise ValueError(f"환경 변수 누락: SUPABASE_URL={url}, SUPABASE_API_KEY={'설정됨' if key else '누락'}")
+        
     supabase: Client = create_client(url, key)
     logger.info("Supabase 클라이언트가 성공적으로 초기화되었습니다.")
 except Exception as e:
