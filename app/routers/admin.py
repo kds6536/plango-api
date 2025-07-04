@@ -90,6 +90,23 @@ def save_ai_settings_to_db(settings: AISettingsRequest):
         logger.error(f"DB에 AI 설정 저장 실패: {e}")
         raise HTTPException(status_code=500, detail="데이터베이스에 설정을 저장하는 데 실패했습니다.")
 
+@router.get("/debug-env")
+async def debug_env():
+    """
+    디버깅용: 환경 변수 상태 확인
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_API_KEY")
+    
+    return {
+        "environment_variables": {
+            "SUPABASE_URL": "설정됨" if url else "누락",
+            "SUPABASE_API_KEY": "설정됨" if key else "누락"
+        },
+        "supabase_client": "초기화됨" if supabase else "초기화 실패",
+        "all_env_vars": {k: "설정됨" if v else "누락" for k, v in os.environ.items() if "SUPABASE" in k}
+    }
+
 @router.get("/ai-settings")
 async def get_ai_settings():
     """
