@@ -134,6 +134,34 @@ def save_ai_settings_to_db(settings: AISettingsRequest):
         logger.error(f"에러 세부사항: {str(e)}")
         raise HTTPException(status_code=500, detail=f"데이터베이스에 설정을 저장하는 데 실패했습니다: {str(e)}")
 
+@router.post("/test-save")
+async def test_save():
+    """
+    설정 저장 테스트
+    """
+    try:
+        # 간단한 테스트 데이터로 저장 테스트
+        test_settings = AISettingsRequest(
+            default_provider="gemini",
+            openai_model_name="gpt-4o",
+            gemini_model_name="gemini-1.5-pro-latest"
+        )
+        
+        save_ai_settings_to_db(test_settings)
+        updated_settings = load_ai_settings_from_db()
+        
+        return {
+            "success": True,
+            "message": "테스트 저장 성공",
+            "updated_settings": updated_settings
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
 @router.get("/debug-env")
 async def debug_env():
     """
