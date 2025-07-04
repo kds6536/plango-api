@@ -52,8 +52,12 @@ def load_ai_settings_from_db() -> Dict[str, Any]:
         
     try:
         # 'settings' 테이블에서 모든 데이터를 가져옵니다.
+        logger.info("Supabase에서 settings 테이블 조회 시작")
         response = supabase.table('settings').select('key, value').execute()
+        logger.info(f"Supabase 응답: {response}")
+        
         data = response.get('data', [])
+        logger.info(f"조회된 데이터: {data}")
         
         # 키-값 리스트를 하나의 딕셔너리로 변환합니다.
         # 예: [{'key': 'default_provider', 'value': 'openai'}] -> {'default_provider': 'openai'}
@@ -62,16 +66,29 @@ def load_ai_settings_from_db() -> Dict[str, Any]:
         if not settings_dict:
             logger.warning("DB에 설정이 없습니다. 기본 설정을 반환합니다.")
             # DB에 데이터가 없을 경우를 대비한 기본값
-            return {
+            default_settings = {
                 "default_provider": "openai",
                 "openai_model_name": "gpt-4o",
                 "gemini_model_name": "gemini-1.5-pro-latest"
             }
+            # 기본값을 DB에 저장
+            try:
+                supabase.table('settings').upsert({'key': 'default_provider', 'value': 'openai'}).execute()
+                supabase.table('settings').upsert({'key': 'openai_model_name', 'value': 'gpt-4o'}).execute()
+                supabase.table('settings').upsert({'key': 'gemini_model_name', 'value': 'gemini-1.5-pro-latest'}).execute()
+                logger.info("기본 설정을 DB에 저장했습니다.")
+            except Exception as insert_error:
+                logger.error(f"기본 설정 저장 실패: {insert_error}")
+            
+            return default_settings
         
+        logger.info(f"최종 설정 딕셔너리: {settings_dict}")
         return settings_dict
     except Exception as e:
         logger.error(f"DB에서 AI 설정 로드 실패: {e}")
-        raise HTTPException(status_code=500, detail="데이터베이스에서 설정을 불러오는 데 실패했습니다.")
+        logger.error(f"에러 타입: {type(e).__name__}")
+        logger.error(f"에러 세부사항: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"데이터베이스에서 설정을 불러오는 데 실패했습니다: {str(e)}")
 
 def save_ai_settings_to_db(settings: AISettingsRequest):
     """AI 설정을 Supabase DB에 저장"""
