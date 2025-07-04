@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi import status
 import sys
 import time
+import json
 
 from app.schemas.itinerary import (
     GenerateRequest, GenerateResponse, 
@@ -35,7 +36,12 @@ except Exception:
 if app:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        print("422 Unprocessable Entity detail:", exc.errors(), file=sys.stderr)
+        # --- 상세 에러 내용을 JSON 형태로 예쁘게 출력 ---
+        error_details = json.dumps(exc.errors(), indent=2, ensure_ascii=False)
+        print("--- Pydantic Validation Error ---")
+        print(error_details)
+        print("---------------------------------")
+        # --------------------------------------
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={"detail": exc.errors()},
