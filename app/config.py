@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # CORS 설정
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://plango.vercel.app,https://plango-production-24ea.up.railway.app"
+    ALLOWED_ORIGINS: str = "*"
     
     @property
     def allowed_origins_list(self) -> List[str]:
