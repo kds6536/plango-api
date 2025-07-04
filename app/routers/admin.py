@@ -116,14 +116,23 @@ def save_ai_settings_to_db(settings: AISettingsRequest):
     try:
         # 받은 데이터를 기반으로 각 설정을 하나씩 업데이트합니다.
         # .upsert()는 데이터가 있으면 update, 없으면 insert를 해줘서 더 안정적입니다.
-        supabase.table('settings').upsert({'key': 'default_provider', 'value': settings.default_provider}).execute()
-        supabase.table('settings').upsert({'key': 'openai_model_name', 'value': settings.openai_model_name}).execute()
-        supabase.table('settings').upsert({'key': 'gemini_model_name', 'value': settings.gemini_model_name}).execute()
+        logger.info(f"DB에 AI 설정 저장 시작: {settings.dict()}")
+        
+        response1 = supabase.table('settings').upsert({'key': 'default_provider', 'value': settings.default_provider}).execute()
+        logger.info(f"default_provider 저장 완료: {response1}")
+        
+        response2 = supabase.table('settings').upsert({'key': 'openai_model_name', 'value': settings.openai_model_name}).execute()
+        logger.info(f"openai_model_name 저장 완료: {response2}")
+        
+        response3 = supabase.table('settings').upsert({'key': 'gemini_model_name', 'value': settings.gemini_model_name}).execute()
+        logger.info(f"gemini_model_name 저장 완료: {response3}")
 
         logger.info(f"DB에 AI 설정 저장 완료: {settings.dict()}")
     except Exception as e:
         logger.error(f"DB에 AI 설정 저장 실패: {e}")
-        raise HTTPException(status_code=500, detail="데이터베이스에 설정을 저장하는 데 실패했습니다.")
+        logger.error(f"에러 타입: {type(e).__name__}")
+        logger.error(f"에러 세부사항: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"데이터베이스에 설정을 저장하는 데 실패했습니다: {str(e)}")
 
 @router.get("/debug-env")
 async def debug_env():
