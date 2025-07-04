@@ -4,8 +4,6 @@ AI 제공자 설정, 시스템 설정 등을 관리합니다
 """
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from datetime import datetime
 from typing import Dict, Any
 from pydantic import BaseModel
@@ -19,16 +17,6 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["관리자 API"])
-
-# Validation 에러 핸들러 추가
-@router.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error(f"Validation 에러 발생: {exc.errors()}")
-    logger.error(f"요청 본문: {await request.body()}")
-    return JSONResponse(
-        status_code=422,
-        content={"detail": f"Validation 에러: {exc.errors()}"}
-    )
 
 # --- 변경점 2: 파일 경로 대신 Supabase 클라이언트 설정 ---
 # 이 설정은 환경 변수에서 가져옵니다.
@@ -171,83 +159,17 @@ def save_ai_settings_to_db(settings: AISettingsRequest):
         logger.error(f"에러 세부사항: {str(e)}")
         raise HTTPException(status_code=500, detail=f"데이터베이스에 설정을 저장하는 데 실패했습니다: {str(e)}")
 
-@router.post("/test-save")
-async def test_save():
-    """
-    설정 저장 테스트
-    """
-    try:
-        # 간단한 테스트 데이터로 저장 테스트
-        test_settings = AISettingsRequest(
-            default_provider="gemini",
-            openai_model_name="gpt-4o",
-            gemini_model_name="gemini-1.5-pro-latest"
-        )
-        
-        save_ai_settings_to_db(test_settings)
-        updated_settings = load_ai_settings_from_db()
-        
-        return {
-            "success": True,
-            "message": "테스트 저장 성공",
-            "updated_settings": updated_settings
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "error_type": type(e).__name__
-        }
-
-@router.get("/debug-env")
-async def debug_env():
-    """
-    디버깅용: 환경 변수 상태 확인
-    """
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_API_KEY")
-    
-    return {
-        "environment_variables": {
-            "SUPABASE_URL": "설정됨" if url else "누락",
-            "SUPABASE_API_KEY": "설정됨" if key else "누락"
-        },
-        "supabase_client": "초기화됨" if supabase else "초기화 실패",
-        "all_env_vars": {k: "설정됨" if v else "누락" for k, v in os.environ.items() if "SUPABASE" in k}
-    }
-
-@router.put("/debug-raw-data")
-async def debug_raw_data(request: Request):
-    """
-    PUT 요청의 원시 데이터 확인
-    """
-    try:
-        body = await request.body()
-        logger.info(f"원시 요청 본문: {body}")
-        
-        import json
-        json_data = json.loads(body)
-        logger.info(f"파싱된 JSON: {json_data}")
-        
-        return {
-            "success": True,
-            "raw_body": body.decode('utf-8'),
-            "parsed_json": json_data
-        }
-    except Exception as e:
-        logger.error(f"디버깅 에러: {e}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
 @router.get("/ai-settings")
 async def get_ai_settings():
     """
-    현재 AI 제공자 설정을 DB에서 조회합니다.
+    현재 AI 제공자 설정을 반환합니다.
     """
-    settings = load_ai_settings_from_db()
-    return settings
+    try:
+        settings = load_ai_settings_from_db()
+        return settings
+    except Exception as e:
+        logger.error(f"AI 설정 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/ai-settings")
 async def update_ai_settings(request: AISettingsRequest):
@@ -256,10 +178,6 @@ async def update_ai_settings(request: AISettingsRequest):
     """
     try:
         logger.info(f"AI 설정 업데이트 요청 받음: {request.dict()}")
-        logger.info(f"요청 데이터 타입: {type(request)}")
-        logger.info(f"default_provider: '{request.default_provider}' (타입: {type(request.default_provider)})")
-        logger.info(f"openai_model_name: '{request.openai_model_name}' (타입: {type(request.openai_model_name)})")
-        logger.info(f"gemini_model_name: '{request.gemini_model_name}' (타입: {type(request.gemini_model_name)})")
         
         save_ai_settings_to_db(request)
         # 저장 후 최신 데이터를 다시 읽어서 반환
@@ -268,9 +186,7 @@ async def update_ai_settings(request: AISettingsRequest):
         return updated_settings
     except Exception as e:
         logger.error(f"AI 설정 업데이트 실패: {e}")
-        logger.error(f"에러 타입: {type(e).__name__}")
-        logger.error(f"에러 세부사항: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"AI 설정 업데이트에 실패했습니다: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/health")
 async def admin_health():
