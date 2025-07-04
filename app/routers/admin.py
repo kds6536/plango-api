@@ -54,10 +54,27 @@ def load_ai_settings_from_db() -> Dict[str, Any]:
         # 'settings' 테이블에서 모든 데이터를 가져옵니다.
         logger.info("Supabase에서 settings 테이블 조회 시작")
         response = supabase.table('settings').select('key, value').execute()
-        logger.info(f"Supabase 응답: {response}")
+        logger.info(f"Supabase 응답 타입: {type(response)}")
+        logger.info(f"Supabase 응답 속성들: {dir(response)}")
         
-        # Supabase 응답에서 데이터를 올바르게 추출
-        data = response.data if hasattr(response, 'data') else []
+        # 다양한 방법으로 데이터 접근 시도
+        data = []
+        if hasattr(response, 'data'):
+            data = response.data
+            logger.info(f"response.data 사용: {data}")
+        elif hasattr(response, 'json'):
+            json_data = response.json()
+            data = json_data.get('data', [])
+            logger.info(f"response.json() 사용: {data}")
+        else:
+            logger.error("응답에서 데이터를 추출할 수 없습니다.")
+            # 기본값 반환
+            return {
+                "default_provider": "openai",
+                "openai_model_name": "gpt-4o",
+                "gemini_model_name": "gemini-1.5-pro-latest"
+            }
+            
         logger.info(f"조회된 데이터: {data}")
         
         # 키-값 리스트를 하나의 딕셔너리로 변환합니다.
