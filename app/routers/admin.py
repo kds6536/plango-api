@@ -91,9 +91,21 @@ def load_ai_settings_from_db() -> Dict[str, Any]:
             }
             # 기본값을 DB에 저장
             try:
-                supabase.table('settings').upsert({'key': 'default_provider', 'value': 'openai'}).execute()
-                supabase.table('settings').upsert({'key': 'openai_model_name', 'value': 'gpt-4o'}).execute()
-                supabase.table('settings').upsert({'key': 'gemini_model_name', 'value': 'gemini-1.5-pro-latest'}).execute()
+                supabase.table('settings').upsert({
+                    'key': 'default_provider', 
+                    'value': 'openai',
+                    'is_encrypted': False
+                }).execute()
+                supabase.table('settings').upsert({
+                    'key': 'openai_model_name', 
+                    'value': 'gpt-4o',
+                    'is_encrypted': False
+                }).execute()
+                supabase.table('settings').upsert({
+                    'key': 'gemini_model_name', 
+                    'value': 'gemini-1.5-pro-latest',
+                    'is_encrypted': False
+                }).execute()
                 logger.info("기본 설정을 DB에 저장했습니다.")
             except Exception as insert_error:
                 logger.error(f"기본 설정 저장 실패: {insert_error}")
@@ -118,13 +130,26 @@ def save_ai_settings_to_db(settings: AISettingsRequest):
         # .upsert()는 데이터가 있으면 update, 없으면 insert를 해줘서 더 안정적입니다.
         logger.info(f"DB에 AI 설정 저장 시작: {settings.dict()}")
         
-        response1 = supabase.table('settings').upsert({'key': 'default_provider', 'value': settings.default_provider}).execute()
+        # is_encrypted 컬럼을 포함하여 데이터 삽입
+        response1 = supabase.table('settings').upsert({
+            'key': 'default_provider', 
+            'value': settings.default_provider,
+            'is_encrypted': False
+        }).execute()
         logger.info(f"default_provider 저장 완료: {response1}")
         
-        response2 = supabase.table('settings').upsert({'key': 'openai_model_name', 'value': settings.openai_model_name}).execute()
+        response2 = supabase.table('settings').upsert({
+            'key': 'openai_model_name', 
+            'value': settings.openai_model_name,
+            'is_encrypted': False
+        }).execute()
         logger.info(f"openai_model_name 저장 완료: {response2}")
         
-        response3 = supabase.table('settings').upsert({'key': 'gemini_model_name', 'value': settings.gemini_model_name}).execute()
+        response3 = supabase.table('settings').upsert({
+            'key': 'gemini_model_name', 
+            'value': settings.gemini_model_name,
+            'is_encrypted': False
+        }).execute()
         logger.info(f"gemini_model_name 저장 완료: {response3}")
 
         logger.info(f"DB에 AI 설정 저장 완료: {settings.dict()}")
