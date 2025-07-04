@@ -3,8 +3,12 @@
 사용자가 요청한 /generate와 /optimize 엔드포인트 구현
 """
 
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import RequestValidationError
+from fastapi.exceptions import RequestValidationError
+from fastapi import status
+import sys
 import time
 
 from app.schemas.itinerary import (
@@ -16,6 +20,26 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/itinerary", tags=["새로운 여행 일정"])
+
+# 422 에러 detail 콘솔 출력용 핸들러 등록
+from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
+
+app = None
+try:
+    import app.main
+    app = app.main.app
+except Exception:
+    pass
+
+if app:
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        print("422 Unprocessable Entity detail:", exc.errors(), file=sys.stderr)
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": exc.errors()},
+        )
 
 # 서비스 의존성
 def get_itinerary_service() -> AdvancedItineraryService:
