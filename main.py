@@ -37,8 +37,8 @@ app = FastAPI(
 # CORS 미들웨어 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
-    allow_credentials=True,
+    allow_origins=["*"],  # 모든 도메인 허용
+    allow_credentials=False,  # credentials는 False로 설정
     allow_methods=["*"],
     allow_headers=["*"],
 )
