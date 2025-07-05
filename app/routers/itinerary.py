@@ -43,7 +43,7 @@ async def get_destination_spots(destination: str) -> List[Dict]:
         )
         
         # Supabase에서 destinations 테이블 조회 (목적지 이름으로 검색)
-        response = supabase.table('destinations').select('*').ilike('city', f'%{destination}%').execute()
+        response = supabase.table('itineraries').select('*').ilike('city', f'%{destination}%').execute()
         
         if response.data:
             print(f"✅ {len(response.data)}개의 여행지 정보를 찾았습니다!")
@@ -130,9 +130,9 @@ def create_openai_prompt(request: ItineraryRequest, available_spots: List[Dict] 
     "total_estimated_cost": "총 예상 비용",
     "highlights": ["하이라이트1", "하이라이트2", "하이라이트3"],
     "recommendations": {{
-      "best_time": "최적 방문 시기",
-      "what_to_pack": "준비물 추천",
-      "local_tips": "현지 팁"
+      "best_time": ["봄(4월-5월)", "가을(9월-10월)"],
+      "what_to_pack": ["편안한 신발", "모자", "선크림", "카메라"],
+      "local_tips": ["팁 1", "팁 2", "팁 3"]
     }}
   }},
   "plan_b": {{
@@ -173,6 +173,9 @@ def create_openai_prompt(request: ItineraryRequest, available_spots: List[Dict] 
   }}
 }}
 
+**엄격한 출력 규칙:**
+- recommendations.best_time, recommendations.what_to_pack, recommendations.local_tips는 반드시 쉼표로 구분된 문자열이 아니라, 각 항목이 따로따로 들어간 JSON 배열(예: ["봄(4월-5월)", "가을(9월-10월)"])로 출력해야 합니다.
+- 예시처럼 반드시 배열로 만들어주세요. (단일 문자열 금지)
 Plan A는 클래식하고 전통적인 스타일로, Plan B는 모던하고 액티비티 중심으로 구성해주세요.
 각 플랜마다 {request.duration}일치 일정을 모두 채워주세요.
 """
