@@ -348,7 +348,7 @@ async def call_gemini_api(prompt: str) -> Dict[str, Any]:
         # Gemini 클라이언트 초기화
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         
         # Gemini 응답에서 불필요한 마크다운 제거
