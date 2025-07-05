@@ -439,14 +439,18 @@ async def generate_itinerary(
         raise
         
     except Exception as e:
-        print(f"❌ 여행 일정 생성 실패: {str(e)}")
-        
+        import traceback
+        print("!!!!!!!!!!!!! 에러 발생 !!!!!!!!!!!!!")
+        print(f"에러 타입: {type(e).__name__}")
+        print(f"에러 메시지: {e}")
+        print("상세 Traceback:")
+        traceback.print_exc()
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         # API 키 오류인 경우 폴백
         if "api_key" in str(e).lower() or "401" in str(e):
             print(f"🔑 {provider.upper()} API 키가 설정되지 않았거나 잘못되었습니다")
             return create_fallback_response(request, provider)
-        
-        raise HTTPException(status_code=500, detail=f"여행 일정 생성 중 오류가 발생했습니다: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"서버 내부 오류 발생: {str(e)}")
 
 
 def create_fallback_response(request: ItineraryRequest, provider: str):
