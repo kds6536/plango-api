@@ -109,15 +109,10 @@ class ItineraryResponse(BaseModel):
     request_info: ItineraryRequest = Field(..., description="요청 정보")
     plan_a: ItineraryPlan = Field(..., description="여행 계획 A")
     plan_b: ItineraryPlan = Field(..., description="여행 계획 B")
-    created_at: datetime = Field(..., description="생성 시간")
+    created_at: str = Field(..., description="생성 시간 (ISO8601 문자열)")
     status: str = Field(..., description="상태")
     ai_confidence: Optional[float] = Field(None, description="AI 신뢰도 점수")
     generation_time: Optional[float] = Field(None, description="생성 소요 시간 (초)")
-    
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
 
 
 class GenerateRequest(BaseModel):
@@ -166,7 +161,7 @@ class GenerateResponse(BaseModel):
     plan_a: TravelPlan = Field(..., description="1안")
     plan_b: TravelPlan = Field(..., description="2안")
     request_id: str = Field(..., description="요청 ID")
-    generated_at: datetime = Field(..., description="생성 시간")
+    generated_at: str = Field(..., description="생성 시간 (ISO8601 문자열)")
 
 
 class OptimizeRequest(BaseModel):

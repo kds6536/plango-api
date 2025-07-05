@@ -299,7 +299,7 @@ class AdvancedItineraryService:
             plan_a=plan_a,
             plan_b=plan_b,
             request_id=request_id,
-            generated_at=datetime.now()
+            generated_at=datetime.now().isoformat()
         )
 
     async def optimize_itinerary(self, request: OptimizeRequest) -> OptimizeResponse:
@@ -436,7 +436,7 @@ class AdvancedItineraryService:
             plan_a=basic_plan,
             plan_b=basic_plan,
             request_id=request_id,
-            generated_at=datetime.now()
+            generated_at=datetime.now().isoformat()
         )
 
     def _create_basic_plans(self, request: GenerateRequest, place_pool: List[Dict[str, Any]]) -> Dict[str, Any]:
