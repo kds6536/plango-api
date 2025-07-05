@@ -77,7 +77,7 @@ def create_openai_prompt(request: ItineraryRequest, available_spots: List[Dict] 
         spots_info = f"""
 
 ## 여행지 정보:
-데이터베이스에서 '{request.destination}' 관련 정보를 찾을 수 없어서, 당신의 전문 지식을 바탕으로 {request.destination}의 대표적인 관광지들을 추천해주세요.
+데이터베이스에서 '{request.get_destination()}' 관련 정보를 찾을 수 없어서, 당신의 전문 지식을 바탕으로 {request.get_destination()}의 대표적인 관광지들을 추천해주세요.
 """
     
     prompt = f"""
@@ -85,7 +85,7 @@ def create_openai_prompt(request: ItineraryRequest, available_spots: List[Dict] 
 사용자의 요청에 따라 두 가지 다른 스타일의 완벽한 여행 일정을 생성해주세요.
 
 ## 사용자 요청 정보:
-- 목적지: {request.destination}
+- 목적지: {request.get_destination()}
 - 여행 기간: {request.duration}일
 - 여행 스타일: {travel_styles_text}
 - 예산 범위: {request.budget_range}
@@ -198,7 +198,7 @@ def create_gemini_prompt(request: ItineraryRequest, available_spots: List[Dict] 
         spots_info = f"""
 
 ## 여행지 정보:
-데이터베이스에서 '{request.destination}' 관련 정보를 찾을 수 없어서, 당신의 전문 지식을 바탕으로 {request.destination}의 대표적인 관광지들을 추천해주세요.
+데이터베이스에서 '{request.get_destination()}' 관련 정보를 찾을 수 없어서, 당신의 전문 지식을 바탕으로 {request.get_destination()}의 대표적인 관광지들을 추천해주세요.
 """
     
     prompt = f"""
@@ -206,7 +206,7 @@ def create_gemini_prompt(request: ItineraryRequest, available_spots: List[Dict] 
 사용자의 요청에 따라 두 가지 다른 스타일의 완벽한 여행 일정을 생성해주세요.
 
 ## 사용자 요청 정보:
-- 목적지: {request.destination}
+- 목적지: {request.get_destination()}
 - 여행 기간: {request.duration}일
 - 여행 스타일: {travel_styles_text}
 - 예산 범위: {request.budget_range}
@@ -388,14 +388,14 @@ async def generate_itinerary(
     """
     try:
         print(f"🎯 {provider.upper()}를 사용하여 여행 일정 생성을 시작합니다!")
-        print(f"📍 목적지: {request.destination}")
+        print(f"📍 목적지: {request.get_destination()}")
         print(f"📅 기간: {request.duration}일")
         print(f"🎨 스타일: {request.travel_style}")
         print(f"💰 예산: {request.budget_range}")
         print(f"🤖 AI 공급자: {provider.upper()}")
         
         # 1. Supabase에서 여행지 정보 가져오기
-        available_spots = await get_destination_spots(request.destination)
+        available_spots = await get_destination_spots(request.get_destination())
         
         # 2. AI 공급자에 따라 다른 프롬프트 생성 및 API 호출
         if provider == "openai":
@@ -417,7 +417,7 @@ async def generate_itinerary(
         response_data = {
             "id": itinerary_id,
             "request_info": {
-                "destination": request.destination,
+                "destination": request.get_destination(),
                 "duration": request.duration,
                 "travel_style": request.travel_style,
                 "budget_range": request.budget_range,
@@ -458,7 +458,7 @@ def create_fallback_response(request: ItineraryRequest, provider: str):
     fallback_data = {
         "id": itinerary_id,
         "request_info": {
-            "destination": request.destination,
+            "destination": request.get_destination(),
             "duration": request.duration,
             "travel_style": request.travel_style,
             "budget_range": request.budget_range,
@@ -467,7 +467,7 @@ def create_fallback_response(request: ItineraryRequest, provider: str):
         },
         "plan_a": {
             "plan_type": "classic",
-            "title": f"{request.destination} 클래식 여행 ({provider.upper()} 폴백 데이터)",
+            "title": f"{request.get_destination()} 클래식 여행 ({provider.upper()} 폴백 데이터)",
             "concept": f"실제 {provider.upper()} API 연결 후 더욱 맞춤형 일정을 제공받으실 수 있습니다",
             "daily_plans": [
                 {
@@ -477,7 +477,7 @@ def create_fallback_response(request: ItineraryRequest, provider: str):
                         {
                             "time": "09:00",
                             "activity": "주요 관광지 방문",
-                            "location": f"{request.destination} 중심가",
+                            "location": f"{request.get_destination()} 중심가",
                             "description": "현지의 대표적인 관광지를 둘러보며 여행을 시작합니다",
                             "duration": "3시간",
                             "cost": "15,000원",
@@ -503,7 +503,7 @@ def create_fallback_response(request: ItineraryRequest, provider: str):
         },
         "plan_b": {
             "plan_type": "adventure",
-            "title": f"{request.destination} 액티비티 여행 ({provider.upper()} 폴백 데이터)",
+            "title": f"{request.get_destination()} 액티비티 여행 ({provider.upper()} 폴백 데이터)",
             "concept": f"실제 {provider.upper()} API 연결 후 더욱 다양한 액티비티를 추천받으실 수 있습니다",
             "daily_plans": [
                 {
@@ -513,7 +513,7 @@ def create_fallback_response(request: ItineraryRequest, provider: str):
                         {
                             "time": "10:00",
                             "activity": "액티비티 체험",
-                            "location": f"{request.destination} 액티비티 센터",
+                            "location": f"{request.get_destination()} 액티비티 센터",
                             "description": "현지에서 즐길 수 있는 특별한 액티비티를 체험합니다",
                             "duration": "4시간",
                             "cost": "25,000원",

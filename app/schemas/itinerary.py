@@ -58,15 +58,34 @@ class ItineraryPlan(BaseModel):
 
 class ItineraryRequest(BaseModel):
     """여행 일정 생성 요청"""
-    destination: str = Field(..., description="목적지", example="도쿄")
+    destination: Optional[str] = Field(None, description="목적지", example="도쿄")
+    city: Optional[str] = Field(None, description="여행 도시 (destination과 동일)", example="도쿄")
     duration: int = Field(..., ge=1, le=30, description="여행 기간 (일)", example=3)
-    travel_style: List[TravelStyle] = Field(..., description="여행 스타일")
-    budget_range: BudgetRange = Field(..., description="예산 범위")
-    travelers_count: int = Field(..., ge=1, le=20, description="여행자 수", example=2)
+    travel_style: Optional[List[TravelStyle]] = Field(default=[], description="여행 스타일")
+    budget_range: Optional[BudgetRange] = Field(default=BudgetRange.MEDIUM, description="예산 범위")
+    travelers_count: int = Field(default=2, ge=1, le=20, description="여행자 수", example=2)
     accommodation_preference: Optional[str] = Field(None, description="숙박 선호도")
     dietary_restrictions: Optional[List[str]] = Field(None, description="식단 제한사항")
     special_interests: Optional[List[str]] = Field(None, description="특별 관심사")
+    special_requests: Optional[str] = Field(None, description="특별 요청사항")
     mobility_considerations: Optional[str] = Field(None, description="이동성 고려사항")
+    
+    def get_destination(self) -> str:
+        """destination 또는 city 중 하나를 반환"""
+        return self.destination or self.city or "Unknown"
+    
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate_destination_or_city
+    
+    @classmethod
+    def validate_destination_or_city(cls, v):
+        if isinstance(v, dict):
+            destination = v.get('destination')
+            city = v.get('city')
+            if not destination and not city:
+                raise ValueError('destination 또는 city 중 하나는 반드시 제공되어야 합니다')
+        return v
     
     class Config:
         schema_extra = {
