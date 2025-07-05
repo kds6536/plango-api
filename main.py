@@ -1,8 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from contextlib import asynccontextmanager
 import uvicorn
 import os
+import json
+import logging
 from dotenv import load_dotenv
 
 from app.routers import itinerary, destinations, health, places, new_itinerary, admin
@@ -10,6 +15,9 @@ from app.config import settings
 
 # 환경변수 로드
 load_dotenv()
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,6 +50,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 422 에러 상세 로그 핸들러 추가
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """422 에러 발생 시 상세 에러 내용을 로그에 출력"""
+    error_details = json.dumps(exc.errors(), indent=2, ensure_ascii=False)
+    logging.error("=== Pydantic Validation Error ===")
+    logging.error(f"Request URL: {request.url}")
+    logging.error(f"Request Method: {request.method}")
+    logging.error(f"Request Headers: {dict(request.headers)}")
+    logging.error(f"Error Details:\n{error_details}")
+    logging.error("===============================")
+    
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=jsonable_encoder({"detail": exc.errors()}),
+    )
 
 # 라우터 등록
 app.include_router(admin.router)
