@@ -16,13 +16,14 @@ class GooglePlacesService:
     
     def __init__(self):
         """Google Maps 클라이언트 초기화"""
-        self.api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+        # Railway에서는 "Maps Platform API Key"로 설정됨
+        self.api_key = os.getenv("Maps Platform API Key") or os.getenv("GOOGLE_PLACES_API_KEY")
         if not self.api_key:
-            logger.warning("Google Places API 키가 설정되지 않았습니다.")
+            logger.warning("Google Maps Platform API 키가 설정되지 않았습니다.")
             self.gmaps = None
         else:
             self.gmaps = googlemaps.Client(key=self.api_key)
-            logger.info("Google Places API 클라이언트 초기화 완료")
+            logger.info("Google Maps Platform API 클라이언트 초기화 완료")
     
     async def search_places(
         self, 

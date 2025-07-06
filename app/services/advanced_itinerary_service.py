@@ -68,40 +68,74 @@ class AdvancedItineraryService:
         """
         1단계: AI 브레인스토밍 - 장소 이름 후보군 생성
         """
-        prompt1 = f"""당신은 창의적인 여행 아이디어 브레인스토밍 어시스턴트, "플랜고 아이디어봇"입니다.
-사용자의 여행 요청을 기반으로, 다양한 카테고리의 추천 장소 '이름' 목록을 JSON 형식으로 생성하는 것이 당신의 임무입니다.
+        prompt1 = f"""당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트이자 키워드 추출 전문가입니다.
+당신의 임무는 사용자의 여행 요청을 분석하여, 여행의 핵심 테마를 정의하고, 그 테마에 맞는 활동들을 검색 가능한 '키워드'로 구조화하는 것입니다.
 
-**사용자 요청:**
-- 도시: {request.city}
+**사용자 여행 정보:**
+- 목적지: {request.city}
 - 기간: {request.duration}일
-- 취향 및 요청사항: {request.special_requests or '일반적인 여행'}
+- 예산: {getattr(request, 'budget_range', 'medium')}
+- 여행 스타일: {getattr(request, 'travel_style', [])}
+- 특별 요청사항: {request.special_requests or '일반적인 여행'}
 
-**당신의 임무 및 규칙:**
-1. 다양한 카테고리에 걸쳐 장소 이름 목록을 생성하세요.
-2. 다음 각 카테고리에 대해 최소 5개의 추천 장소를 제공해야 합니다: '관광', '맛집', '카페', '유적지', '문화', '놀거리', '쇼핑'.
-3. 추천 장소는 사용자의 취향 및 요청사항과 강력하게 일치해야 합니다.
-4. 당신은 반드시 하나의 JSON 객체만으로 응답해야 합니다. JSON 외부에는 어떠한 설명도 추가하지 마세요. JSON 구조는 다음과 같아야 합니다:
-   {{"관광": ["이름1", "이름2", ...], "맛집": ["이름3", "이름4", ...], ...}}"""
+**## 지시사항 ##**
+1. **입력 분석:** 사용자가 제공한 여행 정보를 완벽하게 분석합니다.
+2. **테마 설정:** 분석 내용을 바탕으로 여행의 전체적인 컨셉을 한 문장으로 정의합니다.
+3. **키워드 추출:** 사용자의 요청을 충족시킬 수 있는 장소나 활동 유형을 '검색어' 형태로 생성합니다.
+4. **응답 형식:** 당신의 답변은 **반드시** 아래에 명시된 구조의 **JSON 객체 하나**여야 합니다. 다른 설명은 절대 추가하지 마세요.
+
+**## 핵심 규칙 (매우 중요) ##**
+- **절대 특정 상호명이나 장소명을 제안하지 마세요.** (예: '이치란 라멘' (X) -> '{request.city} 현지인 추천 돈코츠 라멘 맛집' (O))
+- 키워드는 사용자의 숨은 니즈를 반영해야 합니다.
+- 카테고리는 'food', 'activity', 'healing', 'history', 'shopping', 'nature' 중에서 선택하세요.
+- 우선순위는 사용자가 명시적으로 언급한 요청에 따라 'high', 'medium', 'low'로 설정하세요.
+
+**응답 JSON 구조:**
+{{
+  "theme": "여행 테마 한 문장",
+  "search_keywords": [
+    {{
+      "keyword": "검색 키워드",
+      "category": "카테고리",
+      "priority": "우선순위",
+      "description": "키워드 설명"
+    }}
+  ]
+}}"""
 
         try:
             # Dynamic AI Service 사용
             content = await self.ai_service.generate_text(prompt1, max_tokens=1500)
             
             # JSON 파싱
-            place_candidates = json.loads(content)
+            ai_response = json.loads(content)
+            
+            # 새로운 응답 구조에서 카테고리별 키워드 추출
+            place_candidates = {}
+            if "search_keywords" in ai_response:
+                for keyword_info in ai_response["search_keywords"]:
+                    category = keyword_info.get("category", "activity")
+                    keyword = keyword_info.get("keyword", "")
+                    
+                    if category not in place_candidates:
+                        place_candidates[category] = []
+                    place_candidates[category].append(keyword)
+            
+            # 테마 정보 저장 (나중에 사용)
+            self.travel_theme = ai_response.get("theme", f"{request.city} 여행")
+            
             return place_candidates
             
         except Exception as e:
             logger.error(f"1단계 AI 브레인스토밍 실패: {str(e)}")
             # 기본 후보 반환
             return {
-                "관광": [f"{request.city} 대표 관광지", f"{request.city} 명소"],
-                "맛집": [f"{request.city} 맛집", f"{request.city} 현지 음식"],
-                "카페": [f"{request.city} 카페", f"{request.city} 디저트"],
-                "유적지": [f"{request.city} 박물관", f"{request.city} 역사"],
-                "문화": [f"{request.city} 문화센터", f"{request.city} 갤러리"],
-                "놀거리": [f"{request.city} 놀이시설", f"{request.city} 액티비티"],
-                "쇼핑": [f"{request.city} 쇼핑몰", f"{request.city} 시장"]
+                "food": [f"{request.city} 맛집", f"{request.city} 현지 음식"],
+                "activity": [f"{request.city} 관광명소", f"{request.city} 액티비티"],
+                "healing": [f"{request.city} 카페", f"{request.city} 힐링 스팟"],
+                "history": [f"{request.city} 박물관", f"{request.city} 역사 유적지"],
+                "shopping": [f"{request.city} 쇼핑몰", f"{request.city} 시장"],
+                "nature": [f"{request.city} 공원", f"{request.city} 자연 명소"]
             }
 
     async def _step2_google_places_enrichment(
@@ -143,43 +177,38 @@ class AdvancedItineraryService:
         """
         travel_dates = f"Day 1 to Day {request.duration}"
         
-        prompt2 = f"""당신은 세계 최고 수준의 꼼꼼한 여행 플래너, "플랜고-GPT"입니다.
-제공된 '선택 가능한 장소 목록'을 사용하여, 서로 다른 테마를 가진 완벽하게 최적화되고 매우 상세한 두 가지 여행 일정(1안, 2안)을 만드는 것이 당신의 임무입니다.
+        prompt2 = f"""당신은 'Plango AI'라는 이름의 최고의 여행 일정 설계 전문가입니다.
+당신의 임무는 사전 검증된 장소 목록과 사용자의 원래 요청사항을 바탕으로, 가장 효율적이고 매력적인 일일 여행 계획을 수립하는 것입니다.
 
-**1. 사용자의 최초 요청:**
-- 도시: {request.city}
-- 여행 날짜: {travel_dates} (총 {request.duration}일)
-- 취향 및 요청사항: {request.special_requests or '일반적인 여행'}
+**사용자의 원래 요청사항:**
+- 목적지: {request.city}
+- 여행 기간: {request.duration}일
+- 예산: {getattr(request, 'budget_range', 'medium')}
+- 여행 스타일: {getattr(request, 'travel_style', [])}
+- 특별 요청사항: {request.special_requests or '일반적인 여행'}
 
-**2. 선택 가능한 장소 목록 (사전 분석 단계에서 제공됨):**
-여기에 상세 정보가 포함된 장소 목록이 JSON 형식으로 제공됩니다. 당신은 반드시 이 목록 안에서만 장소를 선택해야 합니다.
+**API로 검증된 장소 목록:**
 ```json
 {json.dumps(place_pool, ensure_ascii=False, indent=2)}
 ```
 
-**3. 당신의 임무 및 엄격한 규칙:**
-가. 두 가지 테마의 계획 수립:
-사용자의 취향을 반영하는 매력적이고 뚜렷하게 다른 테마를 가진 "1안"과 "2안"을 만드세요. (예: "1안: 예술과 역사를 거니는 힐링 코스", "2안: 트렌디한 핫플레이스 탐험").
-제공된 목록에서 각 계획에 어울리는 균형 잡힌 장소들을 선택하세요. 모든 장소를 사용할 필요는 없습니다.
+**## 지시사항 ##**
+1. **입력 분석:** 사용자의 원래 요청사항과 API로 검증된 장소 목록을 함께 분석합니다.
+2. **동선 최적화:** 각 장소의 위도/경도 정보를 활용하여, 지리적으로 가까운 장소들을 같은 날 일정으로 묶어 이동 시간을 최소화합니다. 이것이 가장 중요한 임무입니다.
+3. **논리적 시간 배분:** 활동들을 '오전', '점심', '오후', '저녁' 시간대에 맞게 논리적으로 배치합니다.
+4. **사용자 맞춤:** 사용자의 원래 요청(여유롭게, 빡빡하게 등)을 참고하여 하루에 배치할 활동의 개수를 조절합니다.
+5. **응답 형식:** 당신의 답변은 **반드시** 아래에 명시된 구조의 **JSON 객체 하나**여야 합니다. 다른 설명은 절대 추가하지 마세요.
 
-나. 극도로 상세한 일일 스케줄:
-각 날짜별로 오전, 오후, 저녁 스케줄을 구성하세요.
-각 활동에 대해 다음 정보를 제공해야 합니다:
-- time: 추천 시간대 (예: "10:00 - 12:00").
-- place_name: 장소의 이름.
-- activity_description: 그곳에서 무엇을 할지에 대한 매력적인 한두 문장의 설명.
-- transportation_details: 다음 장소로 이동하기 위한 상세하고 실용적인 대중교통 안내를 제공하세요.
+**## 핵심 규칙 (매우 중요) ##**
+- **데이터 무결성:** 장소 목록에 제공된 `place_id`와 `name`을 절대 변경하거나 누락하지 말고, 그대로 출력 JSON에 포함시켜야 합니다.
+- **지리적 클러스터링:** 위도/경도 좌표를 기준으로 가장 가까운 장소들을 묶는 것을 최우선으로 고려하세요.
+- **창의적 설명:** 각 날짜의 `theme`과 각 활동의 `activity_description`을 사용자가 기대할 만한 매력적인 문장으로 작성해주세요.
 
-다. 동선 최적화:
-일일 스케줄은 이동 시간을 최소화하고 왔던 길을 되돌아가지 않도록 지리적으로 최적화되어야 합니다.
-
-라. 최종 출력 형식:
-당신은 반드시 하나의 깔끔한 JSON 객체로만 응답해야 합니다. JSON 외부에는 어떠한 설명도 추가하지 마세요. 구조는 다음과 같아야 합니다:
-
+**출력 JSON 구조:**
 {{
-  "plan_a": {{
-    "title": "1안 제목",
-    "concept": "1안 컨셉 설명",
+  "itinerary": {{
+    "title": "여행 일정 제목",
+    "concept": "여행 컨셉 설명",
     "daily_plans": [
       {{
         "day": 1,
@@ -189,28 +218,6 @@ class AdvancedItineraryService:
             "time": "09:00 - 11:00",
             "place_name": "장소명",
             "activity_description": "활동 설명",
-            "transportation_details": "교통 정보",
-            "place_id": "선택한 장소의 place_id",
-            "lat": 위도,
-            "lng": 경도
-          }}
-        ]
-      }}
-    ]
-  }},
-  "plan_b": {{
-    "title": "2안 제목",
-    "concept": "2안 컨셉 설명",
-    "daily_plans": [
-      {{
-        "day": 1,
-        "theme": "첫째 날 테마 (1안과 다른 스타일)",
-        "activities": [
-          {{
-            "time": "09:00 - 11:00",
-            "place_name": "장소명",
-            "activity_description": "활동 설명",
-            "transportation_details": "교통 정보",
             "place_id": "선택한 장소의 place_id",
             "lat": 위도,
             "lng": 경도
@@ -226,8 +233,14 @@ class AdvancedItineraryService:
             content = await self.ai_service.generate_text(prompt2, max_tokens=4000)
             
             # JSON 파싱
-            ai_plans = json.loads(content)
-            return ai_plans
+            ai_response = json.loads(content)
+            
+            # 새로운 응답 구조 처리 (단일 itinerary)
+            if "itinerary" in ai_response:
+                return ai_response
+            else:
+                # 기본 계획 반환
+                return self._create_basic_plans(request, place_pool)
             
         except Exception as e:
             logger.error(f"3단계 AI 큐레이션 실패: {str(e)}")
@@ -292,12 +305,13 @@ class AdvancedItineraryService:
                 places=used_places
             )
         
-        plan_a = create_travel_plan(ai_plans.get("plan_a", {}))
-        plan_b = create_travel_plan(ai_plans.get("plan_b", {}))
+        # 단일 itinerary 구조 처리
+        itinerary_data = ai_plans.get("itinerary", {})
+        main_plan = create_travel_plan(itinerary_data)
         
         return GenerateResponse(
-            plan_a=plan_a,
-            plan_b=plan_b,
+            plan_a=main_plan,
+            plan_b=main_plan,  # 호환성을 위해 동일한 계획 제공
             request_id=request_id,
             generated_at=datetime.now().isoformat()
         )
@@ -442,7 +456,7 @@ class AdvancedItineraryService:
     def _create_basic_plans(self, request: GenerateRequest, place_pool: List[Dict[str, Any]]) -> Dict[str, Any]:
         """기본 계획을 생성합니다"""
         return {
-            "plan_a": {
+            "itinerary": {
                 "title": f"{request.city} 클래식 여행",
                 "concept": "전통적인 관광 중심의 여행",
                 "daily_plans": [

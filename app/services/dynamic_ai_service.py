@@ -101,13 +101,9 @@ class DynamicAIService:
             else:
                 return await self._generate_with_openai(prompt, max_tokens)
         except Exception as e:
-            logger.error(f"{current_provider} AI 생성 실패, 대체 제공자로 시도: {e}")
-            
-            # 현재 제공자가 실패하면 다른 제공자로 시도
-            if current_provider == "gemini":
-                return await self._generate_with_openai(prompt, max_tokens)
-            else:
-                return await self._generate_with_gemini(prompt, max_tokens)
+            logger.error(f"{current_provider} AI 생성 실패: {e}")
+            # 다른 AI로 재시도하지 않고, 예외를 그대로 올려 fallback 처리
+            raise
     
     async def _generate_with_openai(self, prompt: str, max_tokens: int) -> str:
         """OpenAI를 사용하여 텍스트 생성"""
