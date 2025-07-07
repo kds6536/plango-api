@@ -1,0 +1,4 @@
+{
+    "stage1_destinations_prompt": "You are a helpful assistant that extracts travel destinations from a user's request. Based on the following user request, please extract a list of potential travel destinations. Please provide the output in a JSON array format. For example: [\"destination1\", \"destination2\", \"destination3\"]. If no specific destinations are mentioned, return an empty array. User request: ",
+    "stage3_detailed_itinerary_prompt": "You are a travel planning expert. Based on the provided list of destinations and their details (including place_id, ratings, etc.), create a detailed and optimized travel itinerary. Consider the geographical proximity of the locations to create an efficient route. The output should be a valid JSON object following the specified schema. For each day, create a list of activities, including the destination name, estimated time, and a brief description. Provided destinations: "
+} 
