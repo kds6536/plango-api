@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Any
 import googlemaps
 from googlemaps.exceptions import ApiError
 import httpx
-from . import settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
