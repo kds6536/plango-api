@@ -1,26 +1,69 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import logging
 import json
 import traceback
-
-from app.routers import (
-    health,
-    itinerary,
-    new_itinerary,
-    places,
-    destinations,
-    admin
-)
+import time
 from app.utils.logger import get_logger
 
-# --- 기존 FastAPI 앱 인스턴스 생성 및 로거 설정 ---
-app = FastAPI()
+# --- 로거 및 앱 인스턴스 ---
 logger = get_logger(__name__)
+app = FastAPI()
 
-# --- 상세 에러 로깅 핸들러 추가 ---
+# --- 로깅 미들웨어 추가 ---
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    
+    # 요청 본문을 읽기 위해 별도의 함수로 처리
+    request_body = await request.body()
+    
+    # 요청 정보 로깅
+    log_dict = {
+        "method": request.method,
+        "url": str(request.url),
+        "headers": {k.decode(): v.decode() for k, v in request.headers.raw},
+    }
+    if request_body:
+        try:
+            log_dict["body"] = json.loads(request_body)
+        except json.JSONDecodeError:
+            log_dict["body"] = request_body.decode('utf-8', errors='ignore')
 
+    logger.info(f"--- Request --- \n{json.dumps(log_dict, indent=2, ensure_ascii=False)}")
+    
+    # 응답 생성
+    response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    
+    # 응답 정보 로깅
+    response_log_dict = {
+        "status_code": response.status_code,
+        "process_time_ms": round(process_time * 1000),
+    }
+
+    # 응답 본문은 스트리밍될 수 있으므로 안전하게 처리
+    try:
+        response_body = b""
+        async for chunk in response.body_iterator:
+            response_body += chunk
+        
+        if response_body:
+             response_log_dict["body"] = json.loads(response_body)
+        
+        logger.info(f"--- Response --- \n{json.dumps(response_log_dict, indent=2, ensure_ascii=False)}")
+
+        # 한 번 읽은 body_iterator를 다시 사용할 수 없으므로, 새로 response를 만들어 반환
+        return Response(content=response_body, status_code=response.status_code, headers=dict(response.headers), media_type=response.media_type)
+
+    except Exception as e:
+        logger.error(f"Response logging failed: {e}")
+        return response
+
+
+# --- 기존 예외 핸들러 ---
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """FastAPI의 유효성 검사 오류를 더 자세히 로깅합니다."""

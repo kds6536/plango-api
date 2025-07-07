@@ -3,6 +3,7 @@
 import os
 from typing import List
 from pydantic_settings import BaseSettings
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     # API 키
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
-    GOOGLE_PLACES_API_KEY: str = ""
+    # GOOGLE_PLACES_API_KEY: str = ""
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     
@@ -53,6 +54,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"
     
+    # --- GOOGLE_PLACES_API_KEY를 Maps Platform API Key로 변경 ---
+    # GOOGLE_PLACES_API_KEY: str = ""
+    MAPS_PLATFORM_API_KEY: str = Field(default="", alias="Maps Platform API Key")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

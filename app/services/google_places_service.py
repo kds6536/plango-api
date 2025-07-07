@@ -8,6 +8,8 @@ import logging
 from typing import List, Dict, Optional, Any
 import googlemaps
 from googlemaps.exceptions import ApiError
+import httpx
+from . import settings
 
 logger = logging.getLogger(__name__)
 
@@ -15,15 +17,14 @@ class GooglePlacesService:
     """Google Places API를 사용하여 장소 정보를 가져오는 서비스"""
     
     def __init__(self):
-        """Google Maps 클라이언트 초기화"""
-        # Railway에서는 "Maps Platform API Key"로 설정됨
-        self.api_key = os.getenv("Maps Platform API Key") or os.getenv("GOOGLE_PLACES_API_KEY")
+        # --- Maps Platform API Key만 사용하도록 수정 ---
+        self.api_key = settings.MAPS_PLATFORM_API_KEY
         if not self.api_key:
-            logger.warning("Google Maps Platform API 키가 설정되지 않았습니다.")
-            self.gmaps = None
-        else:
-            self.gmaps = googlemaps.Client(key=self.api_key)
-            logger.info("Google Maps Platform API 클라이언트 초기화 완료")
+            logger.error("Maps Platform API Key가 설정되지 않았습니다.")
+            raise ValueError("API 키가 누락되었습니다.")
+        
+        self.client = googlemaps.Client(key=self.api_key)
+        self.session = httpx.AsyncClient()
     
     async def search_places(
         self, 
@@ -44,7 +45,7 @@ class GooglePlacesService:
         Returns:
             장소 정보 리스트
         """
-        if not self.gmaps:
+        if not self.client:
             logger.error("Google Places API 클라이언트가 초기화되지 않았습니다.")
             return []
         
@@ -54,7 +55,7 @@ class GooglePlacesService:
                 # 위치를 좌표로 변환 (필요한 경우)
                 location_coords = await self._get_coordinates(location)
                 if location_coords:
-                    results = self.gmaps.places_nearby(
+                    results = self.client.places_nearby(
                         location=location_coords,
                         radius=radius,
                         keyword=query,
@@ -62,13 +63,13 @@ class GooglePlacesService:
                     )
                 else:
                     # 텍스트 검색으로 대체
-                    results = self.gmaps.places(
+                    results = self.client.places(
                         query=f"{query} in {location}",
                         type=place_type
                     )
             else:
                 # 일반 텍스트 검색
-                results = self.gmaps.places(
+                results = self.client.places(
                     query=query,
                     type=place_type
                 )
@@ -100,12 +101,12 @@ class GooglePlacesService:
         Returns:
             장소 상세 정보
         """
-        if not self.gmaps:
+        if not self.client:
             logger.error("Google Places API 클라이언트가 초기화되지 않았습니다.")
             return None
         
         try:
-            result = self.gmaps.place(
+            result = self.client.place(
                 place_id=place_id,
                 fields=[
                     'name', 'formatted_address', 'geometry',
@@ -182,11 +183,11 @@ class GooglePlacesService:
         Returns:
             (위도, 경도) 튜플
         """
-        if not self.gmaps:
+        if not self.client:
             return None
         
         try:
-            geocode_result = self.gmaps.geocode(location)
+            geocode_result = self.client.geocode(location)
             if geocode_result:
                 location_data = geocode_result[0]['geometry']['location']
                 return (location_data['lat'], location_data['lng'])
@@ -278,7 +279,7 @@ class GooglePlacesService:
         Returns:
             최적화된 경로 정보
         """
-        if not self.gmaps:
+        if not self.client:
             logger.error("Google Maps API 클라이언트가 초기화되지 않았습니다.")
             return {}
         
@@ -304,7 +305,7 @@ class GooglePlacesService:
                 waypoints.append(f"{place['lat']},{place['lng']}")
             
             # 구글 다이렉션 API 호출
-            directions_result = self.gmaps.directions(
+            directions_result = self.client.directions(
                 origin=origin,
                 destination=destination,
                 waypoints=waypoints,
