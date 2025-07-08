@@ -50,12 +50,13 @@ class DynamicAIService:
             
             with open(settings_file, 'r', encoding='utf-8') as f:
                 settings_data = json.load(f)
-                return settings_data.get("provider", "openai")
+                # 기본값을 'gemini'로 변경
+                return settings_data.get("provider", "gemini")
         except Exception as e:
             logger.error(f"AI 설정 파일 읽기 실패: {e}")
         
-        # 기본값은 OpenAI
-        return "openai"
+        # 기본값을 'gemini'로 변경
+        return "gemini"
     
     def _create_default_settings_file(self, settings_file: str):
         """기본 AI 설정 파일 생성"""
@@ -64,7 +65,8 @@ class DynamicAIService:
             os.makedirs(os.path.dirname(settings_file), exist_ok=True)
             
             default_settings = {
-                "provider": "openai",
+                # 기본 제공자를 'gemini'로 변경
+                "provider": "gemini",
                 "last_updated": "2025-01-02T00:00:00Z",
                 "settings": {
                     "openai": {
@@ -92,6 +94,7 @@ class DynamicAIService:
         """
         현재 설정된 AI 제공자를 사용하여 텍스트 생성
         """
+        # provider를 generate_text 호출 시마다 실시간으로 읽음
         current_provider = self._get_current_provider()
         
         # === Railway 로그: AI 호출 시작 ===
