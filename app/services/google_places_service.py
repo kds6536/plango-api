@@ -31,49 +31,53 @@ class GooglePlacesService:
 
     async def enrich_places_data(self, place_names: List[str], city: str) -> List[Dict[str, Any]]:
         """
-        장소 이름 목록을 실제 데이터로 강화 (2단계용) - find_place 사용
+        장소 이름 목록을 실제 데이터로 강화 (2단계용) - Places API (New) HTTP 직접 호출
         """
-        if not self.gmaps:
-            logger.error("Google Places API 클라이언트가 초기화되지 않았습니다.")
+        if not self.api_key:
+            logger.error("MAPS_PLATFORM_API_KEY가 설정되지 않았습니다.")
             return []
 
         enriched_places = []
-        for place_name in place_names:
-            try:
-                # find_place는 query 파라미터를 지원하지 않으므로 text_search로 대체
-                result = await asyncio.to_thread(
-                    self.gmaps.places,
-                    query=f"{place_name} {city}",
-                    language='ko'
-                )
-
-                if result and result.get('results'):
-                    place = result['results'][0]
-                    location = place.get('geometry', {}).get('location', {})
-                    place_data = {
-                        "place_id": place.get("place_id"),
-                        "name": place.get("name"),
-                        "address": place.get("formatted_address"),
-                        "rating": place.get("rating"),
-                        "user_ratings_total": place.get("user_ratings_total"),
-                        "latitude": location.get("lat"),
-                        "longitude": location.get("lng"),
+        url = "https://places.googleapis.com/v1/places:searchText"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.api_key,
+            "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount"
+        }
+        async with httpx.AsyncClient() as client:
+            for place_name in place_names:
+                try:
+                    data = {
+                        "textQuery": f"{place_name} {city}"
                     }
-                    enriched_places.append(place_data)
-                    logger.info(f"📍 [GOOGLE_SUCCESS] 장소 데이터 강화 완료: {place_name} -> {place.get('name')}")
-                else:
-                    logger.warning(f"⚠️ [GOOGLE_EMPTY] 장소를 찾을 수 없습니다: {place_name} in {city}")
-            except Exception as e:
-                logger.error("=" * 80)
-                logger.error(f"❌ [GOOGLE_ERROR] Google Places API 호출 중 오류 발생")
-                logger.error(f"🔎 [PLACE_NAME] {place_name}")
-                logger.error(f"🏙️ [CITY] {city}")
-                logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
-                logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
-                logger.error(f"🔗 [TRACEBACK] {traceback.format_exc()}")
-                logger.error("=" * 80)
-                continue
-        
+                    response = await client.post(url, headers=headers, json=data)
+                    result = response.json()
+                    if result and result.get('places'):
+                        place = result['places'][0]
+                        location = place.get('location', {})
+                        place_data = {
+                            "place_id": place.get("id"),
+                            "name": place.get("displayName", {}).get("text"),
+                            "address": place.get("formattedAddress"),
+                            "rating": place.get("rating"),
+                            "user_ratings_total": place.get("userRatingCount"),
+                            "latitude": location.get("latitude"),
+                            "longitude": location.get("longitude"),
+                        }
+                        enriched_places.append(place_data)
+                        logger.info(f"📍 [GOOGLE_SUCCESS] 장소 데이터 강화 완료: {place_name} -> {place_data['name']}")
+                    else:
+                        logger.warning(f"⚠️ [GOOGLE_EMPTY] 장소를 찾을 수 없습니다: {place_name} in {city}")
+                except Exception as e:
+                    logger.error("=" * 80)
+                    logger.error(f"❌ [GOOGLE_ERROR] Google Places API (New) 호출 중 오류 발생")
+                    logger.error(f"🔎 [PLACE_NAME] {place_name}")
+                    logger.error(f"🏙️ [CITY] {city}")
+                    logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
+                    logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
+                    logger.error(f"🔗 [TRACEBACK] {traceback.format_exc()}")
+                    logger.error("=" * 80)
+                    continue
         return enriched_places
 
     async def get_place_details(self, place_id: str) -> Optional[Dict[str, Any]]:
