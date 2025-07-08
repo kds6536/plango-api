@@ -332,7 +332,10 @@ class AdvancedItineraryService:
                 day_plan = DayPlan(
                     day=day_data.get("day", 1),
                     theme=day_data.get("theme", ""),
-                    activities=activities
+                    activities=activities,
+                    meals=day_data.get("meals", {"breakfast": "불포함", "lunch": "불포함", "dinner": "불포함"}),
+                    transportation=day_data.get("transportation", ["도보"]),
+                    estimated_cost=day_data.get("estimated_cost", "0원")
                 )
                 daily_plans.append(day_plan)
             
