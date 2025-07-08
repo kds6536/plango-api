@@ -329,10 +329,22 @@ class AdvancedItineraryService:
                                 used_places.append(place_data)
                                 break
                 
+                # ActivityDetail → ActivityItem 변환
+                activities_item = [
+                    ActivityItem(
+                        time=getattr(a, "time", "09:00"),
+                        activity=getattr(a, "activity_description", getattr(a, "place_name", "")),
+                        location=getattr(a, "place_name", ""),
+                        description=getattr(a, "activity_description", ""),
+                        duration="2시간",  # 기본값 또는 추후 계산
+                        cost=None,
+                        tips=None
+                    ) for a in activities
+                ]
                 day_plan = DayPlan(
                     day=day_data.get("day", 1),
                     theme=day_data.get("theme", ""),
-                    activities=activities,
+                    activities=activities_item,
                     meals=day_data.get("meals", {"breakfast": "불포함", "lunch": "불포함", "dinner": "불포함"}),
                     transportation=day_data.get("transportation", ["도보"]),
                     estimated_cost=day_data.get("estimated_cost", "0원")
