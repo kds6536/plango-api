@@ -40,15 +40,15 @@ class GooglePlacesService:
         enriched_places = []
         for place_name in place_names:
             try:
+                # find_place는 query 파라미터를 지원하지 않으므로 text_search로 대체
                 result = await asyncio.to_thread(
-                    self.gmaps.find_place,
+                    self.gmaps.places,
                     query=f"{place_name} {city}",
-                    language='ko',
-                    fields=['place_id', 'name', 'formatted_address', 'rating', 'user_ratings_total', 'photos', 'geometry']
+                    language='ko'
                 )
 
-                if result and result.get('candidates'):
-                    place = result['candidates'][0]
+                if result and result.get('results'):
+                    place = result['results'][0]
                     location = place.get('geometry', {}).get('location', {})
                     place_data = {
                         "place_id": place.get("place_id"),

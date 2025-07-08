@@ -11,6 +11,7 @@ import google.generativeai as genai
 
 from app.config import settings
 from app.utils.logger import get_logger
+from app.routers.admin import load_ai_settings_from_db
 
 logger = get_logger(__name__)
 
@@ -40,23 +41,13 @@ class DynamicAIService:
             logger.error(f"AI 클라이언트 초기화 실패: {e}")
     
     def _get_current_provider(self) -> str:
-        """현재 설정된 AI 제공자를 가져오기"""
+        """현재 설정된 AI 제공자를 Supabase DB에서 가져오기"""
         try:
-            settings_file = "app/data/ai_settings.json"
-            
-            # 파일이 없으면 기본 설정으로 생성
-            if not os.path.exists(settings_file):
-                self._create_default_settings_file(settings_file)
-            
-            with open(settings_file, 'r', encoding='utf-8') as f:
-                settings_data = json.load(f)
-                # 기본값을 'gemini'로 변경
-                return settings_data.get("provider", "gemini")
+            settings_dict = load_ai_settings_from_db()
+            return settings_dict.get("default_provider", "gemini")
         except Exception as e:
-            logger.error(f"AI 설정 파일 읽기 실패: {e}")
-        
-        # 기본값을 'gemini'로 변경
-        return "gemini"
+            logger.error(f"AI provider DB 조회 실패: {e}")
+            return "gemini"
     
     def _create_default_settings_file(self, settings_file: str):
         """기본 AI 설정 파일 생성"""
