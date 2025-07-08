@@ -93,15 +93,34 @@ class DynamicAIService:
         현재 설정된 AI 제공자를 사용하여 텍스트 생성
         """
         current_provider = self._get_current_provider()
-        logger.info(f"현재 AI 제공자: {current_provider}")
+        
+        # === Railway 로그: AI 호출 시작 ===
+        logger.info(f"🤖 [AI_START] AI 텍스트 생성 시작")
+        logger.info(f"🔧 [AI_PROVIDER] 현재 AI 제공자: {current_provider}")
+        logger.info(f"📏 [PROMPT_LENGTH] 프롬프트 길이: {len(prompt)} 글자")
+        logger.info(f"🎛️ [MAX_TOKENS] 최대 토큰: {max_tokens}")
+        logger.info(f"📝 [PROMPT_PREVIEW] 프롬프트 미리보기: {prompt[:200]}...")
         
         try:
             if current_provider == "gemini":
-                return await self._generate_with_gemini(prompt, max_tokens)
+                logger.info(f"🟢 [AI_GEMINI] Google Gemini로 텍스트 생성 시작")
+                result = await self._generate_with_gemini(prompt, max_tokens)
             else:
-                return await self._generate_with_openai(prompt, max_tokens)
+                logger.info(f"🔵 [AI_OPENAI] OpenAI로 텍스트 생성 시작")
+                result = await self._generate_with_openai(prompt, max_tokens)
+            
+            # === Railway 로그: AI 호출 성공 ===
+            logger.info(f"✅ [AI_SUCCESS] AI 텍스트 생성 완료")
+            logger.info(f"📊 [RESULT_LENGTH] 응답 길이: {len(result)} 글자")
+            logger.info(f"📄 [RESULT_PREVIEW] 응답 미리보기: {result[:200]}...")
+            
+            return result
+            
         except Exception as e:
-            logger.error(f"{current_provider} AI 생성 실패: {e}")
+            # === Railway 로그: AI 호출 실패 ===
+            logger.error(f"❌ [AI_ERROR] {current_provider} AI 생성 실패")
+            logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
+            logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
             # 다른 AI로 재시도하지 않고, 예외를 그대로 올려 fallback 처리
             raise
     

@@ -68,12 +68,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content=jsonable_encoder({"detail": exc.errors()}),
     )
 
-# 라우터 등록
+# 라우터 등록 - 새로운 4단계 프로세스 우선 적용
 app.include_router(admin.router)
 app.include_router(destinations.router)
 app.include_router(health.router)
-app.include_router(itinerary.router)
-app.include_router(new_itinerary.router)
+# app.include_router(itinerary.router)  # 기존 라우터 비활성화 - 새로운 4단계 프로세스로 대체
+app.include_router(new_itinerary.router)  # 새로운 4단계 프로세스 라우터 활성화
 app.include_router(places.router)
 
 @app.get("/")

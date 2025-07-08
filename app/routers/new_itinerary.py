@@ -67,27 +67,62 @@ async def generate_itinerary(
     start_time = time.time()
     
     try:
-        logger.info(f"🎯 여행 일정 생성 요청: {request.city}, {request.duration}일")
+        # === Railway 로그: 라우터 요청 시작 ===
+        logger.info("=" * 100)
+        logger.info(f"🌐 [ROUTER_START] 여행 일정 생성 API 요청 접수")
+        logger.info(f"🏙️ [REQUEST_CITY] {request.city}")
+        logger.info(f"📅 [REQUEST_DURATION] {request.duration}일")
+        logger.info(f"💰 [REQUEST_BUDGET] {request.budget_range}")
+        logger.info(f"👥 [REQUEST_TRAVELERS] {request.travelers_count}명")
+        logger.info(f"🎨 [REQUEST_STYLE] {request.travel_style}")
+        logger.info(f"📝 [REQUEST_SPECIAL] {request.special_requests}")
+        logger.info("=" * 100)
         
         # 입력 검증
+        logger.info(f"🔍 [VALIDATION_START] 입력 데이터 검증 시작")
         if not request.city or not request.city.strip():
+            logger.error(f"❌ [VALIDATION_ERROR] 도시명이 누락됨")
             raise HTTPException(status_code=400, detail="도시명이 필요합니다")
         
         if request.duration < 1 or request.duration > 30:
+            logger.error(f"❌ [VALIDATION_ERROR] 여행 기간 범위 초과: {request.duration}일")
             raise HTTPException(status_code=400, detail="여행 기간은 1-30일 사이여야 합니다")
         
+        logger.info(f"✅ [VALIDATION_SUCCESS] 입력 데이터 검증 완료")
+        
         # 4단계 프로세스 실행
+        logger.info(f"🚀 [SERVICE_START] AdvancedItineraryService 4단계 프로세스 시작")
         response = await service.generate_itinerary(request)
         
         generation_time = time.time() - start_time
-        logger.info(f"✅ 여행 일정 생성 완료: {generation_time:.2f}초")
+        logger.info("=" * 100)
+        logger.info(f"🎉 [ROUTER_SUCCESS] 여행 일정 생성 API 완료: {generation_time:.2f}초")
+        logger.info(f"📋 [RESPONSE_PLAN_A] {response.plan_a.title}")
+        logger.info(f"📋 [RESPONSE_PLAN_B] {response.plan_b.title}")
+        logger.info(f"🆔 [RESPONSE_ID] {response.request_id}")
+        logger.info("=" * 100)
         
         return response
         
-    except HTTPException:
+    except HTTPException as he:
+        # === Railway 로그: HTTP 예외 ===
+        logger.error("=" * 100)
+        logger.error(f"⚠️ [HTTP_EXCEPTION] HTTP 예외 발생")
+        logger.error(f"🔢 [STATUS_CODE] {he.status_code}")
+        logger.error(f"📝 [DETAIL] {he.detail}")
+        logger.error("=" * 100)
         raise
     except Exception as e:
-        logger.error(f"❌ 여행 일정 생성 실패: {str(e)}")
+        # === Railway 로그: 서버 에러 ===
+        generation_time = time.time() - start_time
+        logger.error("=" * 100)
+        logger.error(f"💥 [SERVER_ERROR] 여행 일정 생성 서버 오류 발생")
+        logger.error(f"⏱️ [ERROR_TIME] {generation_time:.2f}초 경과 후 실패")
+        logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
+        logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
+        import traceback
+        logger.error(f"🔍 [ERROR_TRACEBACK] {traceback.format_exc()}")
+        logger.error("=" * 100)
         raise HTTPException(
             status_code=500, 
             detail=f"여행 일정 생성 중 오류가 발생했습니다: {str(e)}"

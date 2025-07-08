@@ -403,10 +403,18 @@ class GooglePlacesService:
         Returns:
             상세 정보가 포함된 장소 데이터 목록
         """
+        # === Railway 로그: 2단계 시작 ===
+        logger.info(f"🌍 [GOOGLE_PLACES_START] 구글 플레이스 API 데이터 강화 시작")
+        logger.info(f"🏙️ [TARGET_CITY] {city}")
+        logger.info(f"📋 [PLACE_NAMES] {place_names}")
+        logger.info(f"🔢 [TOTAL_PLACES] {len(place_names)}개 장소 처리 예정")
+        
         enriched_places = []
         
-        for place_name in place_names:
+        for i, place_name in enumerate(place_names, 1):
             try:
+                logger.info(f"🔍 [SEARCH_{i}/{len(place_names)}] '{place_name}' 검색 시작")
+                
                 # 장소 검색
                 places = await self.search_places(
                     query=f"{place_name} {city}",
@@ -417,15 +425,20 @@ class GooglePlacesService:
                     # 첫 번째 결과를 선택
                     place = places[0]
                     enriched_places.append(place)
-                    logger.info(f"장소 데이터 강화 완료: {place_name}")
+                    logger.info(f"✅ [SEARCH_SUCCESS_{i}] '{place_name}' → '{place.get('name', 'N/A')}'")
+                    logger.info(f"📍 [PLACE_DETAILS_{i}] 주소: {place.get('address', 'N/A')}, 평점: {place.get('rating', 'N/A')}")
                 else:
-                    logger.warning(f"장소를 찾을 수 없습니다: {place_name}")
+                    logger.warning(f"⚠️ [SEARCH_EMPTY_{i}] '{place_name}' 검색 결과 없음")
                     
             except Exception as e:
-                logger.error(f"장소 데이터 강화 실패 ({place_name}): {e}")
+                logger.error(f"❌ [SEARCH_ERROR_{i}] '{place_name}' 검색 실패: {str(e)}")
                 continue
         
-        logger.info(f"총 {len(enriched_places)}개 장소 데이터 강화 완료")
+        # === Railway 로그: 2단계 완료 ===
+        logger.info(f"🎉 [GOOGLE_PLACES_COMPLETE] 구글 플레이스 API 데이터 강화 완료")
+        logger.info(f"📊 [SUCCESS_RATE] {len(enriched_places)}/{len(place_names)} 성공 ({len(enriched_places)/len(place_names)*100:.1f}%)")
+        logger.info(f"🏛️ [ENRICHED_PLACES] {[place.get('name', 'N/A') for place in enriched_places]}")
+        
         return enriched_places
 
 # 싱글톤 인스턴스

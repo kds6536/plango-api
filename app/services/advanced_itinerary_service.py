@@ -10,6 +10,7 @@
 import os
 import json
 import uuid
+import traceback
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -38,29 +39,66 @@ class AdvancedItineraryService:
         4단계 프로세스로 여행 일정을 생성합니다
         """
         request_id = str(uuid.uuid4())
-        logger.info(f"여행 일정 생성 시작 [{request_id}]: {request.city}, {request.duration}일")
+        
+        # === Railway 로그: 요청 시작 ===
+        logger.info("=" * 80)
+        logger.info(f"🚀 [REQUEST_START] 여행 일정 생성 요청 시작")
+        logger.info(f"📋 [REQUEST_ID] {request_id}")
+        logger.info(f"🏙️ [CITY] {request.city}")
+        logger.info(f"📅 [DURATION] {request.duration}일")
+        logger.info(f"💰 [BUDGET] {request.budget_range}")
+        logger.info(f"👥 [TRAVELERS] {request.travelers_count}명")
+        logger.info(f"🎨 [STYLE] {request.travel_style}")
+        logger.info(f"📝 [REQUESTS] {request.special_requests}")
+        logger.info("=" * 80)
         
         try:
-            # 1단계: AI 브레인스토밍 - 장소 이름 후보군 생성
+            # === 1단계: AI 브레인스토밍 ===
+            logger.info(f"🧠 [STEP_1_START] AI 브레인스토밍 시작 - 장소 후보군 생성")
             place_candidates = await self._step1_ai_brainstorming(request)
-            logger.info(f"1단계 완료: {len(place_candidates)}개 카테고리의 장소 후보 생성")
+            logger.info(f"✅ [STEP_1_SUCCESS] AI 브레인스토밍 완료")
+            logger.info(f"📊 [STEP_1_RESULT] {len(place_candidates)}개 카테고리의 장소 후보 생성")
+            logger.info(f"📝 [STEP_1_CATEGORIES] {list(place_candidates.keys())}")
             
-            # 2단계: 구글 플레이스 API 정보 강화
+            # === 2단계: 구글 플레이스 API 정보 강화 ===
+            logger.info(f"🌍 [STEP_2_START] 구글 플레이스 API 정보 강화 시작")
             place_pool = await self._step2_google_places_enrichment(place_candidates, request.city)
-            logger.info(f"2단계 완료: {len(place_pool)}개 장소 데이터 풀 생성")
+            logger.info(f"✅ [STEP_2_SUCCESS] 구글 플레이스 API 정보 강화 완료")
+            logger.info(f"📊 [STEP_2_RESULT] {len(place_pool)}개 장소 데이터 풀 생성")
+            for i, place in enumerate(place_pool[:5]):  # 처음 5개만 로그
+                logger.info(f"📍 [STEP_2_PLACE_{i+1}] {place.get('name', 'N/A')} - {place.get('address', 'N/A')}")
             
-            # 3단계: AI 큐레이션 - 1안/2안 분할 및 상세 일정 구성
+            # === 3단계: AI 큐레이션 ===
+            logger.info(f"🎨 [STEP_3_START] AI 큐레이션 시작 - 1안/2안 분할 및 상세 일정 구성")
             ai_plans = await self._step3_ai_curation(request, place_pool)
-            logger.info(f"3단계 완료: 1안/2안 큐레이션 완료")
+            logger.info(f"✅ [STEP_3_SUCCESS] AI 큐레이션 완료")
+            logger.info(f"📊 [STEP_3_RESULT] 1안/2안 큐레이션 완료")
             
-            # 4단계: 최종 JSON 조립
+            # === 4단계: 최종 JSON 조립 ===
+            logger.info(f"🔧 [STEP_4_START] 최종 JSON 조립 시작")
             final_response = self._step4_json_assembly(ai_plans, place_pool, request_id)
-            logger.info(f"4단계 완료: 최종 응답 생성 [{request_id}]")
+            logger.info(f"✅ [STEP_4_SUCCESS] 최종 JSON 조립 완료")
+            logger.info(f"📊 [STEP_4_RESULT] Plan A: '{final_response.plan_a.title}', Plan B: '{final_response.plan_b.title}'")
+            
+            # === Railway 로그: 전체 완료 ===
+            logger.info("=" * 80)
+            logger.info(f"🎉 [REQUEST_SUCCESS] 여행 일정 생성 완료 [{request_id}]")
+            logger.info(f"📋 [FINAL_PLAN_A] {final_response.plan_a.title}")
+            logger.info(f"📋 [FINAL_PLAN_B] {final_response.plan_b.title}")
+            logger.info(f"🏛️ [TOTAL_PLACES] {len(final_response.plan_a.places)}개 장소 포함")
+            logger.info("=" * 80)
             
             return final_response
             
         except Exception as e:
-            logger.error(f"여행 일정 생성 실패 [{request_id}]: {str(e)}")
+            # === Railway 로그: 에러 상세 ===
+            logger.error("=" * 80)
+            logger.error(f"❌ [REQUEST_ERROR] 여행 일정 생성 실패 [{request_id}]")
+            logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
+            logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
+            logger.error(f"🔍 [ERROR_TRACEBACK] {traceback.format_exc()}")
+            logger.error("=" * 80)
+            
             # 실패 시 기본 응답 반환
             return self._create_fallback_response(request, request_id)
 
