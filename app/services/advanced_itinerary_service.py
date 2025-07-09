@@ -96,7 +96,7 @@ class AdvancedItineraryService:
             logger.error(f"❌ [REQUEST_ERROR] 여행 일정 생성 실패 [{request_id}]")
             logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
             logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
-            logger.error(f"🔍 [ERROR_TRACEBACK] {traceback.format_exc()}")
+            logger.error(f"🔍 [ERROR_TRACEBACK] {traceback.format_exc()}", exc_info=True)
             logger.error("=" * 80)
             
             # 실패 시 기본 응답 반환
@@ -479,26 +479,30 @@ class AdvancedItineraryService:
 
     def _create_fallback_response(self, request: GenerateRequest, request_id: str) -> GenerateResponse:
         """AI 실패 시 기본 응답을 생성합니다"""
-        basic_activity = ActivityDetail(
-            time="09:00 - 12:00",
-            place_name=f"{request.city} 대표 관광지",
-            activity_description="현지 주요 명소를 방문합니다",
-            transportation_details="대중교통 이용"
-        )
-        
+        # DayPlan의 필수 필드에 맞게 ActivityItem 타입 dict, meals, transportation, estimated_cost 모두 채움
+        basic_activity = {
+            "time": "09:00 - 12:00",
+            "activity": "대표 관광지 방문",
+            "location": f"{request.city} 대표 관광지",
+            "description": "현지 주요 명소를 방문합니다",
+            "duration": "3시간",
+            "cost": None,
+            "tips": None
+        }
         basic_day = DayPlan(
             day=1,
             theme="기본 여행 일정",
-            activities=[basic_activity]
+            activities=[basic_activity],
+            meals={},
+            transportation=[],
+            estimated_cost="0원"
         )
-        
         basic_plan = TravelPlan(
             title=f"{request.city} 기본 여행",
             concept="기본적인 여행 계획",
             daily_plans=[basic_day],
             places=[]
         )
-        
         return GenerateResponse(
             plan_a=basic_plan,
             plan_b=basic_plan,
