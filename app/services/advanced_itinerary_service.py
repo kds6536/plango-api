@@ -19,7 +19,7 @@ from app.schemas.itinerary import (
     TravelPlan, DayPlan, ActivityDetail, PlaceData
 )
 from app.services.google_places_service import GooglePlacesService
-from app.services.dynamic_ai_service import dynamic_ai_service
+from app.services.ai_handlers import OpenAIHandler, GeminiHandler
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,9 +30,23 @@ class AdvancedItineraryService:
     
     def __init__(self):
         # 서비스 초기화
-        self.ai_service = dynamic_ai_service
+        from app.config import settings
+        import openai
+        import google.generativeai as genai
+        self.settings = settings
+        self.openai_client = openai.OpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        self.gemini_client = genai if settings.GEMINI_API_KEY else None
+        self.model_name_openai = getattr(settings, "OPENAI_MODEL", "gpt-3.5-turbo")
+        self.model_name_gemini = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
         self.google_places = GooglePlacesService()
-        logger.info("AdvancedItineraryService 초기화 완료 - Dynamic AI Service 연결됨")
+        logger.info("AdvancedItineraryService 초기화 완료 - AI 핸들러 패턴 적용")
+
+    def _get_ai_handler(self):
+        provider = getattr(self.settings, "AI_PROVIDER", "openai").lower()
+        if provider == "gemini":
+            return GeminiHandler(self.gemini_client, self.model_name_gemini)
+        else:
+            return OpenAIHandler(self.openai_client, self.model_name_openai)
 
     async def generate_itinerary(self, request: GenerateRequest) -> GenerateResponse:
         """
@@ -144,35 +158,25 @@ class AdvancedItineraryService:
   ]
 }}"""
         try:
-            content = await self.ai_service.generate_text(prompt1, max_tokens=1500)
-            if not content:
-                logger.error("1단계 AI 브레인스토밍 실패: AI가 빈 응답을 보냈습니다.")
-                raise ValueError("AI returned an empty response")
-            ai_response = json.loads(content)
+            handler = self._get_ai_handler()
+            raw_response = await handler.get_completion(prompt1)
+            logger.info(f"🤖 [AI_RAW_RESPONSE] from {type(handler).__name__}: {raw_response}")
+            ai_response = handler.parse_json_response(raw_response)
             if not ai_response.get("search_keywords"):
                 logger.error("1단계 결과물에 search_keywords가 없어 2단계를 진행할 수 없습니다.")
                 raise ValueError("No search_keywords in AI response")
             # 새로운 응답 구조에서 카테고리별 키워드 추출
             place_candidates = {}
-            if "search_keywords" in ai_response:
-                for keyword_info in ai_response["search_keywords"]:
-                    category = keyword_info.get("category", "activity")
-                    keyword = keyword_info.get("keyword", "")
-                    
-                    if category not in place_candidates:
-                        place_candidates[category] = []
-                    place_candidates[category].append(keyword)
-            
-            # 테마 정보 저장 (나중에 사용)
+            for keyword_info in ai_response["search_keywords"]:
+                category = keyword_info.get("category", "activity")
+                keyword = keyword_info.get("keyword", "")
+                if category not in place_candidates:
+                    place_candidates[category] = []
+                place_candidates[category].append(keyword)
             self.travel_theme = ai_response.get("theme", f"{request.city} 여행")
-            
             return place_candidates
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"1단계 AI 브레인스토밍 실패 (JSON 파싱 오류): {e}")
-            raise
         except Exception as e:
-            logger.error(f"1단계 AI 브레인스토밍 중 예상치 못한 에러: {e}")
+            logger.error(f"1단계 AI 브레인스토밍 실패: {e}", exc_info=True)
             raise
 
     async def _step2_google_places_enrichment(
