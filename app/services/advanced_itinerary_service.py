@@ -21,6 +21,7 @@ from app.schemas.itinerary import (
 from app.services.google_places_service import GooglePlacesService
 from app.services.ai_handlers import OpenAIHandler, GeminiHandler
 from app.utils.logger import get_logger
+from app.routers.admin import load_ai_settings_from_db, load_prompts_from_db
 
 logger = get_logger(__name__)
 
@@ -42,11 +43,14 @@ class AdvancedItineraryService:
         logger.info("AdvancedItineraryService 초기화 완료 - AI 핸들러 패턴 적용")
 
     def _get_ai_handler(self):
-        provider = getattr(self.settings, "AI_PROVIDER", "openai").lower()
+        settings_dict = load_ai_settings_from_db()
+        provider = settings_dict.get("default_provider", "openai").lower()
+        openai_model = settings_dict.get("openai_model_name", "gpt-3.5-turbo")
+        gemini_model = settings_dict.get("gemini_model_name", "gemini-1.5-flash")
         if provider == "gemini":
-            return GeminiHandler(self.gemini_client, self.model_name_gemini)
+            return GeminiHandler(self.gemini_client, gemini_model)
         else:
-            return OpenAIHandler(self.openai_client, self.model_name_openai)
+            return OpenAIHandler(self.openai_client, openai_model)
 
     async def generate_itinerary(self, request: GenerateRequest) -> GenerateResponse:
         """
@@ -123,40 +127,18 @@ class AdvancedItineraryService:
         """
         1단계: AI 브레인스토밍 - 장소 이름 후보군 생성
         """
-        prompt1 = f"""당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트이자 키워드 추출 전문가입니다.
-당신의 임무는 사용자의 여행 요청을 분석하여, 여행의 핵심 테마를 정의하고, 그 테마에 맞는 활동들을 검색 가능한 '키워드'로 구조화하는 것입니다.
-
-**사용자 여행 정보:**
-- 목적지: {request.city}
-- 기간: {request.duration}일
-- 예산: {getattr(request, 'budget_range', 'medium')}
-- 여행 스타일: {getattr(request, 'travel_style', [])}
-- 특별 요청사항: {request.special_requests or '일반적인 여행'}
-
-**## 지시사항 ##**
-1. **입력 분석:** 사용자가 제공한 여행 정보를 완벽하게 분석합니다.
-2. **테마 설정:** 분석 내용을 바탕으로 여행의 전체적인 컨셉을 한 문장으로 정의합니다.
-3. **키워드 추출:** 사용자의 요청을 충족시킬 수 있는 장소나 활동 유형을 '검색어' 형태로 생성합니다.
-4. **응답 형식:** 당신의 답변은 **반드시** 아래에 명시된 구조의 **JSON 객체 하나**여야 합니다. 다른 설명은 절대 추가하지 마세요.
-
-**## 핵심 규칙 (매우 중요) ##**
-- **절대 특정 상호명이나 장소명을 제안하지 마세요.** (예: '이치란 라멘' (X) -> '{request.city} 현지인 추천 돈코츠 라멘 맛집' (O))
-- 키워드는 사용자의 숨은 니즈를 반영해야 합니다.
-- 카테고리는 'food', 'activity', 'healing', 'history', 'shopping', 'nature' 중에서 선택하세요.
-- 우선순위는 사용자가 명시적으로 언급한 요청에 따라 'high', 'medium', 'low'로 설정하세요.
-
-**응답 JSON 구조:**
-{{
-  "theme": "여행 테마 한 문장",
-  "search_keywords": [
-    {{
-      "keyword": "검색 키워드",
-      "category": "카테고리",
-      "priority": "우선순위",
-      "description": "키워드 설명"
-    }}
-  ]
-}}"""
+        prompts_dict = load_prompts_from_db()
+        prompt1 = prompts_dict.get("stage1_destinations_prompt")
+        if not prompt1:
+            prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트이자 키워드 추출 전문가입니다.\n사용자의 요청: {request.city}, {request.duration}일, {getattr(request, 'budget_range', 'medium')}, {getattr(request, 'travel_style', [])}, {request.special_requests or '일반적인 여행'}"
+        # 기존 프롬프트의 {request.city} 등 변수 치환
+        prompt1 = prompt1.format(
+            city=request.city,
+            duration=request.duration,
+            budget=getattr(request, 'budget_range', 'medium'),
+            travel_style=getattr(request, 'travel_style', []),
+            special_requests=request.special_requests or '일반적인 여행'
+        )
         try:
             handler = self._get_ai_handler()
             raw_response = await handler.get_completion(prompt1)
@@ -218,7 +200,10 @@ class AdvancedItineraryService:
         """
         travel_dates = f"Day 1 to Day {request.duration}"
         
-        prompt2 = f"""당신은 'Plango AI'라는 이름의 최고의 여행 일정 설계 전문가입니다.
+        prompts_dict = load_prompts_from_db()
+        prompt2 = prompts_dict.get("stage2_itinerary_prompt")
+        if not prompt2:
+            prompt2 = f"""당신은 'Plango AI'라는 이름의 최고의 여행 일정 설계 전문가입니다.
 당신의 임무는 사전 검증된 장소 목록과 사용자의 원래 요청사항을 바탕으로, 가장 효율적이고 매력적인 일일 여행 계획을 수립하는 것입니다.
 
 **사용자의 원래 요청사항:**
@@ -268,7 +253,6 @@ class AdvancedItineraryService:
     ]
   }}
 }}"""
-
         try:
             # Dynamic AI Service 사용
             content = await self.ai_service.generate_text(prompt2, max_tokens=4000)
