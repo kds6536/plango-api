@@ -63,6 +63,9 @@ class AdvancedItineraryService:
             # === 2단계: 구글 플레이스 API 정보 강화 ===
             logger.info(f"🌍 [STEP_2_START] 구글 플레이스 API 정보 강화 시작")
             place_pool = await self._step2_google_places_enrichment(place_candidates, request.city)
+            if not place_pool:
+                logger.error("2단계 결과, 유효한 장소를 찾지 못해 3단계를 진행할 수 없습니다.")
+                raise ValueError("No valid places found in Step 2")
             logger.info(f"✅ [STEP_2_SUCCESS] 구글 플레이스 API 정보 강화 완료")
             logger.info(f"📊 [STEP_2_RESULT] {len(place_pool)}개 장소 데이터 풀 생성")
             for i, place in enumerate(place_pool[:5]):  # 처음 5개만 로그
@@ -140,14 +143,15 @@ class AdvancedItineraryService:
     }}
   ]
 }}"""
-
         try:
-            # Dynamic AI Service 사용
             content = await self.ai_service.generate_text(prompt1, max_tokens=1500)
-            
-            # JSON 파싱
+            if not content:
+                logger.error("1단계 AI 브레인스토밍 실패: AI가 빈 응답을 보냈습니다.")
+                raise ValueError("AI returned an empty response")
             ai_response = json.loads(content)
-            
+            if not ai_response.get("search_keywords"):
+                logger.error("1단계 결과물에 search_keywords가 없어 2단계를 진행할 수 없습니다.")
+                raise ValueError("No search_keywords in AI response")
             # 새로운 응답 구조에서 카테고리별 키워드 추출
             place_candidates = {}
             if "search_keywords" in ai_response:
@@ -164,17 +168,12 @@ class AdvancedItineraryService:
             
             return place_candidates
             
+        except json.JSONDecodeError as e:
+            logger.error(f"1단계 AI 브레인스토밍 실패 (JSON 파싱 오류): {e}")
+            raise
         except Exception as e:
-            logger.error(f"1단계 AI 브레인스토밍 실패: {str(e)}")
-            # 기본 후보 반환
-            return {
-                "food": [f"{request.city} 맛집", f"{request.city} 현지 음식"],
-                "activity": [f"{request.city} 관광명소", f"{request.city} 액티비티"],
-                "healing": [f"{request.city} 카페", f"{request.city} 힐링 스팟"],
-                "history": [f"{request.city} 박물관", f"{request.city} 역사 유적지"],
-                "shopping": [f"{request.city} 쇼핑몰", f"{request.city} 시장"],
-                "nature": [f"{request.city} 공원", f"{request.city} 자연 명소"]
-            }
+            logger.error(f"1단계 AI 브레인스토밍 중 예상치 못한 에러: {e}")
+            raise
 
     async def _step2_google_places_enrichment(
         self, 
