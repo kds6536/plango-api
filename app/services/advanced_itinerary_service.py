@@ -57,6 +57,7 @@ class AdvancedItineraryService:
         4단계 프로세스로 여행 일정을 생성합니다
         """
         request_id = str(uuid.uuid4())
+        raw_response = None
         
         # === Railway 로그: 요청 시작 ===
         logger.info("=" * 80)
@@ -118,12 +119,19 @@ class AdvancedItineraryService:
             logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
             logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
             logger.error(f"🔍 [ERROR_TRACEBACK] {traceback.format_exc()}", exc_info=True)
+            # raw_response가 있으면 AI 원본 응답도 로그에 남김
+            if 'raw_response' in locals() and raw_response:
+                logger.error(f"📝 [AI_RAW_RESPONSE] {raw_response}")
             logger.error("=" * 80)
-            # 실패 시 기본 응답 반환 (fallback)
+            
+            # 실패 시 기본 응답 반환 + fallback 플래그/에러 메시지 포함
             fallback = self._create_fallback_response(request, request_id)
-            # fallback 응답에 상태 및 에러 메시지 추가
-            fallback.status = "fallback"
-            fallback.error_message = str(e)
+            # fallback 응답에 status, error_message 속성 추가 (Pydantic 모델에 따라 setattr)
+            try:
+                setattr(fallback, 'status', 'fallback')
+                setattr(fallback, 'error_message', str(e))
+            except Exception:
+                pass
             return fallback
 
     async def _step1_ai_brainstorming(self, request: GenerateRequest) -> Dict[str, List[str]]:
@@ -148,7 +156,7 @@ class AdvancedItineraryService:
             logger.info(f"🤖 [AI_RAW_RESPONSE] from {type(handler).__name__}: {raw_response}")
             ai_response = handler.parse_json_response(raw_response)
             if not ai_response.get("search_keywords"):
-                logger.error("1단계 결과물에 search_keywords가 없어 2단계를 진행할 수 없습니다.")
+                logger.error(f"1단계 결과물에 search_keywords가 없어 2단계를 진행할 수 없습니다. 실제 응답: {ai_response}")
                 raise ValueError("No search_keywords in AI response")
             # 새로운 응답 구조에서 카테고리별 키워드 추출
             place_candidates = {}
@@ -161,7 +169,7 @@ class AdvancedItineraryService:
             self.travel_theme = ai_response.get("theme", f"{request.city} 여행")
             return place_candidates
         except Exception as e:
-            logger.error(f"1단계 AI 브레인스토밍 실패: {e}", exc_info=True)
+            logger.error(f"1단계 AI 브레인스토밍 실패: {e} | 원본 응답: {locals().get('raw_response')}", exc_info=True)
             raise
 
     async def _step2_google_places_enrichment(
@@ -493,12 +501,19 @@ class AdvancedItineraryService:
             daily_plans=[basic_day],
             places=[]
         )
-        return GenerateResponse(
+        fallback_response = GenerateResponse(
             plan_a=basic_plan,
             plan_b=basic_plan,
             request_id=request_id,
             generated_at=datetime.now().isoformat()
         )
+        # fallback 응답에 status, error_message 속성 추가 (Pydantic 모델에 따라 setattr)
+        try:
+            setattr(fallback_response, 'status', 'fallback')
+            setattr(fallback_response, 'error_message', "AI 응답 분석 실패로 기본 응답으로 대체되었습니다.")
+        except Exception:
+            pass
+        return fallback_response
 
     def _create_basic_plans(self, request: GenerateRequest, place_pool: List[Dict[str, Any]]) -> Dict[str, Any]:
         """기본 계획을 생성합니다"""
