@@ -267,18 +267,26 @@ class AdvancedItineraryService:
         try:
             # Dynamic AI Service 사용 → 1단계와 동일하게 AI 핸들러 사용
             handler = self._get_ai_handler()
+            # [디버깅 로그 추가] AI에게 보낼 최종 프롬프트를 정확히 로깅
+            logger.info(f"📜 [STEP_3_PROMPT] 3단계 AI에게 보낼 최종 프롬프트:\n{prompt2}")
             content = await handler.get_completion(prompt2)
-            
-            # JSON 파싱
+            # [방어 코드 추가] AI 원본 응답을 먼저 로깅
+            logger.info(f"🤖 [AI_RAW_RESPONSE] 3단계 AI 원본 응답: '{content}'")
+            # [방어 코드 추가] 응답이 비어있는지 확인
+            if not content or not content.strip():
+                logger.error("❌ 3단계 AI 큐레이션 실패: AI가 빈 응답을 반환했습니다.")
+                raise ValueError("AI returned an empty or whitespace-only response.")
             ai_response = json.loads(content)
-            
+            # [방어 코드 추가] 파싱된 결과가 유효한지 확인
+            if not ai_response.get("itinerary"):
+                logger.error("❌ 3단계 AI 큐레이션 실패: 파싱된 JSON에 'itinerary' 키가 없습니다.")
+                raise ValueError("Parsed JSON from AI is missing the 'itinerary' key.")
             # 새로운 응답 구조 처리 (단일 itinerary)
-            if "itinerary" in ai_response:
-                return ai_response
-            else:
-                # 기본 계획 반환
-                return self._create_basic_plans(request, place_pool)
-            
+            return ai_response
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"❌ 3단계 AI 큐레이션 실패: {e}", exc_info=False)
+            # 기본 계획 반환
+            return self._create_basic_plans(request, place_pool)
         except Exception as e:
             logger.error(f"3단계 AI 큐레이션 실패: {str(e)}")
             # 기본 계획 반환
