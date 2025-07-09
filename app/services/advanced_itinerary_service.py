@@ -36,7 +36,7 @@ class AdvancedItineraryService:
         import openai
         import google.generativeai as genai
         self.settings = settings
-        self.openai_client = openai.OpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        self.openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
         self.gemini_client = genai if settings.GEMINI_API_KEY else None
         self.model_name_openai = getattr(settings, "OPENAI_MODEL", "gpt-3.5-turbo")
         self.model_name_gemini = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
