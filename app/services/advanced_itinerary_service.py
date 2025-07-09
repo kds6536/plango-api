@@ -265,8 +265,9 @@ class AdvancedItineraryService:
   }}
 }}"""
         try:
-            # Dynamic AI Service 사용
-            content = await self.ai_service.generate_text(prompt2, max_tokens=4000)
+            # Dynamic AI Service 사용 → 1단계와 동일하게 AI 핸들러 사용
+            handler = self._get_ai_handler()
+            content = await handler.get_completion(prompt2)
             
             # JSON 파싱
             ai_response = json.loads(content)
