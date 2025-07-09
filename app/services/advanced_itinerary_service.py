@@ -22,6 +22,7 @@ from app.services.google_places_service import GooglePlacesService
 from app.services.ai_handlers import OpenAIHandler, GeminiHandler
 from app.utils.logger import get_logger
 from app.routers.admin import load_ai_settings_from_db, load_prompts_from_db
+from fastapi import HTTPException
 
 logger = get_logger(__name__)
 
@@ -141,15 +142,21 @@ class AdvancedItineraryService:
         prompts_dict = load_prompts_from_db()
         prompt1 = prompts_dict.get("stage1_destinations_prompt")
         if not prompt1:
-            prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트이자 키워드 추출 전문가입니다.\n사용자의 요청: {request.city}, {request.duration}일, {getattr(request, 'budget_range', 'medium')}, {getattr(request, 'travel_style', [])}, {request.special_requests or '일반적인 여행'}"
-        # 기존 프롬프트의 {request.city} 등 변수 치환
-        prompt1 = prompt1.format(
-            city=request.city,
-            duration=request.duration,
-            budget=getattr(request, 'budget_range', 'medium'),
-            travel_style=getattr(request, 'travel_style', []),
-            special_requests=request.special_requests or '일반적인 여행'
-        )
+            prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.\n사용자의 요청: {request.city}, {request.duration}일, {getattr(request, 'budget_range', 'medium')}, {getattr(request, 'travel_style', [])}, {request.special_requests or '일반적인 여행'}"
+        # format에 들어갈 모든 키워드에 대해 기본값 포함 dict 생성
+        format_dict = {
+            "city": request.city,
+            "duration": request.duration,
+            "budget": getattr(request, 'budget_range', 'medium'),
+            "travel_style": getattr(request, 'travel_style', []),
+            "special_requests": request.special_requests or '일반적인 여행',
+            "main_theme": "",
+        }
+        try:
+            prompt1 = prompt1.format(**format_dict)
+        except KeyError as e:
+            logger.error(f"프롬프트 format KeyError: {e} | 프롬프트: {prompt1}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"프롬프트 format KeyError: {e}")
         try:
             handler = self._get_ai_handler()
             raw_response = await handler.get_completion(prompt1)
@@ -157,7 +164,7 @@ class AdvancedItineraryService:
             ai_response = handler.parse_json_response(raw_response)
             if not ai_response.get("search_keywords"):
                 logger.error(f"1단계 결과물에 search_keywords가 없어 2단계를 진행할 수 없습니다. 실제 응답: {ai_response}")
-                raise ValueError("No search_keywords in AI response")
+                raise HTTPException(status_code=500, detail="No search_keywords in AI response")
             # 새로운 응답 구조에서 카테고리별 키워드 추출
             place_candidates = {}
             for keyword_info in ai_response["search_keywords"]:
@@ -168,9 +175,11 @@ class AdvancedItineraryService:
                 place_candidates[category].append(keyword)
             self.travel_theme = ai_response.get("theme", f"{request.city} 여행")
             return place_candidates
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"1단계 AI 브레인스토밍 실패: {e} | 원본 응답: {locals().get('raw_response')}", exc_info=True)
-            raise
+            raise HTTPException(status_code=500, detail=f"AI 브레인스토밍 실패: {e}")
 
     async def _step2_google_places_enrichment(
         self, 
