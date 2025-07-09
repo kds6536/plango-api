@@ -119,9 +119,12 @@ class AdvancedItineraryService:
             logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
             logger.error(f"🔍 [ERROR_TRACEBACK] {traceback.format_exc()}", exc_info=True)
             logger.error("=" * 80)
-            
-            # 실패 시 기본 응답 반환
-            return self._create_fallback_response(request, request_id)
+            # 실패 시 기본 응답 반환 (fallback)
+            fallback = self._create_fallback_response(request, request_id)
+            # fallback 응답에 상태 및 에러 메시지 추가
+            fallback.status = "fallback"
+            fallback.error_message = str(e)
+            return fallback
 
     async def _step1_ai_brainstorming(self, request: GenerateRequest) -> Dict[str, List[str]]:
         """
