@@ -16,7 +16,7 @@ from typing import Dict, List, Any, Optional
 
 from app.schemas.itinerary import (
     GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse,
-    TravelPlan, DayPlan, ActivityDetail, PlaceData
+    TravelPlan, DayPlan, ActivityDetail, PlaceData, ActivityItem
 )
 from app.services.google_places_service import GooglePlacesService
 from app.services.ai_handlers import OpenAIHandler, GeminiHandler
@@ -120,20 +120,11 @@ class AdvancedItineraryService:
             logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
             logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
             logger.error(f"🔍 [ERROR_TRACEBACK] {traceback.format_exc()}", exc_info=True)
-            # raw_response가 있으면 AI 원본 응답도 로그에 남김
             if 'raw_response' in locals() and raw_response:
                 logger.error(f"📝 [AI_RAW_RESPONSE] {raw_response}")
             logger.error("=" * 80)
-            
-            # 실패 시 기본 응답 반환 + fallback 플래그/에러 메시지 포함
-            fallback = self._create_fallback_response(request, request_id)
-            # fallback 응답에 status, error_message 속성 추가 (Pydantic 모델에 따라 setattr)
-            try:
-                setattr(fallback, 'status', 'fallback')
-                setattr(fallback, 'error_message', str(e))
-            except Exception:
-                pass
-            return fallback
+            # fallback 응답 대신 HTTPException 발생
+            raise HTTPException(status_code=500, detail=f"여행 일정 생성 중 오류 발생: {str(e)}")
 
     async def _step1_ai_brainstorming(self, request: GenerateRequest) -> Dict[str, List[str]]:
         """
