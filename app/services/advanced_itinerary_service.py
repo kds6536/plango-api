@@ -135,7 +135,7 @@ class AdvancedItineraryService:
 
             # 3. 1차 장소 정보 강화
             logger.info("🌍 [STEP 3] 1차 장소 정보 강화 시작")
-            place_results = await self._step3_enhance_places(ai_keywords, language_code)
+            place_results = await self._step3_enhance_places(ai_keywords, request.city, language_code)
 
             # 4. 1차 후처리 및 검증
             logger.info("📊 [STEP 4] 1차 후처리 및 검증 시작")
@@ -269,7 +269,7 @@ class AdvancedItineraryService:
             logger.error(f"❌ 2단계 AI 브레인스토밍 중 예상치 못한 오류 발생: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"AI 브레인스토밍 실패: {e}")
 
-    async def _step3_enhance_places(self, keywords_by_category, language_code):
+    async def _step3_enhance_places(self, keywords_by_category, city: str, language_code: str):
         """
         3단계: Google Places API 정보 강화 (병렬 호출)
         """
@@ -277,12 +277,18 @@ class AdvancedItineraryService:
         for category, keywords in keywords_by_category.items():
             if not keywords:
                 continue
+            
+            # 카테고리별 결과를 저장할 리스트 초기화
+            place_results[category] = []
+            
             logger.info(f"🌍 [STEP_3_GOOGLE_CALL] 카테고리 '{category}'에 대한 Google Places API 호출 시작")
             for keyword in keywords:
                 try:
-                    place_data = await self.google_places.get_place_details(keyword, language_code)
+                    # get_place_details 호출 시 city 정보 추가
+                    place_data = await self.google_places.get_place_details(keyword, city, language_code)
                     if place_data:
-                        place_results[keyword] = place_data
+                        # 반환된 place_data가 단일 dict이므로, 리스트에 바로 추가
+                        place_results[category].append(place_data)
                         logger.info(f"✅ [STEP_3_GOOGLE_SUCCESS] 장소 '{keyword}' 정보 강화 완료")
                     else:
                         logger.warning(f"⚠️ [STEP_3_GOOGLE_WARNING] 장소 '{keyword}' 정보 강화 실패 또는 데이터 없음")
@@ -357,7 +363,7 @@ class AdvancedItineraryService:
         new_ai_keywords = await self._step2_ai_brainstorming(request, lang, new_keywords_by_category)
 
         # 3단계 Google Places API 정보 강화 (추가 검색)
-        new_place_results = await self._step3_enhance_places(new_ai_keywords, lang)
+        new_place_results = await self._step3_enhance_places(new_ai_keywords, request.city, lang)
 
         # 4단계 후처리 및 검증 (추가 검색)
         new_final_recommendations = self._step4_process_and_filter(new_place_results)

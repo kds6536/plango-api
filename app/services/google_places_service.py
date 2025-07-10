@@ -95,29 +95,58 @@ class GooglePlacesService:
             })
         return enriched_places
 
-    async def get_place_details(self, place_id: str) -> Optional[Dict[str, Any]]:
+    async def get_place_details(self, keyword: str, city: str, language_code: str) -> Optional[Dict[str, Any]]:
         """
-        장소 ID로 상세 정보 가져오기
+        키워드와 도시 이름으로 장소를 검색하고 상세 정보를 반환합니다. (searchText 사용)
         """
-        if not self.gmaps:
-            logger.error("Google Places API 클라이언트가 초기화되지 않았습니다.")
+        if not self.api_key:
+            logger.error("MAPS_PLATFORM_API_KEY가 설정되지 않았습니다.")
             return None
+
+        url = "https://places.googleapis.com/v1/places:searchText"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.api_key,
+            "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.photos"
+        }
         
+        # 도시 정보가 포함된 검색어 생성
+        text_query = f"{keyword} in {city}"
+
         try:
-            result = self.gmaps.place(
-                place_id=place_id,
-                fields=["name", "formatted_address", "rating", "user_ratings_total", "geometry", "photos", "reviews", "website", "opening_hours", "international_phone_number"],
-                language="ko",
-            )
-            return result.get('result')
+            data = {"textQuery": text_query, "languageCode": language_code}
+            async with self.session as client:
+                response = await client.post(url, headers=headers, json=data)
+                response.raise_for_status()  # HTTP 에러 발생 시 예외 처리
+                result = response.json()
+
+                if result and result.get('places'):
+                    place = result['places'][0]
+                    location = place.get('location', {})
+                    photos = place.get('photos', [])
+                    
+                    photo_url = None
+                    if photos and photos[0].get('name'):
+                        photo_name = photos[0]['name']
+                        photo_url = f"https://places.googleapis.com/v1/{photo_name}/media?maxHeightPx=400&key={self.api_key}"
+
+                    return {
+                        "place_id": place.get("id"),
+                        "name": place.get("displayName", {}).get("text"),
+                        "address": place.get("formattedAddress"),
+                        "rating": place.get("rating"),
+                        "lat": location.get("latitude"),
+                        "lng": location.get("longitude"),
+                        "photo_url": photo_url
+                    }
+                else:
+                    logger.warning(f"⚠️ [GOOGLE_EMPTY] 장소를 찾을 수 없습니다: {text_query}")
+                    return None
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ [GOOGLE_HTTP_ERROR] API 요청 실패: {text_query}, Status: {e.response.status_code}, Response: {e.response.text}")
+            return None
         except Exception as e:
-            logger.error("=" * 80)
-            logger.error(f"❌ [GOOGLE_ERROR] Google Place Details API 호출 실패")
-            logger.error(f"🔎 [PLACE_ID] {place_id}")
-            logger.error(f"🚨 [ERROR_TYPE] {type(e).__name__}")
-            logger.error(f"📝 [ERROR_MESSAGE] {str(e)}")
-            logger.error(f"🔗 [TRACEBACK] {traceback.format_exc()}")
-            logger.error("=" * 80)
+            logger.error(f"❌ [GOOGLE_ERROR] Google Places API 호출 중 오류: {text_query} - {e}", exc_info=True)
             return None
 
     async def get_optimized_route(self, waypoints: List[str]) -> Dict:
