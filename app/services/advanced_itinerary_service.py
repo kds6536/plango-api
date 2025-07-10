@@ -146,6 +146,15 @@ class AdvancedItineraryService:
             final_recommendations = await self._step5_ensure_minimum_count(
                 final_recommendations, request, language_code, ai_keywords
             )
+            
+            # [추가] 최종 결과가 비어있는지 확인하고, 비어있다면 404 에러를 발생시킵니다.
+            if not final_recommendations:
+                logger.warning("모든 카테고리에서 최소 추천 개수를 만족하는 장소를 찾지 못해, 에러를 반환합니다.")
+                raise HTTPException(
+                    status_code=404, 
+                    detail="AI가 추천할 만한 장소를 찾지 못했습니다. 요청사항을 좀 더 구체적으로 작성해보세요."
+                )
+
             return final_recommendations
         except Exception as e:
             logger.error(f"추천 생성 프로세스 실패: {e}", exc_info=True)
