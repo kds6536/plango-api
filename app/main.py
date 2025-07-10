@@ -6,6 +6,11 @@ import json
 import traceback
 import time
 from app.utils.logger import get_logger
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.routers import health, admin, new_itinerary, places
+from app.utils.logger import setup_logging
+from app.config import settings
 
 # --- 로거 및 앱 인스턴스 ---
 logger = get_logger(__name__)
@@ -85,13 +90,13 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 # --- 기존 라우터 포함 로직 ---
-@app.get("/")
+@app.get("/", summary="루트 경로", description="API 서버의 루트 경로입니다.")
 def read_root():
     return {"message": "Welcome to PlanGo API"}
 
+setup_logging()
+
 app.include_router(health.router)
-app.include_router(itinerary.router)
 app.include_router(new_itinerary.router)
-app.include_router(places.router)
-app.include_router(destinations.router)
-app.include_router(admin.router) 
+app.include_router(admin.router)
+app.include_router(places.router) 

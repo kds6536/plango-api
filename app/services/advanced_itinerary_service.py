@@ -169,15 +169,16 @@ class AdvancedItineraryService:
         prompt1 = prompts_dict.get("stage1_destinations_prompt")
         if not prompt1:
             prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.\n사용자의 요청: {request.city}, {request.duration}일, {getattr(request, 'budget_range', 'medium')}, {getattr(request, 'travel_style', [])}, {request.special_requests or '일반적인 여행'}"
-        # format에 들어갈 모든 키워드에 대해 기본값 포함 dict 생성
+        
         format_dict = {
             "city": request.city,
             "duration": request.duration,
             "budget": getattr(request, 'budget_range', 'medium'),
             "travel_style": getattr(request, 'travel_style', []),
             "special_requests": request.special_requests or '일반적인 여행',
-            "main_theme": "",
+            "main_theme": ""
         }
+        
         try:
             prompt1 = prompt1.format(**format_dict)
         except KeyError as e:
