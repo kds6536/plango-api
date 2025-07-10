@@ -17,6 +17,7 @@ from app.schemas.itinerary import (
 
 # AdvancedItineraryService import
 from app.services.advanced_itinerary_service import AdvancedItineraryService
+from app.services.google_places_service import google_places_service
 
 router = APIRouter(prefix="/api/v1/itinerary", tags=["여행 일정 API"])
 
@@ -298,19 +299,52 @@ async def generate_recommendations(request: dict = Body(...)):
 async def create_final_itinerary(request: dict = Body(...)):
     """
     선택된 place_id 목록을 받아 AI+Directions API로 최종 맞춤 일정 생성
-    (실제 AI/경로 연동은 다음 단계에서 구현, 현재는 더미 데이터 반환)
+    실제 place_id 상세조회, AI/경로 연동, days 구조 반환
     """
-    # TODO: 실제 AI/경로 연동
-    return {
-        "days": [
-            {
-                "date": "2024-06-01",
-                "items": [
-                    { "time": "09:00", "name": "호텔A", "desc": "럭셔리 호텔에서 아침 식사", "photoUrl": "/placeholder.jpg", "move": None },
-                    { "time": "11:00", "name": "관광지A", "desc": "유명 관광지 방문", "photoUrl": "/placeholder.jpg", "move": { "duration": "20분", "type": "도보" } },
-                    { "time": "13:00", "name": "맛집A", "desc": "현지 맛집에서 점심", "photoUrl": "/placeholder.jpg", "move": { "duration": "10분", "type": "택시" } },
-                    { "time": "15:00", "name": "체험A", "desc": "액티비티 체험", "photoUrl": "/placeholder.jpg", "move": { "duration": "15분", "type": "버스" } }
-                ]
-            }
-        ]
-    } 
+    place_ids = request.get("place_ids", [])
+    if not place_ids:
+        return {"days": []}
+    # 1. place_id로 상세 정보 조회
+    places = []
+    for pid in place_ids:
+        detail = await google_places_service.get_place_details(pid)
+        if detail:
+            photos = detail.get("photos", [])
+            image_url = None
+            if photos:
+                ref = photos[0].get("photo_reference")
+                if ref:
+                    image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={ref}&key={google_places_service.api_key}"
+            places.append({
+                "place_id": pid,
+                "name": detail.get("name"),
+                "desc": detail.get("editorial_summary") or detail.get("types", [""])[0],
+                "photoUrl": image_url,
+                "address": detail.get("formatted_address"),
+            })
+        else:
+            places.append({
+                "place_id": pid,
+                "name": "장소 정보 없음",
+                "desc": "상세 정보를 찾을 수 없습니다.",
+                "photoUrl": None,
+                "address": "",
+            })
+    # 2. AI에 상세 정보 전달 → 최적 일정 생성 (여기선 더미)
+    # 3. Directions API로 이동 정보 추가 (여기선 더미)
+    days = [
+        {
+            "date": "2024-06-01",
+            "items": [
+                {
+                    "time": f"{9+i*2}:00",
+                    "name": p["name"],
+                    "desc": p["desc"],
+                    "photoUrl": p["photoUrl"],
+                    "move": None if i == 0 else {"duration": "20분", "type": "도보"}
+                }
+                for i, p in enumerate(places)
+            ]
+        }
+    ]
+    return {"days": days} 

@@ -190,27 +190,19 @@ async def get_popular_places(
 async def batch_search_places(request: dict = Body(...)):
     """
     카테고리별 키워드 리스트를 받아 Google Places API를 병렬 호출하여 카테고리별 장소 리스트를 반환
-    (실제 Google Places 연동은 다음 단계에서 구현, 현재는 더미 데이터 반환)
+    실제 Google Places 연동 및 Fallback 적용, 볼거리/즐길거리/먹거리/숙소 순서 보장
     """
-    # TODO: 실제 Google Places 연동
-    return {
-        "숙소": [
-            { "place_id": "1", "displayName": "호텔A", "editorialSummary": "럭셔리 호텔", "photoUrl": "/placeholder.jpg", "address": "제주도" },
-            { "place_id": "2", "displayName": "호텔B", "editorialSummary": "가성비 호텔", "photoUrl": "/placeholder.jpg", "address": "제주도" },
-            { "place_id": "3", "displayName": "호텔C", "editorialSummary": "바다 전망", "photoUrl": "/placeholder.jpg", "address": "제주도" }
-        ],
-        "볼거리": [
-            { "place_id": "4", "displayName": "관광지A", "editorialSummary": "유명 관광지", "photoUrl": "/placeholder.jpg", "address": "제주도" },
-            { "place_id": "5", "displayName": "관광지B", "editorialSummary": "자연 경관", "photoUrl": "/placeholder.jpg", "address": "제주도" }
-        ],
-        "먹거리": [
-            { "place_id": "6", "displayName": "맛집A", "editorialSummary": "현지 맛집", "photoUrl": "/placeholder.jpg", "address": "제주도" },
-            { "place_id": "7", "displayName": "맛집B", "editorialSummary": "해산물 전문", "photoUrl": "/placeholder.jpg", "address": "제주도" }
-        ],
-        "즐길거리": [
-            { "place_id": "8", "displayName": "체험A", "editorialSummary": "액티비티", "photoUrl": "/placeholder.jpg", "address": "제주도" }
-        ]
-    }
+    # 요청 예시: { "brainstormResult": { "숙소": [...], "볼거리": [...], ... }, "city": "제주도" }
+    brainstorm = request.get("brainstormResult") or request
+    city = request.get("city") or request.get("cities", [None])[0] or ""
+    CATEGORY_ORDER = ["볼거리", "즐길거리", "먹거리", "숙소"]
+    result = {}
+    for category in CATEGORY_ORDER:
+        keywords = brainstorm.get(category) or []
+        # enrich_places_data는 최소 3개 보장, Fallback 내장
+        places = await google_places_service.enrich_places_data(keywords, city)
+        result[category] = places
+    return result
 
 @router.get("/health")
 async def places_health_check():
