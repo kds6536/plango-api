@@ -37,4 +37,4 @@ app.include_router(places.router)
 @app.get("/", summary="루트 경로", description="API 서버의 루트 경로입니다.")
 def read_root():
     """API 서버의 루트 경로"""
-    return {"message": f"Welcome to {settings.PROJECT_NAME}!"} 
+    return {"message": f"Welcome to {settings.PROJECT_NAME}!"}
