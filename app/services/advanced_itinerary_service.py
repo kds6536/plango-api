@@ -202,76 +202,62 @@ class AdvancedItineraryService:
         2단계: AI 브레인스토밍 - 장소 후보군 생성 (카테고리별 키워드 요청)
         """
         prompts_dict = load_prompts_from_db()
-        prompt2 = prompts_dict.get("stage2_destinations_prompt")
-        if not prompt2:
-            prompt2 = f"""당신은 'Plango AI'라는 이름의 최고의 여행 추천 전문가입니다.
-당신의 임무는 사용자의 여행 요청사항을 바탕으로, 가장 매력적이고 다양한 장소 후보를 추천하는 것입니다.
+        # [수정] 프롬프트 내용을 조금 더 명확하게 변경하고, 키워드 요청 개수를 7개로 늘립니다.
+        prompt_template = prompts_dict.get("stage2_destinations_prompt", """
+당신은 'Plango AI'라는 이름의 여행지 추천 전문가입니다. 사용자의 요청사항을 기반으로, 방문할 만한 장소에 대한 키워드를 카테고리별로 추천해주세요.
 
-**사용자의 원래 요청사항:**
-- 목적지: {request.city}
-- 여행 기간: {request.duration}일
-- 예산: {getattr(request, 'budget_range', 'medium')}
-- 여행 스타일: {getattr(request, 'travel_style', [])}
-- 특별 요청사항: {request.special_requests or '일반적인 여행'}
+**사용자 요청:**
+- 목적지: {destination}
+- 여행 기간: {duration}일
+- 예산: {budget}
+- 특별 요청사항: {special_requests}
 
 **## 지시사항 ##**
-1. **입력 분석:** 사용자의 원래 요청사항을 해석하여, 각 카테고리별로 최대 10개의 장소 키워드를 추천합니다.
-2. **카테고리 분류:** 추천된 키워드들을 적절한 카테고리로 분류합니다.
-3. **중복 제거:** 이전 단계에서 이미 추천된 키워드가 있으면 제외합니다.
-4. **언어 지원:** 사용자의 언어 설정을 반영하여 추천 키워드를 다국어로 제공합니다.
-5. **응답 형식:** 당신의 답변은 **반드시** 아래에 명시된 구조의 **JSON 객체**여야 합니다. 다른 설명은 절대 추가하지 마세요.
+1. **카테고리 분류:** "숙소", "볼거리", "먹거리", "즐길거리" 4가지 카테고리로 나누어 추천합니다.
+2. **키워드 생성:** 각 카테고리별로, 연관성이 높은 장소 키워드를 **7개**씩 생성해주세요.
+3. **구체적인 이름:** "맛집"이나 "호텔" 같은 일반적인 단어 대신, "현지인들이 자주 가는 파스타 맛집" 또는 "바다 전망이 좋은 부티크 호텔"처럼 구체적인 키워드를 제안해야 합니다.
+4. **언어 설정:** 모든 키워드는 "{language}"로 작성해주세요.
+5. **JSON 형식 준수:** 답변은 반드시 아래 JSON 형식만 따라야 하며, 다른 설명은 절대 추가하지 마세요.
 
-**출력 JSON 구조:**
 {{
-  "search_keywords": [
-    {{
-      "category": "카테고리명",
-      "keyword": "추천 키워드"
-    }}
-  ]
-}}"""
+  "숙소": ["키워드1", "키워드2", ...],
+  "볼거리": ["키워드1", "키워드2", ...],
+  "먹거리": ["키워드1", "키워드2", ...],
+  "즐길거리": ["키워드1", "키워드2", ...]
+}}
+""")
+
+        language_map = {"ko": "한국어", "en": "영어"}
+        prompt = prompt_template.format(
+            destination=request.city,
+            duration=request.duration,
+            budget=request.budget_range,
+            special_requests=request.special_requests,
+            language=language_map.get(language_code, "한국어")
+        )
+        
         try:
             handler = self._get_ai_handler()
-            # [디버깅 로그 추가] AI에게 보낼 최종 프롬프트를 정확히 로깅
-            logger.info(f"📜 [STEP_2_PROMPT] 2단계 AI에게 보낼 최종 프롬프트:\n{prompt2}")
-            content = await handler.get_completion(prompt2)
-            # [방어 코드 추가] AI 원본 응답을 먼저 로깅
+            logger.info(f"📜 [STEP_2_PROMPT] 2단계 AI에게 보낼 최종 프롬프트:\n{prompt}")
+            content = await handler.get_completion(prompt)
             logger.info(f"🤖 [AI_RAW_RESPONSE] 2단계 AI 원본 응답: '{content}'")
-            # [방어 코드 추가] 응답이 비어있는지 확인
+            
             if not content or not content.strip():
                 logger.error("❌ 2단계 AI 브레인스토밍 실패: AI가 빈 응답을 반환했습니다.")
                 raise ValueError("AI returned an empty or whitespace-only response.")
+            
             ai_response = json.loads(content)
-            # [방어 코드 추가] 파싱된 결과가 유효한지 확인
-            if not ai_response.get("search_keywords"):
-                logger.error("❌ 2단계 AI 브레인스토밍 실패: 파싱된 JSON에 'search_keywords' 키가 없습니다.")
-                raise ValueError("Parsed JSON from AI is missing the 'search_keywords' key.")
             
-            # 카테고리별 키워드 추출 및 중복 제거
-            final_keywords_by_category = {}
-            for keyword_info in ai_response["search_keywords"]:
-                category = keyword_info.get("category", "activity")
-                keyword = keyword_info.get("keyword", "").strip()
-                
-                if not keyword:
-                    continue
-                
-                if category not in final_keywords_by_category:
-                    final_keywords_by_category[category] = []
-                
-                if keyword not in final_keywords_by_category[category]:
-                    final_keywords_by_category[category].append(keyword)
-            
-            # 각 카테고리별 최대 10개로 제한
-            for category in final_keywords_by_category:
-                final_keywords_by_category[category] = final_keywords_by_category[category][:10]
+            if not all(k in ai_response for k in ["숙소", "볼거리", "먹거리", "즐길거리"]):
+                logger.error(f"❌ 2단계 AI 브레인스토밍 실패: 필수 카테고리가 누락되었습니다. 응답: {ai_response}")
+                raise ValueError("AI response is missing one or more required categories.")
 
-            return final_keywords_by_category
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.error(f"❌ 2단계 AI 브레인스토밍 실패: {e}", exc_info=False)
-            raise HTTPException(status_code=500, detail=f"AI 브레인스토밍 실패: {e}")
+            return ai_response
+        except json.JSONDecodeError:
+            logger.error(f"❌ 2단계 AI 브레인스토밍 실패: AI 응답이 유효한 JSON이 아닙니다. 응답: {content}")
+            raise ValueError("AI response was not valid JSON.")
         except Exception as e:
-            logger.error(f"2단계 AI 브레인스토밍 실패: {str(e)}")
+            logger.error(f"❌ 2단계 AI 브레인스토밍 중 예상치 못한 오류 발생: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"AI 브레인스토밍 실패: {e}")
 
     async def _step3_enhance_places(self, keywords_by_category, language_code):
@@ -297,39 +283,37 @@ class AdvancedItineraryService:
 
     def _step4_process_and_filter(self, place_results, max_items=5):
         """
-        4단계: 장소 정보 후처리 및 검증
+        4단계: 1차 후처리 및 검증
+        - 중복 제거
+        - 사진 없는 장소 제거
+        - 카테고리별 최소 개수 미달 시 해당 카테고리 제외
         """
-        final_recommendations = []
-        seen_place_ids = set()
-
-        for keyword, place_data in place_results.items():
-            # 중복 제거 (place_id 기준)
-            if place_data.get("place_id") in seen_place_ids:
-                continue
-
-            # 평점 및 리뷰수 기반 우선순위
-            rating = place_data.get("rating")
-            review_count = place_data.get("user_ratings_total")
-            if rating is not None and review_count is not None:
-                place_data["priority"] = (rating * 2 + review_count) / 3 # 평점과 리뷰수를 결합한 우선순위
+        MINIMUM_ITEMS = 2  # 카테고리별 최소 장소 개수
+        final_results = {}
+        
+        for category, places in place_results.items():
+            unique_places = []
+            seen_place_ids = set()
+            
+            for place in places:
+                # 사진이 있고, 이전에 추가되지 않은 장소만 포함
+                if place.get("photo_url") and place.get("place_id") not in seen_place_ids:
+                    unique_places.append(place)
+                    seen_place_ids.add(place["place_id"])
+            
+            # [수정] 최소 개수 검증 로직 추가
+            if len(unique_places) >= MINIMUM_ITEMS:
+                # 개수가 충족되면 최종 결과에 포함 (최대 max_items개)
+                final_results[category] = unique_places[:max_items]
+                logger.info(f"✅ 카테고리 '{category}'는 {len(unique_places)}개의 유효한 장소를 가져 최종 결과에 포함됩니다.")
             else:
-                place_data["priority"] = 0 # 평점이나 리뷰수가 없으면 낮은 우선순위
-
-            # 상위 max_items개 선택
-            if len(final_recommendations) < max_items:
-                final_recommendations.append(place_data)
-            else:
-                # 현재 추가될 장소의 우선순위가 현재 최하위 장소보다 높으면 교체
-                current_lowest_priority = min(r["priority"] for r in final_recommendations)
-                if place_data["priority"] > current_lowest_priority:
-                    min_index = 0
-                    for i, r in enumerate(final_recommendations):
-                        if r["priority"] == current_lowest_priority:
-                            min_index = i
-                            break
-                    final_recommendations[min_index] = place_data
-
-        return final_recommendations
+                # 개수 미달 시, 로그를 남기고 결과에서 제외
+                logger.warning(
+                    f"⚠️ 카테고리 '{category}'의 유효한 추천 장소가 {len(unique_places)}개로, "
+                    f"최소 기준({MINIMUM_ITEMS}개)에 미달하여 최종 결과에서 제외됩니다."
+                )
+                
+        return final_results
 
     async def _step5_ensure_minimum_count(self, current_recs, request, lang, existing_kws):
         """
