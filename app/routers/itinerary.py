@@ -2,7 +2,7 @@
 
 import os
 import json
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
 from typing import Dict, Any, List
 from datetime import datetime
 import uuid
@@ -278,3 +278,39 @@ async def submit_feedback(
         return {"message": "피드백이 저장되었습니다.", "feedback_id": str(uuid.uuid4())}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}") 
+
+
+@router.post("/generate-recommendations")
+async def generate_recommendations(request: dict = Body(...)):
+    """
+    목적지/기간/예산 등 입력을 받아 AI로부터 카테고리별(숙소, 볼거리, 먹거리, 즐길거리) 키워드 5개씩 추천
+    (실제 AI 연동은 다음 단계에서 구현, 현재는 더미 데이터 반환)
+    """
+    # TODO: 실제 AI 연동
+    return {
+        "숙소": ["호텔A", "호텔B", "호텔C", "호텔D", "호텔E"],
+        "볼거리": ["관광지A", "관광지B", "관광지C", "관광지D", "관광지E"],
+        "먹거리": ["맛집A", "맛집B", "맛집C", "맛집D", "맛집E"],
+        "즐길거리": ["체험A", "체험B", "체험C", "체험D", "체험E"]
+    }
+
+@router.post("/create-final")
+async def create_final_itinerary(request: dict = Body(...)):
+    """
+    선택된 place_id 목록을 받아 AI+Directions API로 최종 맞춤 일정 생성
+    (실제 AI/경로 연동은 다음 단계에서 구현, 현재는 더미 데이터 반환)
+    """
+    # TODO: 실제 AI/경로 연동
+    return {
+        "days": [
+            {
+                "date": "2024-06-01",
+                "items": [
+                    { "time": "09:00", "name": "호텔A", "desc": "럭셔리 호텔에서 아침 식사", "photoUrl": "/placeholder.jpg", "move": None },
+                    { "time": "11:00", "name": "관광지A", "desc": "유명 관광지 방문", "photoUrl": "/placeholder.jpg", "move": { "duration": "20분", "type": "도보" } },
+                    { "time": "13:00", "name": "맛집A", "desc": "현지 맛집에서 점심", "photoUrl": "/placeholder.jpg", "move": { "duration": "10분", "type": "택시" } },
+                    { "time": "15:00", "name": "체험A", "desc": "액티비티 체험", "photoUrl": "/placeholder.jpg", "move": { "duration": "15분", "type": "버스" } }
+                ]
+            }
+        ]
+    } 

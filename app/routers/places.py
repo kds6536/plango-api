@@ -3,7 +3,7 @@ Google Places API 라우터
 실제 장소 정보를 검색하고 조회하는 API 엔드포인트들
 """
 
-from fastapi import APIRouter, Query, HTTPException, Path
+from fastapi import APIRouter, Query, HTTPException, Path, Body
 from typing import List, Optional
 import logging
 
@@ -185,6 +185,32 @@ async def get_popular_places(
     except Exception as e:
         logger.error(f"인기 장소 검색 중 오류 발생: {e}")
         raise HTTPException(status_code=500, detail=f"인기 장소 검색 실패: {str(e)}")
+
+@router.post("/batch-search")
+async def batch_search_places(request: dict = Body(...)):
+    """
+    카테고리별 키워드 리스트를 받아 Google Places API를 병렬 호출하여 카테고리별 장소 리스트를 반환
+    (실제 Google Places 연동은 다음 단계에서 구현, 현재는 더미 데이터 반환)
+    """
+    # TODO: 실제 Google Places 연동
+    return {
+        "숙소": [
+            { "place_id": "1", "displayName": "호텔A", "editorialSummary": "럭셔리 호텔", "photoUrl": "/placeholder.jpg", "address": "제주도" },
+            { "place_id": "2", "displayName": "호텔B", "editorialSummary": "가성비 호텔", "photoUrl": "/placeholder.jpg", "address": "제주도" },
+            { "place_id": "3", "displayName": "호텔C", "editorialSummary": "바다 전망", "photoUrl": "/placeholder.jpg", "address": "제주도" }
+        ],
+        "볼거리": [
+            { "place_id": "4", "displayName": "관광지A", "editorialSummary": "유명 관광지", "photoUrl": "/placeholder.jpg", "address": "제주도" },
+            { "place_id": "5", "displayName": "관광지B", "editorialSummary": "자연 경관", "photoUrl": "/placeholder.jpg", "address": "제주도" }
+        ],
+        "먹거리": [
+            { "place_id": "6", "displayName": "맛집A", "editorialSummary": "현지 맛집", "photoUrl": "/placeholder.jpg", "address": "제주도" },
+            { "place_id": "7", "displayName": "맛집B", "editorialSummary": "해산물 전문", "photoUrl": "/placeholder.jpg", "address": "제주도" }
+        ],
+        "즐길거리": [
+            { "place_id": "8", "displayName": "체험A", "editorialSummary": "액티비티", "photoUrl": "/placeholder.jpg", "address": "제주도" }
+        ]
+    }
 
 @router.get("/health")
 async def places_health_check():
