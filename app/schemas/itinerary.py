@@ -1,6 +1,6 @@
 """여행 일정 스키마"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from enum import Enum
@@ -121,8 +121,30 @@ class GenerateRequest(BaseModel):
     duration: int = Field(..., ge=1, le=30, description="여행 기간 (일)")
     special_requests: Optional[str] = Field(None, description="특별 요청사항")
     travel_style: Optional[List[str]] = Field(default=[], description="여행 스타일")
-    budget_range: Optional[BudgetRange] = Field(default=BudgetRange.MEDIUM, description="예산 범위")
+    
+    # 프론트엔드로부터 숫자 예산을 직접 받음
+    budget_amount: Optional[int] = Field(None, description="숫자 형태의 예산")
+    
+    # 이 필드는 내부 계산용으로 사용되며, 프론트에서 보내지 않음
+    budget_range: Optional[BudgetRange] = Field(default=None, description="예산 범위 (내부 계산용)")
+    
     travelers_count: Optional[int] = Field(default=2, description="여행자 수")
+
+    @model_validator(mode='before')
+    @classmethod
+    def calculate_budget_range(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            budget = data.get('budget_amount')
+            if budget is not None:
+                if budget < 500000:
+                    data['budget_range'] = BudgetRange.LOW
+                elif budget < 1500000:
+                    data['budget_range'] = BudgetRange.MEDIUM
+                elif budget < 3000000:
+                    data['budget_range'] = BudgetRange.HIGH
+                else:
+                    data['budget_range'] = BudgetRange.LUXURY
+        return data
 
 
 class PlaceData(BaseModel):
