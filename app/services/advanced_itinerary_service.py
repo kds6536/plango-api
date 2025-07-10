@@ -13,6 +13,7 @@ import uuid
 import traceback
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from collections import defaultdict
 
 from app.schemas.itinerary import (
     GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse,
@@ -296,35 +297,42 @@ class AdvancedItineraryService:
                     logger.error(f"❌ [STEP_3_GOOGLE_ERROR] 장소 '{keyword}' 정보 강화 중 오류 발생: {e}", exc_info=True)
         return place_results
 
-    def _step4_process_and_filter(self, place_results, max_items=5):
+    def _step4_process_and_filter(self, place_results: Dict[str, List[Dict]], max_items: int = 5) -> Dict[str, List[Dict]]:
         """
-        4단계: 1차 후처리 및 검증
-        - 중복 제거
-        - 사진 없는 장소 제거
-        - 카테고리별 최소 개수 미달 시 해당 카테고리 제외
+        4단계: 1차 후처리 및 검증 (중복 제거 및 최소 개수 필터링 강화)
         """
         MINIMUM_ITEMS = 2  # 카테고리별 최소 장소 개수
+        
+        # 최종 결과를 담을 딕셔너리
         final_results = {}
+        # 전체 중복을 확인하기 위한 set
+        globally_seen_place_ids = set()
+
+        # 1. 모든 카테고리를 순회하며 사진이 있고 유효한 장소들만 필터링 및 글로벌 중복 제거
+        #    (동일 장소가 여러 키워드에 의해 여러 카테고리에서 추천될 수 있으므로, 카테고리별로 먼저 처리)
+        categorized_valid_places = defaultdict(list)
         
         for category, places in place_results.items():
-            unique_places = []
-            seen_place_ids = set()
-            
             for place in places:
-                # 사진이 있고, 이전에 추가되지 않은 장소만 포함
-                if place.get("photo_url") and place.get("place_id") not in seen_place_ids:
-                    unique_places.append(place)
-                    seen_place_ids.add(place["place_id"])
-            
-            # [수정] 최소 개수 검증 로직 추가
-            if len(unique_places) >= MINIMUM_ITEMS:
+                place_id = place.get("place_id")
+                # 사진 URL이 있고, 이전에 다른 카테고리에서도 추가되지 않은 장소만 포함
+                if place.get("photo_url") and place_id and place_id not in globally_seen_place_ids:
+                    categorized_valid_places[category].append(place)
+                    globally_seen_place_ids.add(place_id)
+
+        # 2. 필터링된 목록을 기준으로 최소 개수 검증 및 최종 결과 생성
+        for category, places in categorized_valid_places.items():
+            if len(places) >= MINIMUM_ITEMS:
                 # 개수가 충족되면 최종 결과에 포함 (최대 max_items개)
-                final_results[category] = unique_places[:max_items]
-                logger.info(f"✅ 카테고리 '{category}'는 {len(unique_places)}개의 유효한 장소를 가져 최종 결과에 포함됩니다.")
+                final_results[category] = places[:max_items]
+                logger.info(
+                    f"✅ 카테고리 '{category}'는 {len(places)}개의 유효한 장소를 가져 최종 결과에 포함됩니다. "
+                    f"(상위 {len(final_results[category])}개 선택)"
+                )
             else:
                 # 개수 미달 시, 로그를 남기고 결과에서 제외
                 logger.warning(
-                    f"⚠️ 카테고리 '{category}'의 유효한 추천 장소가 {len(unique_places)}개로, "
+                    f"⚠️ 카테고리 '{category}'의 유효한 추천 장소가 {len(places)}개로, "
                     f"최소 기준({MINIMUM_ITEMS}개)에 미달하여 최종 결과에서 제외됩니다."
                 )
                 
