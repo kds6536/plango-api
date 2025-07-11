@@ -190,31 +190,26 @@ class AdvancedItineraryService:
             raw_response = await handler.get_completion(prompt1)
             logger.info(f"🤖 [AI_RAW_RESPONSE] from {type(handler).__name__}: {raw_response}")
             
-            # 임시 디버깅: 하드코딩된 응답으로 테스트
-            logger.info("🔍 [DEBUG] 임시로 하드코딩된 응답 사용 중...")
-            ai_response = {
-                "main_theme": f"{request.city} 문화 체험 여행",
-                "recommendations": {
-                    "accommodations": ["도쿄역 호텔", "신주쿠 호텔", "시부야 호텔"],
-                    "attractions": ["센소지 절", "메이지 신궁", "도쿄 타워", "스카이트리"],
-                    "foods": ["스시 맛집", "라멘 맛집", "이자카야", "와규 레스토랑"],
-                    "activities": ["온센 체험", "쇼핑", "카라오케", "애니메이션 카페"]
-                }
-            }
-            
-            # 실제 AI 응답도 파싱 시도
+            # AI 응답을 JSON으로 파싱
             try:
-                real_ai_response = handler.parse_json_response(raw_response)
-                logger.info(f"🤖 [REAL_AI_RESPONSE] 실제 AI 응답: {real_ai_response}")
-                if real_ai_response.get("recommendations"):
-                    logger.info("✅ 실제 AI 응답이 올바른 구조를 가지고 있습니다. 하드코딩 대신 실제 응답 사용합니다.")
-                    ai_response = real_ai_response
-            except Exception as e:
-                logger.error(f"❌ 실제 AI 응답 파싱 실패, 하드코딩된 응답 계속 사용: {e}")
+                ai_response = json.loads(raw_response)
+                logger.info(f"✅ [AI_PARSED] AI 응답 파싱 성공: {ai_response}")
+            except json.JSONDecodeError:
+                logger.warning("AI 응답 JSON 파싱 실패, 하드코딩된 응답 사용")
+                ai_response = {
+                    "main_theme": f"{request.city} 문화 체험 여행",
+                    "recommendations": {
+                        "accommodations": ["도쿄역 호텔", "신주쿠 호텔", "시부야 호텔"],
+                        "attractions": ["센소지 절", "메이지 신궁", "도쿄 타워", "스카이트리"],
+                        "foods": ["스시 맛집", "라멘 맛집", "이자카야", "와규 레스토랑"],
+                        "activities": ["온센 체험", "쇼핑", "카라오케", "애니메이션 카페"]
+                    }
+                }
             
             if not ai_response.get("recommendations"):
                 logger.error(f"1단계 결과물에 recommendations가 없어 2단계를 진행할 수 없습니다. 실제 응답: {ai_response}")
                 raise HTTPException(status_code=500, detail="[2025-01-11 UPDATED] No recommendations in AI response")
+            
             # 새로운 응답 구조에서 카테고리별 키워드 추출
             place_candidates = {}
             recommendations = ai_response["recommendations"]
