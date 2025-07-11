@@ -24,7 +24,7 @@ from app.services.ai_handlers import OpenAIHandler, GeminiHandler
 from app.utils.logger import get_logger
 from app.routers.admin import load_ai_settings_from_db, load_prompts_from_db
 from fastapi import HTTPException
-from string import Template # Template 클래스를 import 합니다.
+from string import Template  # string.Template을 사용합니다.
 
 logger = get_logger(__name__)
 
@@ -151,7 +151,7 @@ class AdvancedItineraryService:
         """
         prompts_dict = load_prompts_from_db()
         # [수정] 프롬프트 내용을 조금 더 명확하게 변경하고, 키워드 요청 개수를 7개로 늘립니다.
-        prompt_template = prompts_dict.get("stage2_destinations_prompt", """
+        prompt_template_str = prompts_dict.get("stage2_destinations_prompt", """
 당신은 'Plango AI'라는 이름의 여행지 추천 전문가입니다. 사용자의 요청사항을 기반으로, 방문할 만한 장소에 대한 키워드를 카테고리별로 추천해주세요.
 
 **사용자 요청:**
@@ -164,7 +164,7 @@ class AdvancedItineraryService:
 1. **카테고리 분류:** "숙소", "볼거리", "먹거리", "즐길거리" 4가지 카테고리로 나누어 추천합니다.
 2. **키워드 생성:** 각 카테고리별로, 연관성이 높은 장소 키워드를 **7개**씩 생성해주세요.
 3. **구체적인 이름:** "맛집"이나 "호텔" 같은 일반적인 단어 대신, "현지인들이 자주 가는 파스타 맛집" 또는 "바다 전망이 좋은 부티크 호텔"처럼 구체적인 키워드를 제안해야 합니다.
-4. **언어 설정:** 모든 키워드는 "{language}"로 작성해주세요.
+4. **언어 설정:** 모든 키워드는 ${language}로 작성해주세요.
 5. **JSON 형식 준수:** 답변은 반드시 아래 JSON 형식만 따라야 하며, 다른 설명은 절대 추가하지 마세요.
 
 {{
@@ -174,9 +174,15 @@ class AdvancedItineraryService:
   "즐길거리": ["키워드1", "키워드2", ...]
 }}
 """)
+        # .format() 대신 Template 사용을 위해 '$' 변수 스타일로 변경
+        prompt_template_str = prompt_template_str.replace('{', '${').replace('}', '}')
 
         language_map = {"ko": "한국어", "en": "영어"}
-        prompt = prompt_template.format(
+        
+        # Template 객체 생성
+        prompt_template = Template(prompt_template_str)
+
+        prompt = prompt_template.safe_substitute(
             destination=request.city,
             duration=request.duration,
             budget=request.budget_range,
