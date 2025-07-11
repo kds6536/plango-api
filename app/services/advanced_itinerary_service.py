@@ -128,10 +128,10 @@ class AdvancedItineraryService:
             raise HTTPException(status_code=500, detail=f"여행 일정 생성 중 오류 발생: {str(e)}")
 
     async def generate_recommendations(self, request, language_code):
-        """Plango v5.0: 1~5단계 전체 추천 생성 프로세스"""
+        """Plango v5.0: step2~5단계 추천 생성 프로세스 (step1 완전 우회)"""
         try:
-            # 2. 1차 AI 브레인스토밍
-            logger.info("🧠 [STEP 2] 1차 AI 브레인스토밍 시작")
+            # step1 완전 우회 - step2 AI 브레인스토밍만 사용
+            logger.info("🧠 [STEP 2] AI 브레인스토밍 시작 (step1 우회, step2만 사용)")
             ai_keywords = await self._step2_ai_brainstorming(request, language_code)
 
             # 3. 1차 장소 정보 강화
