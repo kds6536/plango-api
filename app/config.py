@@ -59,9 +59,8 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"
     
-    # --- GOOGLE_PLACES_API_KEY를 Maps Platform API Key로 변경 ---
-    # GOOGLE_PLACES_API_KEY: str = ""
-    MAPS_PLATFORM_API_KEY: str = Field(default="", alias="Maps Platform API Key")
+    # Google Maps Platform API Key
+    MAPS_PLATFORM_API_KEY: str = ""
 
     class Config:
         env_file = ".env"
