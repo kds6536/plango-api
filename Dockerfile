@@ -34,7 +34,7 @@ EXPOSE 8000
 
 # 헬스체크 설정
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=5 \
-    CMD curl -f -sS http://localhost:8000/api/v1/health || exit 1
+    CMD curl -f -sS http://localhost:${PORT:-8000}/api/v1/health || exit 1
 
 # 애플리케이션 실행
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} 
