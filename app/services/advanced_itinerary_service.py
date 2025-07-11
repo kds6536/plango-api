@@ -128,10 +128,10 @@ class AdvancedItineraryService:
             raise HTTPException(status_code=500, detail=f"여행 일정 생성 중 오류 발생: {str(e)}")
 
     async def generate_recommendations(self, request, language_code):
-        """Plango v5.0: step2~5단계 추천 생성 프로세스 (step1 완전 우회)"""
+        """Plango v5.0: 1~5단계 전체 추천 생성 프로세스"""
         try:
-            # step1 완전 우회 - step2 AI 브레인스토밍만 사용
-            logger.info("🧠 [STEP 2] AI 브레인스토밍 시작 (step1 우회, step2만 사용)")
+            # 2. 1차 AI 브레인스토밍
+            logger.info("🧠 [STEP 2] 1차 AI 브레인스토밍 시작")
             ai_keywords = await self._step2_ai_brainstorming(request, language_code)
 
             # 3. 1차 장소 정보 강화
@@ -180,27 +180,9 @@ class AdvancedItineraryService:
         }
         
         try:
-            # JSON 내부의 중괄호를 이스케이프 처리하여 format과 충돌 방지
-            import re
-            # JSON 구조 내의 중괄호를 임시로 치환
-            prompt1_escaped = re.sub(r'\{\s*"([^"]+)"\s*:', r'{{"\1":', prompt1)
-            prompt1_escaped = re.sub(r':\s*"([^"]*)\s*"\s*\}', r': "\1"}}', prompt1_escaped)
-            
-            # 안전한 format을 위해 사용 가능한 변수만 사용
-            import string
-            available_vars = set()
-            for literal_text, field_name, format_spec, conversion in string.Formatter().parse(prompt1_escaped):
-                if field_name:
-                    available_vars.add(field_name)
-            
-            # 사용 가능한 변수만으로 필터링된 format_dict 생성
-            safe_format_dict = {k: v for k, v in format_dict.items() if k in available_vars}
-            
-            # 이스케이프된 프롬프트에 format 적용 후 원래대로 복원
-            prompt1 = prompt1_escaped.format(**safe_format_dict)
-            prompt1 = prompt1.replace('{{', '{').replace('}}', '}')
-        except (KeyError, ValueError) as e:
-            logger.error(f"프롬프트 format 에러: {e} | 프롬프트: {prompt1[:200]}...", exc_info=True)
+            prompt1 = prompt1.format(**format_dict)
+        except KeyError as e:
+            logger.error(f"프롬프트 format KeyError: {e} | 프롬프트: {prompt1[:200]}...", exc_info=True)
             # 에러 발생 시 간단한 대체 프롬프트 사용
             prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.\n사용자의 요청: {request.city}, {request.duration}일, {getattr(request, 'budget_range', 'medium')}, {getattr(request, 'travel_style', [])}, {request.special_requests or '일반적인 여행'}"
         try:
