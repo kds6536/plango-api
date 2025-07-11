@@ -214,7 +214,7 @@ class AdvancedItineraryService:
             
             if not ai_response.get("recommendations"):
                 logger.error(f"1단계 결과물에 recommendations가 없어 2단계를 진행할 수 없습니다. 실제 응답: {ai_response}")
-                raise HTTPException(status_code=500, detail="No recommendations in AI response")
+                raise HTTPException(status_code=500, detail="[2025-01-11 UPDATED] No recommendations in AI response")
             # 새로운 응답 구조에서 카테고리별 키워드 추출
             place_candidates = {}
             recommendations = ai_response["recommendations"]
