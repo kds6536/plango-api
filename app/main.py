@@ -10,7 +10,7 @@ import logging
 
 from app.routers import health, admin, new_itinerary, places
 from app.config import settings
-from app.database import create_db_and_tables
+# from app.database import create_db_and_tables
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -34,6 +34,8 @@ app.include_router(health.router)
 app.include_router(new_itinerary.router)
 app.include_router(admin.router)
 app.include_router(places.router)
+
+# create_db_and_tables()
 
 
 @app.exception_handler(RequestValidationError)
