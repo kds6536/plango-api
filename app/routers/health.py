@@ -11,14 +11,8 @@ router = APIRouter(prefix="/api/v1", tags=["Health"])
 
 @router.get("/health")
 async def health_check():
-    """서버 상태 확인 - 간소화된 버전"""
-    # Railway 환경에서 안정적인 응답을 위해 psutil 로직 제거
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "version": settings.PROJECT_VERSION,
-        "environment": os.getenv("RAILWAY_ENVIRONMENT", "development")
-    }
+    """서버 상태 확인 - 외부 의존성 없는 초간소화 버전"""
+    return {"status": "ok"}
 
 
 @router.get("/health/deep")
