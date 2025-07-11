@@ -16,7 +16,7 @@ from app.config import settings
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.PROJECT_VERSION,
-    description=settings.PROJECT_DESCRIPTION
+    description=settings.PROJECT_VERSION
 )
 
 # CORS 미들웨어 설정
