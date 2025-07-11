@@ -190,18 +190,19 @@ class AdvancedItineraryService:
             raw_response = await handler.get_completion(prompt1)
             logger.info(f"🤖 [AI_RAW_RESPONSE] from {type(handler).__name__}: {raw_response}")
             ai_response = handler.parse_json_response(raw_response)
-            if not ai_response.get("search_keywords"):
-                logger.error(f"1단계 결과물에 search_keywords가 없어 2단계를 진행할 수 없습니다. 실제 응답: {ai_response}")
-                raise HTTPException(status_code=500, detail="No search_keywords in AI response")
+            if not ai_response.get("recommendations"):
+                logger.error(f"1단계 결과물에 recommendations가 없어 2단계를 진행할 수 없습니다. 실제 응답: {ai_response}")
+                raise HTTPException(status_code=500, detail="No recommendations in AI response")
             # 새로운 응답 구조에서 카테고리별 키워드 추출
             place_candidates = {}
-            for keyword_info in ai_response["search_keywords"]:
-                category = keyword_info.get("category", "activity")
-                keyword = keyword_info.get("keyword", "")
-                if category not in place_candidates:
-                    place_candidates[category] = []
-                place_candidates[category].append(keyword)
-            self.travel_theme = ai_response.get("theme", f"{request.city} 여행")
+            recommendations = ai_response["recommendations"]
+            
+            # 카테고리별로 키워드 리스트 추출
+            for category, keywords in recommendations.items():
+                if keywords and isinstance(keywords, list):
+                    place_candidates[category] = keywords
+            
+            self.travel_theme = ai_response.get("main_theme", f"{request.city} 여행")
             return place_candidates
         except HTTPException:
             raise
