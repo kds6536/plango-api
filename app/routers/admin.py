@@ -18,20 +18,8 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["관리자 API"])
 
-# --- 변경점 2: 파일 경로 대신 Supabase 클라이언트 설정 ---
-# 이 설정은 환경 변수에서 가져옵니다.
-try:
-    url: str = os.environ.get("SUPABASE_URL")
-    key: str = os.environ.get("SUPABASE_API_KEY")  # Railway에서 설정한 환경 변수명과 일치
-    
-    if not url or not key:
-        raise ValueError(f"환경 변수 누락: SUPABASE_URL={url}, SUPABASE_API_KEY={'설정됨' if key else '누락'}")
-        
-    supabase: Client = create_client(url, key)
-    logger.info("Supabase 클라이언트가 성공적으로 초기화되었습니다.")
-except Exception as e:
-    logger.error(f"Supabase 클라이언트 초기화 실패: {e}")
-    supabase = None
+# Supabase 클라이언트 인스턴스를 담을 변수 (초기화는 main.py에서 수행)
+supabase: Client = None
 
 # AI 설정 요청/응답 모델
 class AISettingsRequest(BaseModel):

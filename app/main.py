@@ -7,6 +7,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+import os
+from supabase import create_client
 
 from app.routers import health, admin, new_itinerary, places
 from app.config import settings
@@ -28,6 +30,29 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# --- 비동기 시작 이벤트 핸들러 ---
+@app.on_event("startup")
+async def startup_event():
+    """
+    애플리케이션 시작 시 실행되는 비동기 이벤트입니다.
+    느린 초기화 작업(예: DB 연결)을 여기서 수행합니다.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        url: str = os.environ.get("SUPABASE_URL")
+        key: str = os.environ.get("SUPABASE_API_KEY")
+        
+        if not url or not key:
+            raise ValueError("Supabase URL 또는 API 키가 설정되지 않았습니다.")
+            
+        # admin 라우터의 supabase 변수에 클라이언트 인스턴스 주입
+        admin.supabase = create_client(url, key)
+        logger.info("✅ Supabase 클라이언트가 성공적으로 초기화 및 주입되었습니다.")
+    except Exception as e:
+        logger.error(f"💥 Supabase 클라이언트 초기화 실패: {e}")
+        admin.supabase = None
+
 
 # 라우터 포함
 app.include_router(health.router)
