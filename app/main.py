@@ -22,7 +22,7 @@ app = FastAPI(
 )
 
 # CORS 미들웨어 설정
-if settings.BACKEND_CORS_ORIGINS:
+if getattr(settings, "BACKEND_CORS_ORIGINS", None):
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
