@@ -61,6 +61,10 @@ class AdvancedItineraryService:
         request_id = str(uuid.uuid4())
         raw_response = None
         
+        # === 배포 확인용 디버그 메시지 ===
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"🚀 [DEPLOYMENT_CHECK] 새 배포 확인 - {timestamp} - 파싱 로직 수정됨")
+        
         # === Railway 로그: 요청 시작 ===
         logger.info("=" * 80)
         logger.info(f"🚀 [REQUEST_START] 여행 일정 생성 요청 시작")
