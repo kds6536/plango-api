@@ -19,40 +19,25 @@ from app.utils.logger import get_logger
 # 로거 설정
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/itinerary", tags=["새로운 여행 일정"])
-
-
-# 서비스 인스턴스 생성
-ai_service = None
-google_places_service = None
-itinerary_service = None
-advanced_itinerary_service = None
-
-try:
-    import app.main
-    app = app.main.app
-    from app.services.ai_service import AIService
-    from app.services.google_places_service import GooglePlacesService
-    from app.services.itinerary_service import ItineraryService
-    from app.config import settings
-
-    ai_service = AIService(api_key=settings.OPENAI_API_KEY)
-    google_places_service = GooglePlacesService(api_key=settings.MAPS_PLATFORM_API_KEY)
-    itinerary_service = ItineraryService(
-        ai_service=ai_service,
-        google_places_service=google_places_service
-    )
-    advanced_itinerary_service = AdvancedItineraryService(
-        ai_service=ai_service,
-        google_places_service=google_places_service
-    )
-except Exception:
-    pass
+router = APIRouter(tags=["새로운 여행 일정"])
 
 
 # 서비스 의존성
 def get_itinerary_service() -> AdvancedItineraryService:
-    return advanced_itinerary_service
+    from app.services.ai_service import AIService
+    from app.services.google_places_service import GooglePlacesService
+    from app.config import settings
+
+    ai_service = AIService(api_key=settings.OPENAI_API_KEY)
+    google_places_service = GooglePlacesService(api_key=settings.MAPS_PLATFORM_API_KEY)
+    
+    # AdvancedItineraryService에 필요한 모든 서비스를 주입합니다.
+    # ItineraryService는 더 이상 직접 사용되지 않는 것으로 보입니다.
+    # 만약 필요하다면, AdvancedItineraryService 내부에서 생성하거나 별도 주입해야 합니다.
+    return AdvancedItineraryService(
+        ai_service=ai_service,
+        google_places_service=google_places_service
+    )
 
 
 @router.post("/generate", response_model=GenerateResponse)
