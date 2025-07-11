@@ -10,7 +10,7 @@ import json
 import logging
 from dotenv import load_dotenv
 
-from app.routers import itinerary, destinations, health, places, new_itinerary, admin
+from app.routers import destinations, health, places, new_itinerary, admin
 from app.config import settings
 
 # 환경변수 로드
