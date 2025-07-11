@@ -21,7 +21,7 @@ class Destination(BaseModel):
     visa_required: Optional[bool] = Field(None, description="비자 필요 여부")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "id": "tokyo",
                 "name": "도쿄",

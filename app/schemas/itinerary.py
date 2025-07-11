@@ -88,7 +88,7 @@ class ItineraryRequest(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "destination": "도쿄",
                 "duration": 3,
