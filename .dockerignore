@@ -1,67 +1,23 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Git
 .git
 .gitignore
-README.md
-
-# Logs
-logs/*.log
-
-# Test
+.vscode/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
 .pytest_cache/
-.coverage
-htmlcov/
-
-# Documentation
-docs/
-*.md
-
-# Docker
-# Dockerfile*  <- 이 부분을 주석 처리하여 Railway가 Dockerfile을 인식하도록 함
-docker-compose*
-.dockerignore 
+test-results/
+tests/
+predeploy_check.py
+README.md
+makefile
+main.py.backup
+simple_itinerary.py
+simple_server.py
+simple_test.py
+test_api.py
+test_data.json
+test_new_api.py
+test-api.js
+docker-compose.yml 

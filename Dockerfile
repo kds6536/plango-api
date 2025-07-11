@@ -18,11 +18,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# 애플리케이션 코드 복사 (전체 프로젝트를 /code로 복사)
-COPY . .
+# 애플리케이션 코드 복사 (app 디렉토리만 복사)
+COPY ./app /code/app
 
 # 로그 디렉토리 생성
-RUN mkdir -p logs
+RUN mkdir -p /code/logs
 
 # 비루트 사용자 생성 및 권한 설정
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -36,7 +36,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
-# 애플리케이션 실행 (실행 파일을 app/main.py로 변경)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-# 강제 재배포를 위한 주석 (Timestamp: 2024-07-26 10:00 KST) 
+# 애플리케이션 실행
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
