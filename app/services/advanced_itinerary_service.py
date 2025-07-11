@@ -180,10 +180,21 @@ class AdvancedItineraryService:
         }
         
         try:
-            prompt1 = prompt1.format(**format_dict)
+            # 안전한 format을 위해 사용 가능한 변수만 사용
+            import string
+            available_vars = set()
+            for literal_text, field_name, format_spec, conversion in string.Formatter().parse(prompt1):
+                if field_name:
+                    available_vars.add(field_name)
+            
+            # 사용 가능한 변수만으로 필터링된 format_dict 생성
+            safe_format_dict = {k: v for k, v in format_dict.items() if k in available_vars}
+            
+            prompt1 = prompt1.format(**safe_format_dict)
         except KeyError as e:
             logger.error(f"프롬프트 format KeyError: {e} | 프롬프트: {prompt1}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"프롬프트 format KeyError: {e}")
+            # 에러 발생 시 간단한 대체 프롬프트 사용
+            prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.\n사용자의 요청: {request.city}, {request.duration}일, {getattr(request, 'budget_range', 'medium')}, {getattr(request, 'travel_style', [])}, {request.special_requests or '일반적인 여행'}"
         try:
             handler = self._get_ai_handler()
             raw_response = await handler.get_completion(prompt1)
