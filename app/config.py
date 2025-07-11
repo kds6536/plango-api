@@ -9,6 +9,10 @@ from pydantic import Field
 class Settings(BaseSettings):
     """애플리케이션 설정 클래스"""
     
+    # 프로젝트 정보
+    PROJECT_NAME: str = "plango-api"
+    PROJECT_VERSION: str = "2.1.1"
+
     # 서버 설정
     ENV: str = "development"
     ENVIRONMENT: str = "development"

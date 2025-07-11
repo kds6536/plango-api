@@ -4,6 +4,8 @@ from fastapi import APIRouter
 from datetime import datetime
 import os
 
+from app.config import settings
+
 router = APIRouter(prefix="/api/v1", tags=["Health"])
 
 
@@ -14,7 +16,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "2.1.1",
+        "version": settings.PROJECT_VERSION,
         "environment": os.getenv("RAILWAY_ENVIRONMENT", "development")
     }
 
