@@ -2,59 +2,23 @@
 
 from fastapi import APIRouter
 from datetime import datetime
-import psutil
 import os
+
+from app.config import settings
 
 router = APIRouter(prefix="/api/v1", tags=["Health"])
 
 
 @router.get("/health")
 async def health_check():
-    """서버 상태 확인"""
-    try:
-        # 시스템 정보 수집 (Railway 환경에서 안전하게)
-        try:
-            cpu_percent = psutil.cpu_percent(interval=0.1)  # Railway에서는 빠른 응답 필요
-            memory = psutil.virtual_memory()
-            # Railway에서는 루트 디스크 사용량 체크를 더 안전하게
-            try:
-                disk = psutil.disk_usage('.' if os.getenv("RAILWAY_ENVIRONMENT") else '/')
-            except:
-                disk = None
-        except:
-            cpu_percent = 0
-            memory = None
-            disk = None
-        
-        system_info = {}
-        if cpu_percent is not None:
-            system_info["cpu_usage"] = f"{cpu_percent}%"
-        if memory is not None:
-            system_info["memory_usage"] = f"{memory.percent}%"
-        if disk is not None:
-            system_info["disk_usage"] = f"{disk.percent}%"
-        
-        return {
-            "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
-            "version": "2.1.0",
-            "environment": os.getenv("RAILWAY_ENVIRONMENT", "development"),
-            "system": system_info,
-            "api": {
-                "status": "operational",
-                "endpoints": [
-                    "/api/v1/health",
-                    "/api/v1/itinerary/generate",
-                    "/api/v1/admin/ai-settings"
-                ]
-            }
-        }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.utcnow().isoformat(),
-            "error": str(e)
-        }
+    """서버 상태 확인 - 간소화된 버전"""
+    # Railway 환경에서 안정적인 응답을 위해 psutil 로직 제거
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": settings.PROJECT_VERSION,
+        "environment": os.getenv("RAILWAY_ENVIRONMENT", "development")
+    }
 
 
 @router.get("/health/deep")

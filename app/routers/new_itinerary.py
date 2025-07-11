@@ -5,10 +5,7 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
-from fastapi.exception_handlers import RequestValidationError
-from fastapi.exceptions import RequestValidationError
-from fastapi import status
-import sys
+import logging
 import time
 import json
 
@@ -19,37 +16,43 @@ from app.schemas.itinerary import (
 from app.services.advanced_itinerary_service import AdvancedItineraryService
 from app.utils.logger import get_logger
 
-logger = get_logger(__name__)
+# 로거 설정
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/itinerary", tags=["새로운 여행 일정"])
 
-# 422 에러 detail 콘솔 출력용 핸들러 등록
-from fastapi import FastAPI
-from fastapi.encoders import jsonable_encoder
 
-app = None
+# 서비스 인스턴스 생성
+ai_service = None
+google_places_service = None
+itinerary_service = None
+advanced_itinerary_service = None
+
 try:
     import app.main
     app = app.main.app
+    from app.services.ai_service import AIService
+    from app.services.google_places_service import GooglePlacesService
+    from app.services.itinerary_service import ItineraryService
+    from app.config import settings
+
+    ai_service = AIService(api_key=settings.OPENAI_API_KEY)
+    google_places_service = GooglePlacesService(api_key=settings.MAPS_PLATFORM_API_KEY)
+    itinerary_service = ItineraryService(
+        ai_service=ai_service,
+        google_places_service=google_places_service
+    )
+    advanced_itinerary_service = AdvancedItineraryService(
+        ai_service=ai_service,
+        google_places_service=google_places_service
+    )
 except Exception:
     pass
 
-if app:
-    @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        # --- 상세 에러 내용을 JSON 형태로 예쁘게 출력 ---
-        error_details = json.dumps(exc.errors(), indent=2, ensure_ascii=False)
-        print("--- Pydantic Validation Error ---")
-        print(error_details)
-        print("---------------------------------")
-        # --------------------------------------
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": exc.errors()},
-        )
 
 # 서비스 의존성
 def get_itinerary_service() -> AdvancedItineraryService:
-    return AdvancedItineraryService()
+    return advanced_itinerary_service
 
 
 @router.post("/generate", response_model=GenerateResponse)

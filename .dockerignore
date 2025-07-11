@@ -62,6 +62,6 @@ docs/
 *.md
 
 # Docker
-Dockerfile*
+# Dockerfile*  <- 이 부분을 주석 처리하여 Railway가 Dockerfile을 인식하도록 함
 docker-compose*
 .dockerignore 
