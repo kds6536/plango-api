@@ -9,12 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from app.routers import health, admin, new_itinerary, places
-from app.utils.logger import setup_logging
 from app.config import settings
 from app.database import create_db_and_tables
-
-# 로깅 설정
-setup_logging()
 
 # FastAPI 앱 생성
 app = FastAPI(
