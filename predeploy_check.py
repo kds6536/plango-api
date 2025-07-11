@@ -52,19 +52,44 @@ if has_error:
 
 # --- 3. 필수 설정값 체크 ---
 print("\n--- 3. 필수 설정값 체크 시작 ---")
-has_error = False
 try:
     from app.config import settings
-    for s in REQUIRED_SETTINGS:
-        if not hasattr(settings, s):
-            print(f"[ERROR] config에 필수 설정이 없습니다: {s}")
-            has_error = True
-    if not has_error:
+    
+    required_settings = [
+        "PROJECT_NAME",
+        "PROJECT_VERSION",
+        "BACKEND_CORS_ORIGINS",
+        "SUPABASE_URL",
+        "SUPABASE_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "MAPS_PLATFORM_API_KEY"
+    ]
+    
+    missing_settings = []
+    for setting_name in required_settings:
+        # 'API_KEY'가 포함된 설정은 실제 값이 없어도 통과 (Railway에서 주입)
+        if "API_KEY" in setting_name.upper() or "URL" in setting_name.upper():
+             if not hasattr(settings, setting_name):
+                missing_settings.append(setting_name)
+        # 그 외 설정은 값이 비어있는지 확인
+        else:
+            value = getattr(settings, setting_name, None)
+            if value is None or value == "":
+                missing_settings.append(setting_name)
+
+    if not missing_settings:
         print("[OK] 모든 필수 설정값이 존재합니다.")
     else:
+        for setting in missing_settings:
+            print(f"[ERROR] 필수 설정값이 누락되었습니다: {setting}")
         sys.exit(1)
-except Exception as e:
-    print(f"[ERROR] config에서 설정을 가져오는 중 에러 발생: {e}")
+
+except ImportError as e:
+    print(f"[ERROR] 설정 파일(app.config)을 임포트할 수 없습니다: {e}")
+    sys.exit(1)
+except AttributeError as e:
+    print(f"[ERROR] 설정 파일에 필요한 속성이 없습니다: {e}")
     sys.exit(1)
 
 print("\n[SUCCESS] 모든 배포 전 점검을 통과했습니다.")

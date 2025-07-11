@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     
     # CORS 설정
     ALLOWED_ORIGINS: str = "*"
+    BACKEND_CORS_ORIGINS: List[str] = ["*"]
     
     @property
     def allowed_origins_list(self) -> List[str]:
