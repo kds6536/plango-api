@@ -24,6 +24,7 @@ from app.services.ai_handlers import OpenAIHandler, GeminiHandler
 from app.utils.logger import get_logger
 from app.routers.admin import load_ai_settings_from_db, load_prompts_from_db
 from fastapi import HTTPException
+from string import Template # Template 클래스를 import 합니다.
 
 logger = get_logger(__name__)
 
@@ -172,7 +173,7 @@ class AdvancedItineraryService:
         prompts_dict = load_prompts_from_db()
         prompt1 = prompts_dict.get("stage1_destinations_prompt")
         if not prompt1:
-            prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.\n사용자의 요청: {request.city}, {request.duration}일, {getattr(request, 'budget_range', 'medium')}, {getattr(request, 'travel_style', [])}, {request.special_requests or '일반적인 여행'}"
+            prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.\n사용자의 요청: $city, $duration일, $budget, $travel_style, $special_requests"
         
         format_dict = {
             "city": request.city,
@@ -180,18 +181,20 @@ class AdvancedItineraryService:
             "budget": getattr(request, 'budget_range', 'medium'),
             "travel_style": getattr(request, 'travel_style', []),
             "special_requests": request.special_requests or '일반적인 여행',
-            "main_theme": ""
         }
         
         try:
-            prompt1 = prompt1.format(**format_dict)
-        except KeyError as e:
-            logger.error(f"프롬프트 format KeyError: {e} | 프롬프트: {prompt1[:200]}...", exc_info=True)
-            # 에러 발생 시 간단한 대체 프롬프트 사용
-            prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.\n사용자의 요청: {request.city}, {request.duration}일, {getattr(request, 'budget_range', 'medium')}, {getattr(request, 'travel_style', [])}, {request.special_requests or '일반적인 여행'}"
+            # .format() 대신 string.Template을 사용하여 안전하게 변수 치환
+            template = Template(prompt1)
+            final_prompt = template.safe_substitute(format_dict)
+        except Exception as e:
+            logger.error(f"프롬프트 생성 중 오류 발생: {e}", exc_info=True)
+            # 템플릿 처리 실패 시, 가장 기본적인 프롬프트로 대체
+            final_prompt = f"사용자 요청: {request.city} 여행, {request.duration}일"
+
         try:
             handler = self._get_ai_handler()
-            raw_response = await handler.get_completion(prompt1)
+            raw_response = await handler.get_completion(final_prompt)
             logger.info(f"🤖 [AI_RAW_RESPONSE] from {type(handler).__name__}: {raw_response}")
             
             # AI 응답을 JSON으로 파싱
