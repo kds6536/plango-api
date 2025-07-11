@@ -79,45 +79,24 @@ class AdvancedItineraryService:
         logger.info("=" * 80)
         
         try:
-            # === 1단계: AI 브레인스토밍 ===
-            logger.info(f"🧠 [STEP_1_START] AI 브레인스토밍 시작 - 장소 후보군 생성")
-            place_candidates = await self._step1_ai_brainstorming(request)
-            logger.info(f"✅ [STEP_1_SUCCESS] AI 브레인스토밍 완료")
-            logger.info(f"📊 [STEP_1_RESULT] {len(place_candidates)}개 카테고리의 장소 후보 생성")
-            logger.info(f"📝 [STEP_1_CATEGORIES] {list(place_candidates.keys())}")
+            # v5.0 로직으로 통합: generate_recommendations 호출
+            logger.info("🚀 [PROCESS_REDIRECT] v5.0 추천 생성 로직으로 요청을 전달합니다.")
             
-            # === 2단계: 구글 플레이스 API 정보 강화 ===
-            logger.info(f"🌍 [STEP_2_START] 구글 플레이스 API 정보 강화 시작")
-            place_pool = await self._step2_google_places_enrichment(place_candidates, request.city)
-            if not place_pool:
-                logger.error("2단계 결과, 유효한 장소를 찾지 못해 3단계를 진행할 수 없습니다.")
-                raise ValueError("No valid places found in Step 2")
-            logger.info(f"✅ [STEP_2_SUCCESS] 구글 플레이스 API 정보 강화 완료")
-            logger.info(f"📊 [STEP_2_RESULT] {len(place_pool)}개 장소 데이터 풀 생성")
-            for i, place in enumerate(place_pool[:5]):  # 처음 5개만 로그
-                logger.info(f"📍 [STEP_2_PLACE_{i+1}] {place.get('name', 'N/A')} - {place.get('address', 'N/A')}")
+            # 언어 코드를 요청에서 가져오거나 기본값 설정 (예: 'ko')
+            # 참고: GenerateRequest에 language_code 필드가 없다면 추가 필요
+            language_code = getattr(request, 'language_code', 'ko')
+
+            recommendations = await self.generate_recommendations(request, language_code)
             
-            # === 3단계: AI 큐레이션 ===
-            logger.info(f"🎨 [STEP_3_START] AI 큐레이션 시작 - 1안/2안 분할 및 상세 일정 구성")
-            ai_plans = await self._step3_ai_curation(request, place_pool)
-            logger.info(f"✅ [STEP_3_SUCCESS] AI 큐레이션 완료")
-            logger.info(f"📊 [STEP_3_RESULT] 1안/2안 큐레이션 완료")
+            # [신규] recommendations 결과를 TravelPlan으로 변환
+            travel_plan = self._convert_recommendations_to_travel_plan(request, recommendations)
             
-            # === 4단계: 최종 JSON 조립 ===
-            logger.info(f"🔧 [STEP_4_START] 최종 JSON 조립 시작")
-            final_response = self._step4_json_assembly(ai_plans, place_pool, request_id)
-            logger.info(f"✅ [STEP_4_SUCCESS] 최종 JSON 조립 완료")
-            logger.info(f"📊 [STEP_4_RESULT] Plan A: '{final_response.plan_a.title}', Plan B: '{final_response.plan_b.title}'")
-            
-            # === Railway 로그: 전체 완료 ===
-            logger.info("=" * 80)
-            logger.info(f"🎉 [REQUEST_SUCCESS] 여행 일정 생성 완료 [{request_id}]")
-            logger.info(f"📋 [FINAL_PLAN_A] {final_response.plan_a.title}")
-            logger.info(f"📋 [FINAL_PLAN_B] {final_response.plan_b.title}")
-            logger.info(f"🏛️ [TOTAL_PLACES] {len(final_response.plan_a.places)}개 장소 포함")
-            logger.info("=" * 80)
-            
-            return final_response
+            return GenerateResponse(
+                plan_a=travel_plan,
+                plan_b=travel_plan, # 우선 A, B안을 동일하게 반환
+                request_id=request_id,
+                generated_at=datetime.now().isoformat()
+            )
             
         except Exception as e:
             # === Railway 로그: 에러 상세 ===
@@ -165,74 +144,6 @@ class AdvancedItineraryService:
         except Exception as e:
             logger.error(f"추천 생성 프로세스 실패: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="추천 생성 중 오류 발생")
-
-    async def _step1_ai_brainstorming(self, request: GenerateRequest) -> Dict[str, List[str]]:
-        """
-        1단계: AI 브레인스토밍 - 장소 이름 후보군 생성
-        """
-        prompts_dict = load_prompts_from_db()
-        prompt1 = prompts_dict.get("stage1_destinations_prompt")
-        if not prompt1:
-            prompt1 = f"당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.\n사용자의 요청: $city, $duration일, $budget, $travel_style, $special_requests"
-        
-        format_dict = {
-            "city": request.city,
-            "duration": request.duration,
-            "budget": getattr(request, 'budget_range', 'medium'),
-            "travel_style": getattr(request, 'travel_style', []),
-            "special_requests": request.special_requests or '일반적인 여행',
-        }
-        
-        try:
-            # .format() 대신 string.Template을 사용하여 안전하게 변수 치환
-            template = Template(prompt1)
-            final_prompt = template.safe_substitute(format_dict)
-        except Exception as e:
-            logger.error(f"프롬프트 생성 중 오류 발생: {e}", exc_info=True)
-            # 템플릿 처리 실패 시, 가장 기본적인 프롬프트로 대체
-            final_prompt = f"사용자 요청: {request.city} 여행, {request.duration}일"
-
-        try:
-            handler = self._get_ai_handler()
-            raw_response = await handler.get_completion(final_prompt)
-            logger.info(f"🤖 [AI_RAW_RESPONSE] from {type(handler).__name__}: {raw_response}")
-            
-            # AI 응답을 JSON으로 파싱
-            try:
-                ai_response = json.loads(raw_response)
-                logger.info(f"✅ [AI_PARSED] AI 응답 파싱 성공: {ai_response}")
-            except json.JSONDecodeError:
-                logger.warning("AI 응답 JSON 파싱 실패, 하드코딩된 응답 사용")
-                ai_response = {
-                    "main_theme": f"{request.city} 문화 체험 여행",
-                    "recommendations": {
-                        "accommodations": ["도쿄역 호텔", "신주쿠 호텔", "시부야 호텔"],
-                        "attractions": ["센소지 절", "메이지 신궁", "도쿄 타워", "스카이트리"],
-                        "foods": ["스시 맛집", "라멘 맛집", "이자카야", "와규 레스토랑"],
-                        "activities": ["온센 체험", "쇼핑", "카라오케", "애니메이션 카페"]
-                    }
-                }
-            
-            if not ai_response.get("recommendations"):
-                logger.error(f"1단계 결과물에 recommendations가 없어 2단계를 진행할 수 없습니다. 실제 응답: {ai_response}")
-                raise HTTPException(status_code=500, detail="[2025-01-11 UPDATED] No recommendations in AI response")
-            
-            # 새로운 응답 구조에서 카테고리별 키워드 추출
-            place_candidates = {}
-            recommendations = ai_response["recommendations"]
-            
-            # 카테고리별로 키워드 리스트 추출
-            for category, keywords in recommendations.items():
-                if keywords and isinstance(keywords, list):
-                    place_candidates[category] = keywords
-            
-            self.travel_theme = ai_response.get("main_theme", f"{request.city} 여행")
-            return place_candidates
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"1단계 AI 브레인스토밍 실패: {e} | 원본 응답: {locals().get('raw_response')}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"AI 브레인스토밍 실패: {e}")
 
     async def _step2_ai_brainstorming(self, request, language_code, existing_keywords=None):
         """
@@ -416,209 +327,55 @@ class AdvancedItineraryService:
 
         return unique_recommendations
 
-    async def _step2_google_places_enrichment(
-        self, 
-        place_candidates: Dict[str, List[str]], 
-        city: str
-    ) -> List[Dict[str, Any]]:
-        """
-        2단계: 구글 플레이스 API 정보 강화
-        """
-        place_pool = []
-        
-        for category, place_names in place_candidates.items():
-            # 카테고리별로 장소 데이터 강화
-            enriched_places = await self.google_places.enrich_places_data(place_names, city)
-            
-            # 카테고리 정보 추가
-            for place in enriched_places:
-                place['category'] = category
-                place_pool.append(place)
-        
-        # 중복 제거 (place_id 기준)
-        seen_ids = set()
-        unique_places = []
-        for place in place_pool:
-            if place.get('place_id') not in seen_ids:
-                seen_ids.add(place.get('place_id'))
-                unique_places.append(place)
-        
-        return unique_places
+    def _convert_recommendations_to_travel_plan(self, request: GenerateRequest, recommendations: Dict[str, List[Dict]]) -> TravelPlan:
+        """추천 목록(v5.0)을 TravelPlan(v4.0) 모델로 변환"""
+        all_places = []
+        for category, places in recommendations.items():
+            for place in places:
+                all_places.append(PlaceData(
+                    place_id=place.get("place_id", ""),
+                    name=place.get("name", ""),
+                    category=category,
+                    lat=place.get("lat", 0.0),
+                    lng=place.get("lng", 0.0),
+                    rating=place.get("rating"),
+                    address=place.get("address"),
+                    description=place.get("description") # 이 필드가 없을 수 있음
+                ))
 
-    async def _step3_ai_curation(
-        self, 
-        request: GenerateRequest, 
-        place_pool: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """
-        3단계: AI 큐레이션 - 1안/2안 분할 및 상세 일정 구성
-        """
-        travel_dates = f"Day 1 to Day {request.duration}"
-        
-        prompts_dict = load_prompts_from_db()
-        prompt2 = prompts_dict.get("stage2_itinerary_prompt")
-        if not prompt2:
-            prompt2 = f"""당신은 'Plango AI'라는 이름의 최고의 여행 일정 설계 전문가입니다.
-당신의 임무는 사전 검증된 장소 목록과 사용자의 원래 요청사항을 바탕으로, 가장 효율적이고 매력적인 일일 여행 계획을 수립하는 것입니다.
+        # place_pool을 사용하여 DayPlan 생성 (기존 로직 재활용 또는 단순화)
+        # 여기서는 간단하게 모든 장소를 첫째 날에 넣는 것으로 단순화
+        activities = []
+        for place in all_places:
+            activities.append(ActivityItem(
+                time="미정",
+                activity=place.name,
+                location=place.address or place.name,
+                description=place.description or f"{place.name} 방문",
+                duration="1-2시간",
+            ))
 
-**사용자의 원래 요청사항:**
-- 목적지: {request.city}
-- 여행 기간: {request.duration}일
-- 예산: {getattr(request, 'budget_range', 'medium')}
-- 여행 스타일: {getattr(request, 'travel_style', [])}
-- 특별 요청사항: {request.special_requests or '일반적인 여행'}
-
-**API로 검증된 장소 목록:**
-```json
-{json.dumps(place_pool, ensure_ascii=False, indent=2)}
-```
-
-**## 지시사항 ##**
-1. **입력 분석:** 사용자의 원래 요청사항과 API로 검증된 장소 목록을 함께 분석합니다.
-2. **동선 최적화:** 각 장소의 위도/경도 정보를 활용하여, 지리적으로 가까운 장소들을 같은 날 일정으로 묶어 이동 시간을 최소화합니다. 이것이 가장 중요한 임무입니다.
-3. **논리적 시간 배분:** 활동들을 '오전', '점심', '오후', '저녁' 시간대에 맞게 논리적으로 배치합니다.
-4. **사용자 맞춤:** 사용자의 원래 요청(여유롭게, 빡빡하게 등)을 참고하여 하루에 배치할 활동의 개수를 조절합니다.
-5. **응답 형식:** 당신의 답변은 **반드시** 아래에 명시된 구조의 **JSON 객체 하나**여야 합니다. 다른 설명은 절대 추가하지 마세요.
-
-**## 핵심 규칙 (매우 중요) ##**
-- **데이터 무결성:** 장소 목록에 제공된 `place_id`와 `name`을 절대 변경하거나 누락하지 말고, 그대로 출력 JSON에 포함시켜야 합니다.
-- **지리적 클러스터링:** 위도/경도 좌표를 기준으로 가장 가까운 장소들을 묶는 것을 최우선으로 고려하세요.
-- **창의적 설명:** 각 날짜의 `theme`과 각 활동의 `activity_description`을 사용자가 기대할 만한 매력적인 문장으로 작성해주세요.
-
-**출력 JSON 구조:**
-{{
-  "itinerary": {{
-    "title": "여행 일정 제목",
-    "concept": "여행 컨셉 설명",
-    "daily_plans": [
-      {{
-        "day": 1,
-        "theme": "첫째 날 테마",
-        "activities": [
-          {{
-            "time": "09:00 - 11:00",
-            "place_name": "장소명",
-            "activity_description": "활동 설명",
-            "place_id": "선택한 장소의 place_id",
-            "lat": 위도,
-            "lng": 경도
-          }}
-        ]
-      }}
-    ]
-  }}
-}}"""
-        try:
-            # Dynamic AI Service 사용 → 1단계와 동일하게 AI 핸들러 사용
-            handler = self._get_ai_handler()
-            # [디버깅 로그 추가] AI에게 보낼 최종 프롬프트를 정확히 로깅
-            logger.info(f"📜 [STEP_3_PROMPT] 3단계 AI에게 보낼 최종 프롬프트:\n{prompt2}")
-            content = await handler.get_completion(prompt2)
-            # [방어 코드 추가] AI 원본 응답을 먼저 로깅
-            logger.info(f"🤖 [AI_RAW_RESPONSE] 3단계 AI 원본 응답: '{content}'")
-            # [방어 코드 추가] 응답이 비어있는지 확인
-            if not content or not content.strip():
-                logger.error("❌ 3단계 AI 큐레이션 실패: AI가 빈 응답을 반환했습니다.")
-                raise ValueError("AI returned an empty or whitespace-only response.")
-            ai_response = json.loads(content)
-            # [방어 코드 추가] 파싱된 결과가 유효한지 확인
-            if not ai_response.get("itinerary"):
-                logger.error("❌ 3단계 AI 큐레이션 실패: 파싱된 JSON에 'itinerary' 키가 없습니다.")
-                raise ValueError("Parsed JSON from AI is missing the 'itinerary' key.")
-            # 새로운 응답 구조 처리 (단일 itinerary)
-            return ai_response
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.error(f"❌ 3단계 AI 큐레이션 실패: {e}", exc_info=False)
-            # 기본 계획 반환
-            return self._create_basic_plans(request, place_pool)
-        except Exception as e:
-            logger.error(f"3단계 AI 큐레이션 실패: {str(e)}")
-            # 기본 계획 반환
-            return self._create_basic_plans(request, place_pool)
-
-    def _step4_json_assembly(
-        self, 
-        ai_plans: Dict[str, Any], 
-        place_pool: List[Dict[str, Any]], 
-        request_id: str
-    ) -> GenerateResponse:
-        """
-        4단계: 최종 JSON 조립 및 반환
-        """
-        def create_travel_plan(plan_data: Dict[str, Any]) -> TravelPlan:
-            daily_plans = []
-            used_places = []
-            
-            for day_data in plan_data.get("daily_plans", []):
-                activities = []
-                for activity_data in day_data.get("activities", []):
-                    activity = ActivityDetail(
-                        time=activity_data.get("time", "09:00"),
-                        place_name=activity_data.get("place_name", ""),
-                        activity_description=activity_data.get("activity_description", ""),
-                        transportation_details=activity_data.get("transportation_details", ""),
-                        place_id=activity_data.get("place_id"),
-                        lat=activity_data.get("lat"),
-                        lng=activity_data.get("lng")
-                    )
-                    activities.append(activity)
-                    
-                    # 사용된 장소 추가
-                    if activity_data.get("place_id"):
-                        for place in place_pool:
-                            if place.get("place_id") == activity_data.get("place_id"):
-                                place_data = PlaceData(
-                                    place_id=place.get("place_id", ""),
-                                    name=place.get("name", ""),
-                                    category=place.get("category", ""),
-                                    lat=place.get("lat", 0.0),
-                                    lng=place.get("lng", 0.0),
-                                    rating=place.get("rating"),
-                                    address=place.get("address"),
-                                    description=place.get("description")
-                                )
-                                used_places.append(place_data)
-                                break
-                
-                # ActivityDetail → ActivityItem 변환
-                activities_item = [
-                    ActivityItem(
-                        time=getattr(a, "time", "09:00"),
-                        activity=getattr(a, "activity_description", getattr(a, "place_name", "")),
-                        location=getattr(a, "place_name", ""),
-                        description=getattr(a, "activity_description", ""),
-                        duration="2시간",  # 기본값 또는 추후 계산
-                        cost=None,
-                        tips=None
-                    ) for a in activities
-                ]
-                day_plan = DayPlan(
-                    day=day_data.get("day", 1),
-                    theme=day_data.get("theme", ""),
-                    activities=activities_item,
-                    meals=day_data.get("meals", {"breakfast": "불포함", "lunch": "불포함", "dinner": "불포함"}),
-                    transportation=day_data.get("transportation", ["도보"]),
-                    estimated_cost=day_data.get("estimated_cost", "0원")
-                )
-                daily_plans.append(day_plan)
-            
-            return TravelPlan(
-                title=plan_data.get("title", ""),
-                concept=plan_data.get("concept", ""),
-                daily_plans=daily_plans,
-                places=used_places
-            )
-        
-        # 단일 itinerary 구조 처리
-        itinerary_data = ai_plans.get("itinerary", {})
-        main_plan = create_travel_plan(itinerary_data)
-        
-        return GenerateResponse(
-            plan_a=main_plan,
-            plan_b=main_plan,  # 호환성을 위해 동일한 계획 제공
-            request_id=request_id,
-            generated_at=datetime.now().isoformat()
+        daily_plan = DayPlan(
+            day=1,
+            theme=f"{request.city} 추천 장소 둘러보기",
+            activities=activities,
+            meals={"breakfast": "자유식", "lunch": "자유식", "dinner": "자유식"},
+            transportation=["대중교통", "도보"],
+            estimated_cost="사용자 예산에 따라 다름"
         )
+        
+        # 남은 일수만큼 비어있는 DayPlan 추가
+        remaining_days = [
+            DayPlan(day=i, theme="자유 일정", activities=[], meals={}, transportation=[], estimated_cost="-")
+            for i in range(2, request.duration + 1)
+        ]
+
+        return TravelPlan(
+            title=f"{request.city} AI 추천 여행",
+            concept="AI가 추천한 핵심 장소들을 바탕으로 한 맞춤 여행 계획",
+            daily_plans=[daily_plan] + remaining_days,
+            places=all_places
+        ) 
 
     async def optimize_itinerary(self, request: OptimizeRequest) -> OptimizeResponse:
         """
@@ -726,85 +483,4 @@ class AdvancedItineraryService:
             concept="선택하신 장소들을 최적의 동선으로 재조합한 맞춤형 여행 계획",
             daily_plans=daily_plans,
             places=place_data_list
-        )
-
-    def _create_fallback_response(self, request: GenerateRequest, request_id: str) -> GenerateResponse:
-        """AI 실패 시 기본 응답을 생성합니다"""
-        # DayPlan의 필수 필드에 맞게 ActivityItem 타입 dict, meals, transportation, estimated_cost 모두 채움
-        basic_activity = {
-            "time": "09:00 - 12:00",
-            "activity": "대표 관광지 방문",
-            "location": f"{request.city} 대표 관광지",
-            "description": "현지 주요 명소를 방문합니다",
-            "duration": "3시간",
-            "cost": None,
-            "tips": None
-        }
-        basic_day = DayPlan(
-            day=1,
-            theme="기본 여행 일정",
-            activities=[basic_activity],
-            meals={},
-            transportation=[],
-            estimated_cost="0원"
-        )
-        basic_plan = TravelPlan(
-            title=f"{request.city} 기본 여행",
-            concept="기본적인 여행 계획",
-            daily_plans=[basic_day],
-            places=[]
-        )
-        fallback_response = GenerateResponse(
-            plan_a=basic_plan,
-            plan_b=basic_plan,
-            request_id=request_id,
-            generated_at=datetime.now().isoformat()
-        )
-        # fallback 응답에 status, error_message 속성 추가 (Pydantic 모델에 따라 setattr)
-        try:
-            setattr(fallback_response, 'status', 'fallback')
-            setattr(fallback_response, 'error_message', "AI 응답 분석 실패로 기본 응답으로 대체되었습니다.")
-        except Exception:
-            pass
-        return fallback_response
-
-    def _create_basic_plans(self, request: GenerateRequest, place_pool: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """기본 계획을 생성합니다"""
-        return {
-            "itinerary": {
-                "title": f"{request.city} 클래식 여행",
-                "concept": "전통적인 관광 중심의 여행",
-                "daily_plans": [
-                    {
-                        "day": 1,
-                        "theme": "주요 관광지 탐방",
-                        "activities": [
-                            {
-                                "time": "09:00 - 12:00",
-                                "place_name": "관광지",
-                                "activity_description": "주요 관광지 방문",
-                                "transportation_details": "대중교통 이용"
-                            }
-                        ]
-                    }
-                ]
-            },
-            "plan_b": {
-                "title": f"{request.city} 모던 여행",
-                "concept": "현대적인 액티비티 중심의 여행",
-                "daily_plans": [
-                    {
-                        "day": 1,
-                        "theme": "트렌디한 장소 탐방",
-                        "activities": [
-                            {
-                                "time": "09:00 - 12:00",
-                                "place_name": "카페/맛집",
-                                "activity_description": "현지 트렌드 체험",
-                                "transportation_details": "대중교통 이용"
-                            }
-                        ]
-                    }
-                ]
-            }
-        } 
+        ) 
