@@ -14,8 +14,9 @@ logger = get_logger(__name__)
 class ItineraryService:
     """여행 일정 관리 서비스"""
     
-    def __init__(self, ai_service: AIService = Depends(AIService)):
-        self.ai_service = ai_service
+    def __init__(self, ai_service=None):
+        # 실제 서비스에서는 DynamicAIService를 주입해야 함
+        self.ai_service = ai_service if ai_service is not None else AIService()
         # 실제로는 데이터베이스나 캐시를 사용
         self._storage = {}
     

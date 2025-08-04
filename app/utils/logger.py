@@ -8,17 +8,17 @@ from app.config import settings
 
 
 def setup_logger(name: str, level: Optional[str] = None) -> logging.Logger:
-    """로거를 설정합니다"""
+    """로거를 설정하고 반환합니다."""
     
+    # Pydantic 설정에서 로그 레벨을 가져옴
+    log_level_str = level or settings.LOGGING_LEVEL
+    log_level = getattr(logging, log_level_str.upper(), logging.INFO)
+
     logger = logging.getLogger(name)
     
     # 이미 핸들러가 설정된 경우 중복 방지
     if logger.handlers:
         return logger
-    
-    # 로그 레벨 설정
-    log_level = getattr(logging, (level or settings.LOG_LEVEL).upper())
-    logger.setLevel(log_level)
     
     # 포맷터 설정
     formatter = logging.Formatter(

@@ -130,3 +130,6 @@ Thumbs.db
 # Logs
 logs/
 *.log 
+
+# local env
+.env 

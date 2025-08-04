@@ -208,3 +208,7 @@ class OptimizeResponse(BaseModel):
     total_distance: Optional[str] = Field(None, description="총 이동 거리")
     total_duration: Optional[str] = Field(None, description="총 이동 시간")
     optimization_details: Optional[Dict[str, Any]] = Field(None, description="최적화 상세 정보") 
+
+
+class RecommendationResponse(BaseModel):
+    places: List[PlaceData] 

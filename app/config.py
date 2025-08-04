@@ -4,6 +4,9 @@ import os
 from typing import List
 from pydantic_settings import BaseSettings
 from pydantic import Field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -23,13 +26,12 @@ class Settings(BaseSettings):
     # API 키
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
-    # GOOGLE_PLACES_API_KEY: str = ""
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     
     # Supabase 설정
     SUPABASE_URL: str = ""
-    SUPABASE_API_KEY: str = ""
+    SUPABASE_KEY: str = ""
     
     # 데이터베이스 설정
     DATABASE_URL: str = "postgresql://username:password@localhost:5432/plango_db"
@@ -38,8 +40,15 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # CORS 설정
-    ALLOWED_ORIGINS: str = "*"
-    BACKEND_CORS_ORIGINS: List[str] = ["*"]
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005"
+    BACKEND_CORS_ORIGINS: List[str] = [
+        "http://localhost:3000", 
+        "http://localhost:3001", 
+        "http://localhost:3002",
+        "http://localhost:3003",
+        "http://localhost:3004",
+        "http://localhost:3005"
+    ]
     
     @property
     def allowed_origins_list(self) -> List[str]:
@@ -59,12 +68,19 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"
     
+    # 로깅 설정
+    LOGGING_LEVEL: str = "INFO"
+    
     # Google Maps Platform API Key
     MAPS_PLATFORM_API_KEY: str = ""
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # Config 클래스 완전 제거 (env_file 등은 model_config로 대체)
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+        "extra": "allow"
+    }
 
 
 # 전역 설정 인스턴스

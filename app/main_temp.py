@@ -12,16 +12,16 @@ setup_logging()
 
 # FastAPI 앱 생성
 app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.PROJECT_VERSION,
-    description=settings.PROJECT_DESCRIPTION
+    title=settings.project_name,
+    version=settings.project_version,
+    description=settings.project_version
 )
 
 # CORS 미들웨어 설정
-if settings.BACKEND_CORS_ORIGINS:
+if settings.backend_cors_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=[str(origin) for origin in settings.backend_cors_origins],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -37,4 +37,4 @@ app.include_router(places.router)
 @app.get("/", summary="루트 경로", description="API 서버의 루트 경로입니다.")
 def read_root():
     """API 서버의 루트 경로"""
-    return {"message": f"Welcome to {settings.PROJECT_NAME}!"}
+    return {"message": f"Welcome to {settings.project_name}!"}
