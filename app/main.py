@@ -10,7 +10,7 @@ import logging
 import os
 from supabase import create_client
 
-from app.routers import health, admin, new_itinerary, places
+from app.routers import health, admin, new_itinerary, places, setup
 from app.config import settings
 # from app.database import create_db_and_tables
 from app.utils.logger import get_logger
@@ -63,6 +63,7 @@ app.include_router(health.router)
 app.include_router(admin.router)
 app.include_router(new_itinerary.router)
 app.include_router(places.router)
+app.include_router(setup.router)
 
 # # 데이터베이스 및 테이블 생성
 # @app.on_event("startup")
