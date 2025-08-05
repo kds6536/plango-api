@@ -17,7 +17,8 @@ from collections import defaultdict
 
 from app.schemas.itinerary import (
     GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse,
-    TravelPlan, DayPlan, ActivityDetail, PlaceData, ActivityItem
+    TravelPlan, DayPlan, ActivityDetail, PlaceData, ActivityItem,
+    ItineraryRequest, RecommendationResponse
 )
 from app.services.google_places_service import GooglePlacesService
 from app.services.ai_handlers import OpenAIHandler, GeminiHandler
@@ -32,7 +33,7 @@ logger = get_logger(__name__)
 class AdvancedItineraryService:
     """고급 여행 일정 생성 서비스"""
     
-    def __init__(self):
+    def __init__(self, ai_service=None, google_service=None):
         # 서비스 초기화
         from app.config import settings
         import openai
@@ -42,7 +43,8 @@ class AdvancedItineraryService:
         self.gemini_client = genai if settings.gemini_api_key else None
         self.model_name_openai = getattr(settings, "openai_model", "gpt-3.5-turbo")
         self.model_name_gemini = getattr(settings, "gemini_model", "gemini-1.5-flash")
-        self.google_places = GooglePlacesService()
+        self.google_places = google_service or GooglePlacesService()
+        self.ai_service = ai_service
         logger.info("AdvancedItineraryService 초기화 완료 - AI 핸들러 패턴 적용")
 
     def _get_ai_handler(self):
@@ -54,6 +56,235 @@ class AdvancedItineraryService:
             return GeminiHandler(self.gemini_client, gemini_model)
         else:
             return OpenAIHandler(self.openai_client, openai_model)
+
+    async def generate_recommendations_with_details(self, request: ItineraryRequest) -> List[PlaceData]:
+        """
+        v6.0: 다중 목적지 지원 추천 생성
+        """
+        try:
+            logger.info(f"v6.0 다중 목적지 추천 생성 시작: {len(request.destinations)}개 목적지")
+            
+            all_places = []
+            
+            for i, destination in enumerate(request.destinations):
+                logger.info(f"목적지 {i+1} 처리: {destination.city}, {destination.country}")
+                
+                # 각 목적지별로 추천 생성
+                destination_places = await self._generate_recommendations_for_destination(
+                    destination, request, i+1
+                )
+                
+                all_places.extend(destination_places)
+            
+            logger.info(f"총 {len(all_places)}개의 장소 추천 생성 완료")
+            return all_places
+            
+        except Exception as e:
+            logger.error(f"추천 생성 중 오류: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    async def _generate_recommendations_for_destination(
+        self, destination, request: ItineraryRequest, destination_index: int
+    ) -> List[PlaceData]:
+        """
+        단일 목적지에 대한 추천 생성
+        """
+        try:
+            # 기존 로직을 단일 도시용으로 변환
+            city = destination.city
+            country = destination.country
+            
+            # AI 브레인스토밍으로 키워드 생성
+            keywords_by_category = await self._step2_ai_brainstorming_v6(
+                city, country, request, destination_index
+            )
+            
+            # Google Places API로 장소 정보 강화
+            enhanced_places = await self._step3_enhance_places_v6(
+                keywords_by_category, city, country, request.language_code
+            )
+            
+            # 결과 처리 및 필터링
+            filtered_places = self._step4_process_and_filter_v6(enhanced_places)
+            
+            # PlaceData 형식으로 변환
+            place_data_list = []
+            for category, places in filtered_places.items():
+                for place in places:
+                    place_data = PlaceData(
+                        place_id=place.get('place_id', ''),
+                        name=place.get('name', ''),
+                        category=category,
+                        lat=place.get('lat', 0.0),
+                        lng=place.get('lng', 0.0),
+                        rating=place.get('rating'),
+                        address=place.get('address'),
+                        description=place.get('description', '')
+                    )
+                    place_data_list.append(place_data)
+            
+            return place_data_list
+            
+        except Exception as e:
+            logger.error(f"목적지 {destination.city} 추천 생성 실패: {e}")
+            return []
+
+    async def _step2_ai_brainstorming_v6(self, city: str, country: str, request: ItineraryRequest, destination_index: int):
+        """
+        v6.0: AI 브레인스토밍 - 다중 목적지 지원
+        """
+        try:
+            ai_handler = self._get_ai_handler()
+            prompts = load_prompts_from_db()
+            
+            # 다중 목적지 컨텍스트 구성
+            context = self._build_multi_destination_context(request, destination_index)
+            
+            prompt_template = prompts.get("brainstorming_v6", """
+            당신은 여행 전문가입니다. 다음 정보를 바탕으로 {city}에서 방문할 만한 장소들을 추천해주세요.
+            
+            여행 정보:
+            - 도시: {city}
+            - 국가: {country}
+            - 총 여행 기간: {total_duration}일
+            - 여행자 수: {travelers_count}명
+            - 예산: {budget_range}
+            - 여행 스타일: {travel_style}
+            - 특별 요청: {special_requests}
+            {multi_destination_context}
+            
+            다음 카테고리별로 3-5개씩 추천해주세요:
+            1. 관광지 (명소, 박물관, 역사적 장소)
+            2. 음식점 (현지 음식, 맛집)
+            3. 활동 (체험, 엔터테인먼트)
+            4. 숙박 (호텔, 게스트하우스)
+            
+            각 장소는 실제 존재하는 곳이어야 하며, 구글에서 검색 가능한 이름이어야 합니다.
+            JSON 형식으로 응답해주세요.
+            """)
+            
+            prompt = Template(prompt_template).safe_substitute(
+                city=city,
+                country=country,
+                total_duration=request.total_duration,
+                travelers_count=request.travelers_count,
+                budget_range=request.budget_range,
+                travel_style=", ".join(request.travel_style) if request.travel_style else "없음",
+                special_requests=request.special_requests or "없음",
+                multi_destination_context=context
+            )
+            
+            response = await ai_handler.generate_text(prompt)
+            
+            # JSON 파싱
+            try:
+                result = json.loads(response)
+                logger.info(f"AI 브레인스토밍 완료: {city}")
+                return result
+            except json.JSONDecodeError:
+                logger.warning(f"JSON 파싱 실패, 텍스트 파싱으로 대체: {city}")
+                return self._parse_text_to_keywords(response)
+                
+        except Exception as e:
+            logger.error(f"AI 브레인스토밍 실패: {e}")
+            return self._get_fallback_keywords(city)
+
+    def _build_multi_destination_context(self, request: ItineraryRequest, current_index: int) -> str:
+        """
+        다중 목적지 컨텍스트 구성
+        """
+        if len(request.destinations) <= 1:
+            return ""
+        
+        context = f"\n다중 목적지 여행 정보 (총 {len(request.destinations)}개 목적지):"
+        for i, dest in enumerate(request.destinations):
+            marker = "→" if i < len(request.destinations) - 1 else "🏁"
+            context += f"\n{i+1}. {dest.city} ({dest.country}) {marker}"
+        
+        context += f"\n현재 처리 중인 목적지: {current_index}번째"
+        return context
+
+    async def _step3_enhance_places_v6(self, keywords_by_category: Dict, city: str, country: str, language_code: str):
+        """
+        v6.0: Google Places API 정보 강화 - 다중 목적지 지원
+        """
+        enhanced_results = {}
+        
+        for category, keywords in keywords_by_category.items():
+            enhanced_results[category] = []
+            
+            for keyword in keywords:
+                try:
+                    # Google Places API 호출
+                    places = await self.google_places.search_places(
+                        query=f"{keyword} {city}",
+                        location=f"{city}, {country}",
+                        language=language_code
+                    )
+                    
+                    if places:
+                        enhanced_results[category].extend(places)
+                        
+                except Exception as e:
+                    logger.error(f"Google Places API 호출 실패 ({category} - {keyword}): {e}")
+                    continue
+        
+        return enhanced_results
+
+    def _step4_process_and_filter_v6(self, place_results: Dict[str, List[Dict]], max_items: int = 5):
+        """
+        v6.0: 결과 처리 및 필터링 - 다중 목적지 지원
+        """
+        filtered_results = {}
+        
+        for category, places in place_results.items():
+            # 중복 제거 및 평점 기준 정렬
+            unique_places = {}
+            for place in places:
+                place_id = place.get('place_id')
+                if place_id and place_id not in unique_places:
+                    unique_places[place_id] = place
+            
+            # 평점 기준으로 정렬 (평점이 높은 순)
+            sorted_places = sorted(
+                unique_places.values(),
+                key=lambda x: x.get('rating', 0) or 0,
+                reverse=True
+            )
+            
+            # 상위 N개 선택
+            filtered_results[category] = sorted_places[:max_items]
+        
+        return filtered_results
+
+    def _parse_text_to_keywords(self, text: str) -> Dict[str, List[str]]:
+        """
+        텍스트를 키워드로 파싱
+        """
+        # 간단한 파싱 로직
+        categories = {
+            "관광지": ["명소", "박물관", "역사"],
+            "음식점": ["맛집", "레스토랑", "카페"],
+            "활동": ["체험", "엔터테인먼트", "액티비티"],
+            "숙박": ["호텔", "게스트하우스", "숙소"]
+        }
+        
+        result = {}
+        for category, keywords in categories.items():
+            result[category] = keywords
+        
+        return result
+
+    def _get_fallback_keywords(self, city: str) -> Dict[str, List[str]]:
+        """
+        폴백 키워드 반환
+        """
+        return {
+            "관광지": [f"{city} 명소", f"{city} 박물관", f"{city} 역사"],
+            "음식점": [f"{city} 맛집", f"{city} 레스토랑", f"{city} 카페"],
+            "활동": [f"{city} 체험", f"{city} 엔터테인먼트", f"{city} 액티비티"],
+            "숙박": [f"{city} 호텔", f"{city} 게스트하우스", f"{city} 숙소"]
+        }
 
     async def generate_itinerary(self, request: GenerateRequest) -> GenerateResponse:
         """
@@ -148,7 +379,7 @@ class AdvancedItineraryService:
             logger.error(f"추천 생성 프로세스 실패: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="추천 생성 중 오류 발생")
 
-    async def _step2_ai_brainstorming(self, request, language_code, existing_keywords=None):
+    async def _step2_ai_brainstorming(self, request, language_code):
         """
         2단계: AI 브레인스토밍 - 장소 후보군 생성 (카테고리별 키워드 요청)
         """

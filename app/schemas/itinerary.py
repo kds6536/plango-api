@@ -24,6 +24,14 @@ class BudgetRange(str, Enum):
     LUXURY = "luxury"
 
 
+class Destination(BaseModel):
+    """목적지 정보"""
+    country: str = Field(..., description="국가", example="japan")
+    city: str = Field(..., description="도시", example="도쿄")
+    start_date: str = Field(..., description="시작일 (YYYY-MM-DD)", example="2024-06-01")
+    end_date: str = Field(..., description="종료일 (YYYY-MM-DD)", example="2024-06-05")
+
+
 class ActivityItem(BaseModel):
     """활동 아이템"""
     time: str = Field(..., description="시간")
@@ -57,48 +65,55 @@ class ItineraryPlan(BaseModel):
 
 
 class ItineraryRequest(BaseModel):
-    """여행 일정 생성 요청"""
-    destination: Optional[str] = Field(None, description="목적지", example="도쿄")
-    city: Optional[str] = Field(None, description="여행 도시 (destination과 동일)", example="도쿄")
-    duration: int = Field(..., ge=1, le=30, description="여행 기간 (일)", example=3)
-    travel_style: Optional[List[TravelStyle]] = Field(default=[], description="여행 스타일")
-    budget_range: Optional[BudgetRange] = Field(default=BudgetRange.MEDIUM, description="예산 범위")
+    """v6.0: 다중 목적지 지원 여행 일정 생성 요청"""
+    destinations: List[Destination] = Field(..., description="목적지 목록", min_items=1)
+    total_duration: int = Field(..., ge=1, le=90, description="총 여행 기간 (일)")
     travelers_count: int = Field(default=2, ge=1, le=20, description="여행자 수", example=2)
-    accommodation_preference: Optional[str] = Field(None, description="숙박 선호도")
-    dietary_restrictions: Optional[List[str]] = Field(None, description="식단 제한사항")
-    special_interests: Optional[List[str]] = Field(None, description="특별 관심사")
-    special_requests: Optional[str] = Field(None, description="특별 요청사항")
-    mobility_considerations: Optional[str] = Field(None, description="이동성 고려사항")
+    budget_range: Optional[str] = Field(default="1000000 KRW", description="예산 범위")
+    travel_style: Optional[List[str]] = Field(default=[], description="여행 스타일")
+    special_requests: Optional[str] = Field(default="", description="특별 요청사항")
+    language_code: Optional[str] = Field(default="ko", description="언어 코드")
     
-    def get_destination(self) -> str:
-        """destination 또는 city 중 하나를 반환"""
-        return self.destination or self.city or "Unknown"
-    
+    @model_validator(mode='before')
     @classmethod
-    def __get_validators__(cls):
-        yield cls.validate_destination_or_city
-    
-    @classmethod
-    def validate_destination_or_city(cls, v):
-        if isinstance(v, dict):
-            destination = v.get('destination')
-            city = v.get('city')
-            if not destination and not city:
-                raise ValueError('destination 또는 city 중 하나는 반드시 제공되어야 합니다')
-        return v
+    def validate_destinations(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            destinations = data.get('destinations', [])
+            if not destinations:
+                raise ValueError('최소 하나의 목적지가 필요합니다')
+            
+            # 각 목적지의 기간 계산
+            total_days = 0
+            for dest in destinations:
+                if dest.get('start_date') and dest.get('end_date'):
+                    start = datetime.strptime(dest['start_date'], '%Y-%m-%d')
+                    end = datetime.strptime(dest['end_date'], '%Y-%m-%d')
+                    days = (end - start).days + 1
+                    total_days += days
+            
+            # total_duration이 계산된 값과 일치하는지 확인
+            if 'total_duration' in data and data['total_duration'] != total_days:
+                data['total_duration'] = total_days
+                
+        return data
     
     class Config:
         json_schema_extra = {
             "example": {
-                "destination": "도쿄",
-                "duration": 3,
-                "travel_style": ["cultural", "gourmet"],
-                "budget_range": "medium",
+                "destinations": [
+                    {
+                        "country": "japan",
+                        "city": "도쿄",
+                        "start_date": "2024-06-01",
+                        "end_date": "2024-06-05"
+                    }
+                ],
+                "total_duration": 5,
                 "travelers_count": 2,
-                "accommodation_preference": "호텔",
-                "dietary_restrictions": ["vegetarian"],
-                "special_interests": ["사진촬영", "전통문화"],
-                "mobility_considerations": "대중교통 선호"
+                "budget_range": "1000000 KRW",
+                "travel_style": ["cultural", "gourmet"],
+                "special_requests": "전통문화 체험을 원합니다",
+                "language_code": "ko"
             }
         }
 
