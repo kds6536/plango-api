@@ -40,26 +40,10 @@ class SupabaseService:
         return self.client is not None
     
     async def get_ai_settings(self) -> Dict[str, Any]:
-        """AI 설정 조회 (기존 settings 테이블 사용)"""
+        """AI 설정 조회 (기존 settings 테이블만 사용)"""
         try:
             if not self.is_connected():
                 return self._get_local_ai_settings()
-            
-            # 먼저 새로운 ai_settings 테이블 시도
-            try:
-                response = self.client.table('ai_settings').select('*').eq('is_active', True).execute()
-                if response.data:
-                    settings_data = response.data[0]
-                    return {
-                        'provider': settings_data.get('provider', 'openai'),
-                        'openai_model': settings_data.get('openai_model', 'gpt-4'),
-                        'gemini_model': settings_data.get('gemini_model', 'gemini-1.5-flash'),
-                        'temperature': settings_data.get('temperature', 0.7),
-                        'max_tokens': settings_data.get('max_tokens', 2000),
-                        'updated_at': settings_data.get('updated_at')
-                    }
-            except:
-                pass  # ai_settings 테이블이 없으면 기존 방식 사용
             
             # 기존 settings 테이블 사용
             response = self.client.table('settings').select('*').execute()
@@ -107,18 +91,10 @@ class SupabaseService:
             return False
     
     async def get_master_prompt(self, prompt_type: str = 'itinerary_generation') -> str:
-        """마스터 프롬프트 조회 (기존 prompts 테이블 사용)"""
+        """마스터 프롬프트 조회 (기존 prompts 테이블만 사용)"""
         try:
             if not self.is_connected():
                 return self._get_local_prompt(prompt_type)
-            
-            # 먼저 새로운 master_prompts 테이블 시도
-            try:
-                response = self.client.table('master_prompts').select('prompt_content').eq('prompt_type', prompt_type).eq('is_active', True).execute()
-                if response.data:
-                    return response.data[0]['prompt_content']
-            except:
-                pass  # master_prompts 테이블이 없으면 기존 방식 사용
             
             # 기존 prompts 테이블 사용
             key_mapping = {
