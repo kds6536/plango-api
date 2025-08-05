@@ -1,0 +1,16 @@
+{
+  "destinations": [
+    {
+      "country": "japan",
+      "city": "도쿄",
+      "start_date": "2024-06-01",
+      "end_date": "2024-06-05"
+    }
+  ],
+  "total_duration": 5,
+  "travelers_count": 2,
+  "budget_range": "1000000 KRW",
+  "travel_style": [],
+  "special_requests": "",
+  "language_code": "ko"
+} 

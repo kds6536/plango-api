@@ -7,11 +7,14 @@ from fastapi import APIRouter, Query, HTTPException, Path, Body
 from typing import List, Optional
 import logging
 
-from app.services.google_places_service import google_places_service
+from app.services.google_places_service import GooglePlacesService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/places", tags=["Places"])
+
+# GooglePlacesService 인스턴스 생성
+google_places_service = GooglePlacesService()
 
 @router.get("/search")
 async def search_places(

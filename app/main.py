@@ -13,7 +13,7 @@ from supabase import create_client
 from app.routers import health, admin, new_itinerary, places
 from app.config import settings
 # from app.database import create_db_and_tables
-from app.utils.logger import setup_logging
+from app.utils.logger import get_logger
 
 # FastAPI 애플리케이션 생성
 app = FastAPI(
@@ -31,6 +31,9 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# 로거 초기화
+logger = get_logger("api")
 
 # --- 비동기 시작 이벤트 핸들러 ---
 @app.on_event("startup")
@@ -54,11 +57,6 @@ async def startup_event():
         logger.error(f"💥 Supabase 클라이언트 초기화 실패: {e}")
         admin.supabase = None
         new_itinerary.supabase = None
-
-
-# 로깅 미_구성
-setup_logging()
-logger = logging.getLogger("api")
 
 # 라우터 포함
 app.include_router(health.router)

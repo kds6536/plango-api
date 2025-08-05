@@ -27,13 +27,13 @@ class DynamicAIService:
         """AI 클라이언트들을 초기화"""
         try:
             # OpenAI 클라이언트 설정
-            if settings.openai_api_key:
-                self.openai_client = openai.OpenAI(api_key=settings.openai_api_key)
+            if settings.OPENAI_API_KEY:
+                self.openai_client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
                 logger.info("OpenAI 클라이언트 초기화 완료")
             
             # Gemini 클라이언트 설정
-            if settings.gemini_api_key:
-                genai.configure(api_key=settings.gemini_api_key)
+            if settings.GEMINI_API_KEY:
+                genai.configure(api_key=settings.GEMINI_API_KEY)
                 self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
                 logger.info("Gemini 클라이언트 초기화 완료")
                 
@@ -183,14 +183,14 @@ class DynamicAIService:
         }
         
         # OpenAI 상태 확인
-        if self.openai_client and settings.openai_api_key:
+        if self.openai_client and settings.OPENAI_API_KEY:
             provider_info["available_providers"].append("openai")
             provider_info["provider_status"]["openai"] = "available"
         else:
             provider_info["provider_status"]["openai"] = "not_configured"
         
         # Gemini 상태 확인
-        if self.gemini_model and settings.gemini_api_key:
+        if self.gemini_model and settings.GEMINI_API_KEY:
             provider_info["available_providers"].append("gemini")
             provider_info["provider_status"]["gemini"] = "available"
         else:
