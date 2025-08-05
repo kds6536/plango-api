@@ -23,7 +23,7 @@ from app.schemas.itinerary import (
 from app.services.google_places_service import GooglePlacesService
 from app.services.ai_handlers import OpenAIHandler, GeminiHandler
 from app.utils.logger import get_logger
-from app.routers.admin import load_ai_settings_from_db, load_prompts_from_db
+from app.services.enhanced_ai_service import enhanced_ai_service
 from fastapi import HTTPException
 from string import Template  # string.Template을 사용합니다.
 
@@ -47,15 +47,25 @@ class AdvancedItineraryService:
         self.ai_service = ai_service
         logger.info("AdvancedItineraryService 초기화 완료 - AI 핸들러 패턴 적용")
 
-    def _get_ai_handler(self):
-        settings_dict = load_ai_settings_from_db()
-        provider = settings_dict.get("default_provider", "openai").lower()
-        openai_model = settings_dict.get("openai_model_name", "gpt-3.5-turbo")
-        gemini_model = settings_dict.get("gemini_model_name", "gemini-1.5-flash")
-        if provider == "gemini":
-            return GeminiHandler(self.gemini_client, gemini_model)
-        else:
-            return OpenAIHandler(self.openai_client, openai_model)
+    async def _get_ai_handler(self):
+        """Enhanced AI Service를 통해 활성화된 AI 핸들러 가져오기"""
+        try:
+            return await enhanced_ai_service.get_active_handler()
+        except Exception as e:
+            logger.error(f"Enhanced AI handler 가져오기 실패: {e}")
+            # 폴백으로 기존 방식 사용
+            settings_dict = {
+                "default_provider": "openai",
+                "openai_model_name": "gpt-4",
+                "gemini_model_name": "gemini-1.5-flash"
+            }
+            provider = settings_dict.get("default_provider", "openai").lower()
+            openai_model = settings_dict.get("openai_model_name", "gpt-4")
+            gemini_model = settings_dict.get("gemini_model_name", "gemini-1.5-flash")
+            if provider == "gemini" and self.gemini_client:
+                return GeminiHandler(self.gemini_client, gemini_model)
+            else:
+                return OpenAIHandler(self.openai_client, openai_model)
 
     async def generate_recommendations_with_details(self, request: ItineraryRequest) -> List[PlaceData]:
         """
@@ -753,9 +763,9 @@ ${user_request_json}
             places=place_data_list
         )
 
-    def create_final_itinerary(self, places: List[PlaceData]) -> OptimizeResponse:
+    async def create_final_itinerary(self, places: List[PlaceData]) -> OptimizeResponse:
         """
-        v6.0: 선택된 장소들을 AI로 최적화하여 최종 일정을 생성합니다.
+        v6.0: 선택된 장소들을 Supabase 마스터 프롬프트와 AI로 최적화하여 최종 일정을 생성합니다.
         """
         try:
             logger.info(f"🎯 [OPTIMIZE] 최종 일정 생성 시작: {len(places)}개 장소")
@@ -763,18 +773,46 @@ ${user_request_json}
             # 기본값 설정
             duration = max(1, len(places) // 3)  # 장소 3개당 1일 계산
             
-            # 간단한 지리적 클러스터링 (실제로는 AI와 Directions API 사용)
-            optimized_plan = self._create_optimized_travel_plan(places, duration)
+            # v6.0: Enhanced AI Service를 사용한 마스터 프롬프트 기반 일정 생성
+            try:
+                # 사용자 데이터 구성
+                user_data = {
+                    "목적지": f"{places[0].address.split()[0] if places and places[0].address else '여행지'}",
+                    "여행기간_일": duration,
+                    "사용자_선택_장소": [
+                        {
+                            "장소_id": place.place_id,
+                            "이름": place.name,
+                            "타입": place.category or "관광",
+                            "위도": place.lat or 0,
+                            "경도": place.lng or 0,
+                            "사전_그룹": 1  # 단순화된 그룹핑
+                        }
+                        for place in places
+                    ]
+                }
+                
+                logger.info("Enhanced AI Service로 일정 생성 시도")
+                ai_response = await enhanced_ai_service.generate_itinerary_with_master_prompt(user_data)
+                
+                # AI 응답을 TravelPlan으로 변환
+                optimized_plan = self._convert_ai_response_to_travel_plan(ai_response, places)
+                
+            except Exception as ai_error:
+                logger.warning(f"AI 기반 일정 생성 실패, 폴백 사용: {ai_error}")
+                # 폴백으로 간단한 일정 생성
+                optimized_plan = self._create_optimized_travel_plan(places, duration)
             
             return OptimizeResponse(
                 optimized_plan=optimized_plan,
                 total_distance="약 50km",
                 total_duration="약 2시간",
                 optimization_details={
-                    "algorithm": "ai_geographic_clustering",
+                    "algorithm": "enhanced_ai_master_prompt",
                     "places_count": len(places),
                     "days_count": duration,
-                    "optimized": True
+                    "optimized": True,
+                    "supabase_prompt": True
                 }
             )
             
@@ -825,4 +863,53 @@ ${user_request_json}
             concept="선택하신 장소들을 최적의 동선으로 구성한 맞춤 여행 계획",
             daily_plans=daily_plans,
             places=places
-        ) 
+        )
+    
+    def _convert_ai_response_to_travel_plan(self, ai_response: str, places: List[PlaceData]) -> TravelPlan:
+        """
+        AI 응답을 TravelPlan 객체로 변환
+        """
+        try:
+            import json
+            ai_data = json.loads(ai_response)
+            
+            # AI 응답에서 일정 정보 추출
+            title = ai_data.get("여행_제목", "AI 생성 여행 일정")
+            daily_plans = []
+            
+            for day_info in ai_data.get("일정", []):
+                activities = []
+                
+                # 시간표를 ActivityItem으로 변환
+                for schedule_item in day_info.get("시간표", []):
+                    activities.append(ActivityItem(
+                        time=schedule_item.get("시작시간", "09:00"),
+                        activity=schedule_item.get("활동", "활동"),
+                        location=schedule_item.get("장소명", "장소"),
+                        description=schedule_item.get("설명", ""),
+                        duration=f"{schedule_item.get('소요시간_분', 60)}분",
+                        cost="개인차이",
+                        tips=schedule_item.get("설명", "")
+                    ))
+                
+                # DayPlan 생성
+                daily_plans.append(DayPlan(
+                    day=day_info.get("일차", 1),
+                    theme=day_info.get("일일_테마", "여행"),
+                    activities=activities,
+                    meals={"점심": "현지 맛집", "저녁": "추천 레스토랑"},
+                    transportation=["도보", "대중교통"],
+                    estimated_cost="개인차이"
+                ))
+            
+            return TravelPlan(
+                title=title,
+                concept="AI가 최적화한 맞춤형 여행 계획",
+                daily_plans=daily_plans,
+                places=places
+            )
+            
+        except Exception as e:
+            logger.error(f"AI 응답 변환 실패: {e}")
+            # 폴백으로 기본 계획 반환
+            return self._create_optimized_travel_plan(places, len(places) // 3 or 1) 

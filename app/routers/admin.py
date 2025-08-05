@@ -1,310 +1,287 @@
 """
-관리자 전용 API 라우터
-AI 제공자 설정, 시스템 설정 등을 관리합니다
+관리자 전용 API 엔드포인트
+Supabase 기반 AI 설정 및 프롬프트 관리
 """
 
-from fastapi import APIRouter, HTTPException, Request
-from datetime import datetime
-from typing import Dict, Any
+import logging
+from typing import Dict, Any, List
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
-# --- 변경점 1: 필요한 Supabase 라이브러리 import ---
-import os
-from supabase import create_client, Client
-
+from datetime import datetime
+from app.services.supabase_service import supabase_service
+from app.services.enhanced_ai_service import enhanced_ai_service
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/v1/admin", tags=["관리자 API"])
+router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 
-# Supabase 클라이언트 인스턴스를 담을 변수 (초기화는 main.py에서 수행)
-supabase: Client = None
 
-# AI 설정 요청/응답 모델
-class AISettingsRequest(BaseModel):
-    default_provider: str
-    openai_model_name: str
-    gemini_model_name: str
+class AISettings(BaseModel):
+    """AI 설정 모델"""
+    provider: str = "openai"  # openai 또는 gemini
+    openai_model: str = "gpt-4"
+    gemini_model: str = "gemini-1.5-flash"
+    temperature: float = 0.7
+    max_tokens: int = 2000
 
-class AISettingsResponse(BaseModel):
-    default_provider: str
-    openai_model_name: str
-    gemini_model_name: str
-    # created_at: datetime  # DB에서 직접 가져오므로 모델에서 필요 없을 수 있음
 
-# --- 프롬프트 모델 추가 ---
-class PromptsRequest(BaseModel):
-    stage1_destinations_prompt: str
-    stage3_detailed_itinerary_prompt: str
+class PromptUpdate(BaseModel):
+    """프롬프트 업데이트 모델"""
+    prompt_type: str
+    prompt_content: str
 
-def load_ai_settings_from_db() -> Dict[str, Any]:
-    """AI 설정을 Supabase DB에서 로드"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="데이터베이스 연결이 설정되지 않았습니다.")
-        
-    try:
-        # 'settings' 테이블에서 모든 데이터를 가져옵니다.
-        logger.info("Supabase에서 settings 테이블 조회 시작")
-        response = supabase.table('settings').select('key, value').execute()
-        logger.info(f"Supabase 응답 타입: {type(response)}")
-        logger.info(f"Supabase 응답 속성들: {dir(response)}")
-        
-        # 다양한 방법으로 데이터 접근 시도
-        data = []
-        if hasattr(response, 'data'):
-            data = response.data
-            logger.info(f"response.data 사용: {data}")
-        elif hasattr(response, 'json'):
-            json_data = response.json()
-            data = json_data.get('data', [])
-            logger.info(f"response.json() 사용: {data}")
-        else:
-            logger.error("응답에서 데이터를 추출할 수 없습니다.")
-            # 기본값 반환
-            return {
-                "default_provider": "openai",
-                "openai_model_name": "gpt-4o",
-                "gemini_model_name": "gemini-1.5-pro-latest"
-            }
-            
-        logger.info(f"조회된 데이터: {data}")
-        
-        # 키-값 리스트를 하나의 딕셔너리로 변환합니다.
-        # 예: [{'key': 'default_provider', 'value': 'openai'}] -> {'default_provider': 'openai'}
-        settings_dict = {item['key']: item['value'] for item in data}
-        
-        if not settings_dict:
-            logger.warning("DB에 설정이 없습니다. 기본 설정을 반환합니다.")
-            # DB에 데이터가 없을 경우를 대비한 기본값
-            default_settings = {
-                "default_provider": "openai",
-                "openai_model_name": "gpt-4o",
-                "gemini_model_name": "gemini-1.5-pro-latest"
-            }
-            # 기본값을 DB에 저장
-            try:
-                supabase.table('settings').upsert({
-                    'key': 'default_provider', 
-                    'value': 'openai',
-                    'is_encrypted': False
-                }).execute()
-                supabase.table('settings').upsert({
-                    'key': 'openai_model_name', 
-                    'value': 'gpt-4o',
-                    'is_encrypted': False
-                }).execute()
-                supabase.table('settings').upsert({
-                    'key': 'gemini_model_name', 
-                    'value': 'gemini-1.5-pro-latest',
-                    'is_encrypted': False
-                }).execute()
-                logger.info("기본 설정을 DB에 저장했습니다.")
-            except Exception as insert_error:
-                logger.error(f"기본 설정 저장 실패: {insert_error}")
-            
-            return default_settings
-        
-        logger.info(f"최종 설정 딕셔너리: {settings_dict}")
-        return settings_dict
-    except Exception as e:
-        logger.error(f"DB에서 AI 설정 로드 실패: {e}")
-        logger.error(f"에러 타입: {type(e).__name__}")
-        logger.error(f"에러 세부사항: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"데이터베이스에서 설정을 불러오는 데 실패했습니다: {str(e)}")
 
-def save_ai_settings_to_db(settings: AISettingsRequest):
-    """AI 설정을 Supabase DB에 저장"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="데이터베이스 연결이 설정되지 않았습니다.")
+# 기존 호환성을 위한 함수들 (deprecated)
+def load_ai_settings_from_db():
+    """기존 호환성을 위한 함수 - deprecated"""
+    logger.warning("load_ai_settings_from_db는 deprecated입니다. enhanced_ai_service를 사용하세요.")
+    return {
+        "default_provider": "openai",
+        "openai_model_name": "gpt-4",
+        "gemini_model_name": "gemini-1.5-flash"
+    }
 
-    try:
-        # 받은 데이터를 기반으로 각 설정을 하나씩 업데이트합니다.
-        # .upsert()는 데이터가 있으면 update, 없으면 insert를 해줘서 더 안정적입니다.
-        logger.info(f"DB에 AI 설정 저장 시작: {settings.dict()}")
-        
-        # is_encrypted 컬럼을 포함하여 데이터 삽입
-        response1 = supabase.table('settings').upsert({
-            'key': 'default_provider', 
-            'value': settings.default_provider,
-            'is_encrypted': False
-        }).execute()
-        logger.info(f"default_provider 저장 완료: {response1}")
-        
-        response2 = supabase.table('settings').upsert({
-            'key': 'openai_model_name', 
-            'value': settings.openai_model_name,
-            'is_encrypted': False
-        }).execute()
-        logger.info(f"openai_model_name 저장 완료: {response2}")
-        
-        response3 = supabase.table('settings').upsert({
-            'key': 'gemini_model_name', 
-            'value': settings.gemini_model_name,
-            'is_encrypted': False
-        }).execute()
-        logger.info(f"gemini_model_name 저장 완료: {response3}")
 
-        logger.info(f"DB에 AI 설정 저장 완료: {settings.dict()}")
-    except Exception as e:
-        logger.error(f"DB에 AI 설정 저장 실패: {e}")
-        logger.error(f"에러 타입: {type(e).__name__}")
-        logger.error(f"에러 세부사항: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"데이터베이스에 설정을 저장하는 데 실패했습니다: {str(e)}")
-
-# --- 프롬프트 로드 함수 추가 ---
-def load_prompts_from_db() -> Dict[str, Any]:
-    """프롬프트를 Supabase DB에서 로드"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="데이터베이스 연결이 설정되지 않았습니다.")
-    try:
-        logger.info("Supabase에서 prompts 테이블 조회 시작")
-        # 'prompts' 테이블에서 'key'와 'value'를 가져옵니다.
-        response = supabase.table('prompts').select('key, value').execute()
-        data = response.data
-        logger.info(f"조회된 프롬프트 데이터: {data}")
-        
-        prompts_dict = {item['key']: item['value'] for item in data}
-        
-        if not prompts_dict or 'stage1_destinations_prompt' not in prompts_dict:
-            logger.warning("DB에 프롬프트가 없습니다. 기본 프롬프트를 반환하고 저장합니다.")
-            default_prompts = {
-                "stage1_destinations_prompt": "You are a helpful assistant that extracts travel destinations from a user's request...",
-                "stage3_detailed_itinerary_prompt": "You are a travel planning expert. Based on the provided list of destinations..."
-            }
-            # 기본 프롬프트를 DB에 저장
-            try:
-                supabase.table('prompts').upsert({
-                    'key': 'stage1_destinations_prompt', 
-                    'value': default_prompts['stage1_destinations_prompt']
-                }).execute()
-                supabase.table('prompts').upsert({
-                    'key': 'stage3_detailed_itinerary_prompt', 
-                    'value': default_prompts['stage3_detailed_itinerary_prompt']
-                }).execute()
-                logger.info("기본 프롬프트를 DB에 저장했습니다.")
-            except Exception as insert_error:
-                logger.error(f"기본 프롬프트 저장 실패: {insert_error}")
-            
-            return default_prompts
-            
-        logger.info(f"최종 프롬프트 딕셔너리: {prompts_dict}")
-        return prompts_dict
-    except Exception as e:
-        logger.error(f"DB에서 프롬프트 로드 실패: {e}")
-        raise HTTPException(status_code=500, detail=f"데이터베이스에서 프롬프트를 불러오는 데 실패했습니다: {str(e)}")
-
-# --- 프롬프트 저장 함수 추가 ---
-def save_prompts_to_db(prompts: PromptsRequest):
-    """프롬프트를 Supabase DB에 저장"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="데이터베이스 연결이 설정되지 않았습니다.")
-
-    try:
-        logger.info(f"DB에 프롬프트 저장 시작: {prompts.dict()}")
-        
-        supabase.table('prompts').upsert({
-            'key': 'stage1_destinations_prompt', 
-            'value': prompts.stage1_destinations_prompt
-        }).execute()
-        
-        supabase.table('prompts').upsert({
-            'key': 'stage3_detailed_itinerary_prompt', 
-            'value': prompts.stage3_detailed_itinerary_prompt
-        }).execute()
-
-        logger.info(f"DB에 프롬프트 저장 완료: {prompts.dict()}")
-    except Exception as e:
-        logger.error(f"DB에 프롬프트 저장 실패: {e}")
-        raise HTTPException(status_code=500, detail=f"데이터베이스에 프롬프트를 저장하는 데 실패했습니다: {str(e)}")
+def load_prompts_from_db():
+    """기존 호환성을 위한 함수 - deprecated"""
+    logger.warning("load_prompts_from_db는 deprecated입니다. enhanced_ai_service를 사용하세요.")
+    return {
+        "ai_brainstorming": "기본 AI 브레인스토밍 프롬프트",
+        "final_optimization": "기본 최종 최적화 프롬프트"
+    }
 
 
 @router.get("/ai-settings")
 async def get_ai_settings():
-    """
-    현재 AI 제공자 설정을 반환합니다.
-    """
+    """현재 AI 설정 조회"""
     try:
-        settings = load_ai_settings_from_db()
-        return settings
+        settings = await enhanced_ai_service.get_current_ai_settings()
+        return {
+            "success": True,
+            "data": settings,
+            "message": f"현재 AI 제공자: {settings.get('provider', 'openai')}"
+        }
     except Exception as e:
         logger.error(f"AI 설정 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.put("/ai-settings")
-async def update_ai_settings(request: AISettingsRequest):
-    """
-    AI 제공자 설정을 DB에 업데이트합니다.
-    """
+async def update_ai_settings(settings: AISettings):
+    """AI 설정 업데이트"""
     try:
-        logger.info(f"AI 설정 업데이트 요청 받음: {request.dict()}")
+        settings_dict = settings.model_dump()
+        success = await enhanced_ai_service.update_ai_settings(settings_dict)
         
-        save_ai_settings_to_db(request)
-        # 저장 후 최신 데이터를 다시 읽어서 반환
-        updated_settings = load_ai_settings_from_db()
-        logger.info(f"AI 설정 업데이트 완료: {updated_settings}")
-        return updated_settings
+        if success:
+            return {
+                "success": True,
+                "message": f"AI 설정이 성공적으로 업데이트되었습니다. 현재 제공자: {settings_dict['provider']}",
+                "data": settings_dict
+            }
+        else:
+            raise HTTPException(status_code=500, detail="AI 설정 저장에 실패했습니다")
+            
     except Exception as e:
         logger.error(f"AI 설정 업데이트 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 프롬프트 GET, PUT 엔드포인트 추가 ---
-@router.get("/prompts")
-async def get_prompts():
-    """
-    현재 프롬프트 설정을 반환합니다.
-    """
+
+@router.get("/prompts/{prompt_type}")
+async def get_prompt(prompt_type: str):
+    """특정 타입의 프롬프트 조회"""
     try:
-        prompts = load_prompts_from_db()
-        return prompts
+        prompt_content = await enhanced_ai_service.get_master_prompt(prompt_type)
+        return {
+            "success": True,
+            "data": {
+                "prompt_type": prompt_type,
+                "prompt_content": prompt_content
+            }
+        }
     except Exception as e:
         logger.error(f"프롬프트 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/prompts")
-async def update_prompts(request: PromptsRequest):
-    """
-    프롬프트 설정을 DB에 업데이트합니다.
-    """
+
+@router.get("/prompts")
+async def get_all_prompts():
+    """모든 프롬프트 조회 (기본 타입들)"""
     try:
-        logger.info(f"프롬프트 업데이트 요청 받음: {request.dict()}")
-        save_prompts_to_db(request)
-        updated_prompts = load_prompts_from_db()
-        logger.info(f"프롬프트 업데이트 완료: {updated_prompts}")
-        return updated_prompts
+        prompt_types = ['itinerary_generation', 'place_recommendation', 'optimization']
+        prompts = {}
+        
+        for prompt_type in prompt_types:
+            try:
+                prompts[prompt_type] = await enhanced_ai_service.get_master_prompt(prompt_type)
+            except:
+                prompts[prompt_type] = "프롬프트를 찾을 수 없습니다."
+        
+        return {
+            "success": True,
+            "data": prompts
+        }
+    except Exception as e:
+        logger.error(f"프롬프트 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/prompts")
+async def update_prompt(prompt_update: PromptUpdate):
+    """프롬프트 업데이트"""
+    try:
+        success = await enhanced_ai_service.update_master_prompt(
+            prompt_update.prompt_type, 
+            prompt_update.prompt_content
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"'{prompt_update.prompt_type}' 프롬프트가 성공적으로 업데이트되었습니다",
+                "data": {
+                    "prompt_type": prompt_update.prompt_type,
+                    "updated": True
+                }
+            }
+        else:
+            raise HTTPException(status_code=500, detail="프롬프트 저장에 실패했습니다")
+            
     except Exception as e:
         logger.error(f"프롬프트 업데이트 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/prompts/{prompt_type}/history")
+async def get_prompt_history(prompt_type: str):
+    """프롬프트 히스토리 조회"""
+    try:
+        history = await enhanced_ai_service.get_prompt_history(prompt_type)
+        return {
+            "success": True,
+            "data": {
+                "prompt_type": prompt_type,
+                "history": history
+            }
+        }
+    except Exception as e:
+        logger.error(f"프롬프트 히스토리 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/system/status")
+async def get_system_status():
+    """시스템 상태 조회"""
+    try:
+        ai_settings = await enhanced_ai_service.get_current_ai_settings()
+        supabase_connected = supabase_service.is_connected()
+        
+        return {
+            "success": True,
+            "data": {
+                "supabase_connected": supabase_connected,
+                "current_ai_provider": ai_settings.get('provider', 'unknown'),
+                "ai_model": ai_settings.get(f"{ai_settings.get('provider', 'openai')}_model", 'unknown'),
+                "system_ready": supabase_connected and ai_settings.get('provider') is not None
+            }
+        }
+    except Exception as e:
+        logger.error(f"시스템 상태 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/test/ai-generation")
+async def test_ai_generation():
+    """AI 생성 기능 테스트"""
+    try:
+        test_data = {
+            "목적지": "대한민국 서울",
+            "여행기간_일": 2,
+            "사용자_선택_장소": [
+                {
+                    "장소_id": "test_1",
+                    "이름": "경복궁",
+                    "타입": "관광",
+                    "위도": 37.5796,
+                    "경도": 126.9770,
+                    "사전_그룹": 1
+                },
+                {
+                    "장소_id": "test_2", 
+                    "이름": "명동",
+                    "타입": "쇼핑",
+                    "위도": 37.5636,
+                    "경도": 126.9834,
+                    "사전_그룹": 1
+                }
+            ]
+        }
+        
+        result = await enhanced_ai_service.generate_itinerary_with_master_prompt(test_data)
+        
+        return {
+            "success": True,
+            "message": "AI 생성 테스트 완료",
+            "data": {
+                "test_input": test_data,
+                "ai_response": result[:500] + "..." if len(result) > 500 else result,
+                "response_length": len(result)
+            }
+        }
+    except Exception as e:
+        logger.error(f"AI 생성 테스트 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/health")
 async def admin_health():
-    """
-    관리자 API 상태 확인
-    """
+    """관리자 API 상태 확인"""
     return {
         "status": "healthy",
-        "message": "Admin API is running",
-        "timestamp": datetime.now().isoformat()
+        "message": "Admin API is running with Supabase integration",
+        "timestamp": datetime.now().isoformat(),
+        "supabase_connected": supabase_service.is_connected()
     }
+
 
 @router.get("/info")
 async def admin_info():
-    """
-    관리자 API 정보 조회
-    """
-    current_settings = load_ai_settings_from_db()
-    
-    return {
-        "api_name": "Plango Admin API",
-        "version": "1.1.0 (DB-Connected)",
-        "current_ai_provider": current_settings.get("default_provider"),
-        "supported_providers": ["openai", "gemini"],
-        "endpoints": [
-            "GET /api/v1/admin/ai-settings - AI 설정 조회",
-            "PUT /api/v1/admin/ai-settings - AI 설정 업데이트",
-            "GET /api/v1/admin/prompts - 프롬프트 조회",
-            "PUT /api/v1/admin/prompts - 프롬프트 업데이트",
-            "GET /api/v1/admin/health - 상태 확인",
-            "GET /api/v1/admin/info - API 정보"
-        ]
-    } 
+    """관리자 API 정보 조회"""
+    try:
+        current_settings = await enhanced_ai_service.get_current_ai_settings()
+        
+        return {
+            "api_name": "Plango Admin API v2.0",
+            "version": "2.0.0 (Supabase Enhanced)",
+            "current_ai_provider": current_settings.get("provider", "unknown"),
+            "supported_providers": ["openai", "gemini"],
+            "supabase_integrated": True,
+            "features": [
+                "실시간 AI 제공자 전환",
+                "Supabase 기반 설정 관리", 
+                "마스터 프롬프트 버전 관리",
+                "프롬프트 히스토리 추적"
+            ],
+            "endpoints": [
+                "GET /api/v1/admin/ai-settings - AI 설정 조회",
+                "PUT /api/v1/admin/ai-settings - AI 설정 업데이트",
+                "GET /api/v1/admin/prompts - 모든 프롬프트 조회",
+                "GET /api/v1/admin/prompts/{type} - 특정 프롬프트 조회",
+                "PUT /api/v1/admin/prompts - 프롬프트 업데이트",
+                "GET /api/v1/admin/prompts/{type}/history - 프롬프트 히스토리",
+                "GET /api/v1/admin/system/status - 시스템 상태",
+                "POST /api/v1/admin/test/ai-generation - AI 생성 테스트",
+                "GET /api/v1/admin/health - 상태 확인",
+                "GET /api/v1/admin/info - API 정보"
+            ]
+        }
+    except Exception as e:
+        logger.error(f"관리자 정보 조회 실패: {e}")
+        # 에러가 발생해도 기본 정보는 반환
+        return {
+            "api_name": "Plango Admin API v2.0",
+            "version": "2.0.0 (Supabase Enhanced)",
+            "status": "partial",
+            "error": str(e)
+        }
