@@ -40,25 +40,40 @@ class SupabaseService:
         return self.client is not None
     
     async def get_ai_settings(self) -> Dict[str, Any]:
-        """AI 설정 조회"""
+        """AI 설정 조회 (기존 settings 테이블 사용)"""
         try:
             if not self.is_connected():
                 return self._get_local_ai_settings()
             
-            response = self.client.table('ai_settings').select('*').eq('is_active', True).execute()
+            # 먼저 새로운 ai_settings 테이블 시도
+            try:
+                response = self.client.table('ai_settings').select('*').eq('is_active', True).execute()
+                if response.data:
+                    settings_data = response.data[0]
+                    return {
+                        'provider': settings_data.get('provider', 'openai'),
+                        'openai_model': settings_data.get('openai_model', 'gpt-4'),
+                        'gemini_model': settings_data.get('gemini_model', 'gemini-1.5-flash'),
+                        'temperature': settings_data.get('temperature', 0.7),
+                        'max_tokens': settings_data.get('max_tokens', 2000),
+                        'updated_at': settings_data.get('updated_at')
+                    }
+            except:
+                pass  # ai_settings 테이블이 없으면 기존 방식 사용
             
+            # 기존 settings 테이블 사용
+            response = self.client.table('settings').select('*').execute()
             if response.data:
-                settings_data = response.data[0]
+                settings_dict = {item['key']: item['value'] for item in response.data}
                 return {
-                    'provider': settings_data.get('provider', 'openai'),
-                    'openai_model': settings_data.get('openai_model', 'gpt-4'),
-                    'gemini_model': settings_data.get('gemini_model', 'gemini-1.5-flash'),
-                    'temperature': settings_data.get('temperature', 0.7),
-                    'max_tokens': settings_data.get('max_tokens', 2000),
-                    'updated_at': settings_data.get('updated_at')
+                    'provider': settings_dict.get('default_provider', 'openai'),
+                    'openai_model': settings_dict.get('openai_model_name', 'gpt-4'),
+                    'gemini_model': settings_dict.get('gemini_model_name', 'gemini-1.5-flash'),
+                    'temperature': 0.7,
+                    'max_tokens': 2000
                 }
             else:
-                logger.warning("활성화된 AI 설정이 없습니다. 기본값을 사용합니다.")
+                logger.warning("AI 설정이 없습니다. 기본값을 사용합니다.")
                 return self._get_default_ai_settings()
                 
         except Exception as e:
@@ -92,15 +107,31 @@ class SupabaseService:
             return False
     
     async def get_master_prompt(self, prompt_type: str = 'itinerary_generation') -> str:
-        """마스터 프롬프트 조회"""
+        """마스터 프롬프트 조회 (기존 prompts 테이블 사용)"""
         try:
             if not self.is_connected():
                 return self._get_local_prompt(prompt_type)
             
-            response = self.client.table('master_prompts').select('prompt_content').eq('prompt_type', prompt_type).eq('is_active', True).execute()
+            # 먼저 새로운 master_prompts 테이블 시도
+            try:
+                response = self.client.table('master_prompts').select('prompt_content').eq('prompt_type', prompt_type).eq('is_active', True).execute()
+                if response.data:
+                    return response.data[0]['prompt_content']
+            except:
+                pass  # master_prompts 테이블이 없으면 기존 방식 사용
+            
+            # 기존 prompts 테이블 사용
+            key_mapping = {
+                'itinerary_generation': 'stage3_detailed_itinerary_prompt',
+                'place_recommendation': 'stage1_destinations_prompt',
+                'optimization': 'stage3_detailed_itinerary_prompt'
+            }
+            
+            key = key_mapping.get(prompt_type, 'stage3_detailed_itinerary_prompt')
+            response = self.client.table('prompts').select('value').eq('key', key).execute()
             
             if response.data:
-                return response.data[0]['prompt_content']
+                return response.data[0]['value']
             else:
                 logger.warning(f"활성화된 {prompt_type} 프롬프트가 없습니다. 기본값을 사용합니다.")
                 return self._get_default_prompt(prompt_type)
