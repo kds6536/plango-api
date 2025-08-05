@@ -109,17 +109,12 @@ class EnhancedAIService:
             temperature = self.current_settings.get('temperature', 0.7)
             max_tokens = self.current_settings.get('max_tokens', 2000)
             
-            # AI 핸들러에 따라 다른 방식으로 호출
-            if hasattr(handler, 'generate_response'):
-                return await handler.generate_response(
-                    prompt, 
-                    temperature=temperature, 
-                    max_tokens=max_tokens,
-                    **kwargs
-                )
+            # AI 핸들러의 get_completion 메서드 사용
+            if hasattr(handler, 'get_completion'):
+                return await handler.get_completion(prompt)
             else:
-                # 기존 방식으로 폴백
-                return await handler.ask(prompt)
+                logger.error(f"핸들러 {type(handler).__name__}에 get_completion 메서드가 없습니다.")
+                raise ValueError(f"AI 핸들러 {type(handler).__name__}가 올바르지 않습니다.")
                 
         except Exception as e:
             logger.error(f"AI 응답 생성 실패: {e}")
