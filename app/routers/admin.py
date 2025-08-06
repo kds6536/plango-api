@@ -107,31 +107,23 @@ async def get_prompt(prompt_type: str):
 
 @router.get("/prompts")
 async def get_all_prompts():
-    """모든 프롬프트 조회 (기본 타입들)"""
+    """모든 프롬프트 목록 조회 (새로운 스키마 사용)"""
     try:
-        prompt_types = ['itinerary_generation', 'place_recommendation', 'optimization']
-        prompts = {}
-        
-        for prompt_type in prompt_types:
-            try:
-                prompts[prompt_type] = await enhanced_ai_service.get_master_prompt(prompt_type)
-            except:
-                prompts[prompt_type] = "프롬프트를 찾을 수 없습니다."
-        
+        prompts = await supabase_service.list_all_prompts()
         return {
             "success": True,
             "data": prompts
         }
     except Exception as e:
-        logger.error(f"프롬프트 조회 실패: {e}")
+        logger.error(f"프롬프트 목록 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/prompts")
 async def update_prompt(prompt_update: PromptUpdate):
-    """프롬프트 업데이트"""
+    """프롬프트 업데이트 (새로운 스키마 사용)"""
     try:
-        success = await enhanced_ai_service.update_master_prompt(
+        success = await supabase_service.update_master_prompt(
             prompt_update.prompt_type, 
             prompt_update.prompt_content
         )
@@ -155,9 +147,9 @@ async def update_prompt(prompt_update: PromptUpdate):
 
 @router.get("/prompts/{prompt_type}/history")
 async def get_prompt_history(prompt_type: str):
-    """프롬프트 히스토리 조회"""
+    """프롬프트 히스토리 조회 (새로운 스키마 사용)"""
     try:
-        history = await enhanced_ai_service.get_prompt_history(prompt_type)
+        history = await supabase_service.get_prompt_history(prompt_type)
         return {
             "success": True,
             "data": {
@@ -167,6 +159,44 @@ async def get_prompt_history(prompt_type: str):
         }
     except Exception as e:
         logger.error(f"프롬프트 히스토리 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/prompts/name/{prompt_name}")
+async def get_prompt_by_name(prompt_name: str):
+    """이름으로 프롬프트 조회 (새로운 스키마 사용)"""
+    try:
+        prompt = await supabase_service.get_prompt_by_name(prompt_name)
+        if prompt:
+            return {
+                "success": True,
+                "data": prompt
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"프롬프트를 찾을 수 없습니다: {prompt_name}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"프롬프트 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/prompts/name/{prompt_name}")
+async def delete_prompt(prompt_name: str):
+    """프롬프트 삭제 (새로운 스키마 사용)"""
+    try:
+        success = await supabase_service.delete_prompt(prompt_name)
+        if success:
+            return {
+                "success": True,
+                "message": f"프롬프트가 삭제되었습니다: {prompt_name}"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="프롬프트 삭제에 실패했습니다.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"프롬프트 삭제 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

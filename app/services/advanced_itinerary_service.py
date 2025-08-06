@@ -84,9 +84,14 @@ class AdvancedItineraryService:
                     destination, request, i+1
                 )
                 
+                logger.info(f"목적지 {i+1} 결과: {len(destination_places)}개 장소")
                 all_places.extend(destination_places)
             
             logger.info(f"총 {len(all_places)}개의 장소 추천 생성 완료")
+            
+            if not all_places:
+                logger.warning("생성된 장소가 없습니다. 404 오류를 발생시킵니다.")
+            
             return all_places
             
         except Exception as e:
@@ -104,18 +109,26 @@ class AdvancedItineraryService:
             city = destination.city
             country = destination.country
             
+            logger.info(f"목적지 {destination_index} 처리 시작: {city}, {country}")
+            
             # AI 브레인스토밍으로 키워드 생성
+            logger.info(f"AI 브레인스토밍 시작: {city}")
             keywords_by_category = await self._step2_ai_brainstorming_v6(
                 city, country, request, destination_index
             )
+            logger.info(f"AI 브레인스토밍 완료: {city}, 키워드 수: {len(keywords_by_category) if keywords_by_category else 0}")
             
             # Google Places API로 장소 정보 강화
+            logger.info(f"Google Places API 강화 시작: {city}")
             enhanced_places = await self._step3_enhance_places_v6(
                 keywords_by_category, city, country, request.language_code
             )
+            logger.info(f"Google Places API 강화 완료: {city}, 카테고리 수: {len(enhanced_places) if enhanced_places else 0}")
             
             # 결과 처리 및 필터링
+            logger.info(f"결과 처리 및 필터링 시작: {city}")
             filtered_places = self._step4_process_and_filter_v6(enhanced_places)
+            logger.info(f"결과 처리 및 필터링 완료: {city}, 카테고리 수: {len(filtered_places) if filtered_places else 0}")
             
             # PlaceData 형식으로 변환
             place_data_list = []
@@ -133,10 +146,11 @@ class AdvancedItineraryService:
                     )
                     place_data_list.append(place_data)
             
+            logger.info(f"목적지 {destination_index} 처리 완료: {city}, 최종 장소 수: {len(place_data_list)}")
             return place_data_list
             
         except Exception as e:
-            logger.error(f"목적지 {destination.city} 추천 생성 실패: {e}")
+            logger.error(f"목적지 {destination.city} 추천 생성 실패: {e}", exc_info=True)
             return []
 
     async def _step2_ai_brainstorming_v6(self, city: str, country: str, request: ItineraryRequest, destination_index: int):
@@ -144,34 +158,42 @@ class AdvancedItineraryService:
         v6.0: AI 브레인스토밍 - 다중 목적지 지원
         """
         try:
-            ai_handler = self._get_ai_handler()
-            prompts = load_prompts_from_db()
+            logger.info(f"AI 브레인스토밍 시작: {city}, {country}")
+            ai_handler = await self._get_ai_handler()
+            logger.info(f"AI 핸들러 가져오기 완료: {type(ai_handler).__name__}")
+            
+            # Supabase에서 프롬프트 동적 로드
+            try:
+                from app.services.supabase_service import supabase_service
+                prompt_template = await supabase_service.get_master_prompt('place_recommendation')
+                logger.info("Supabase에서 place_recommendation 프롬프트 로드 완료")
+            except Exception as e:
+                logger.warning(f"Supabase 프롬프트 로드 실패, 기본 프롬프트 사용: {e}")
+                prompt_template = """
+당신은 여행 전문가입니다. 다음 정보를 바탕으로 {city}에서 방문할 만한 장소들을 추천해주세요.
+
+여행 정보:
+- 도시: {city}
+- 국가: {country}
+- 총 여행 기간: {total_duration}일
+- 여행자 수: {travelers_count}명
+- 예산: {budget_range}
+- 여행 스타일: {travel_style}
+- 특별 요청: {special_requests}
+{multi_destination_context}
+
+다음 카테고리별로 3-5개씩 추천해주세요:
+1. 관광지 (명소, 박물관, 역사적 장소)
+2. 음식점 (현지 음식, 맛집)
+3. 활동 (체험, 엔터테인먼트)
+4. 숙박 (호텔, 게스트하우스)
+
+각 장소는 실제 존재하는 곳이어야 하며, 구글에서 검색 가능한 이름이어야 합니다.
+JSON 형식으로 응답해주세요.
+"""
             
             # 다중 목적지 컨텍스트 구성
             context = self._build_multi_destination_context(request, destination_index)
-            
-            prompt_template = prompts.get("brainstorming_v6", """
-            당신은 여행 전문가입니다. 다음 정보를 바탕으로 {city}에서 방문할 만한 장소들을 추천해주세요.
-            
-            여행 정보:
-            - 도시: {city}
-            - 국가: {country}
-            - 총 여행 기간: {total_duration}일
-            - 여행자 수: {travelers_count}명
-            - 예산: {budget_range}
-            - 여행 스타일: {travel_style}
-            - 특별 요청: {special_requests}
-            {multi_destination_context}
-            
-            다음 카테고리별로 3-5개씩 추천해주세요:
-            1. 관광지 (명소, 박물관, 역사적 장소)
-            2. 음식점 (현지 음식, 맛집)
-            3. 활동 (체험, 엔터테인먼트)
-            4. 숙박 (호텔, 게스트하우스)
-            
-            각 장소는 실제 존재하는 곳이어야 하며, 구글에서 검색 가능한 이름이어야 합니다.
-            JSON 형식으로 응답해주세요.
-            """)
             
             prompt = Template(prompt_template).safe_substitute(
                 city=city,
@@ -184,7 +206,9 @@ class AdvancedItineraryService:
                 multi_destination_context=context
             )
             
-            response = await ai_handler.generate_text(prompt)
+            logger.info(f"AI 호출 시작: {city}")
+            response = await ai_handler.get_completion(prompt)
+            logger.info(f"AI 응답 수신: {city}, 응답 길이: {len(response) if response else 0}")
             
             # JSON 파싱
             try:
@@ -196,7 +220,8 @@ class AdvancedItineraryService:
                 return self._parse_text_to_keywords(response)
                 
         except Exception as e:
-            logger.error(f"AI 브레인스토밍 실패: {e}")
+            logger.error(f"AI 브레인스토밍 실패: {e}", exc_info=True)
+            logger.info(f"폴백 키워드 사용: {city}")
             return self._get_fallback_keywords(city)
 
     def _build_multi_destination_context(self, request: ItineraryRequest, current_index: int) -> str:
@@ -218,42 +243,68 @@ class AdvancedItineraryService:
         """
         v6.0: Google Places API 정보 강화 - 다중 목적지 지원
         """
+        logger.info(f"Google Places API 강화 시작: {city}, 카테고리 수: {len(keywords_by_category)}")
         enhanced_results = {}
         
         for category, keywords in keywords_by_category.items():
+            logger.info(f"카테고리 '{category}' 처리: {len(keywords)}개 키워드")
             enhanced_results[category] = []
             
             for keyword in keywords:
                 try:
-                    # Google Places API 호출
-                    places = await self.google_places.search_places(
-                        query=f"{keyword} {city}",
-                        location=f"{city}, {country}",
-                        language=language_code
+                    logger.info(f"Google Places API 호출: {keyword} {city}")
+                    # Google Places API 호출 (search_places_text 메서드 사용)
+                    result = await self.google_places.search_places_text(
+                        text_query=f"{keyword} {city}",
+                        fields=["places.id", "places.displayName", "places.formattedAddress", "places.rating", "places.userRatingCount", "places.location"],
+                        language_code=language_code
                     )
                     
+                    places = []
+                    if result and "places" in result:
+                        for place in result["places"]:
+                            place_data = {
+                                "place_id": place.get("id"),
+                                "name": place.get("displayName", {}).get("text"),
+                                "address": place.get("formattedAddress"),
+                                "rating": place.get("rating"),
+                                "lat": place.get("location", {}).get("latitude", 0.0),
+                                "lng": place.get("location", {}).get("longitude", 0.0),
+                                "description": f"{keyword} 관련 장소"
+                            }
+                            places.append(place_data)
+                    
                     if places:
+                        logger.info(f"Google Places API 결과: {keyword} - {len(places)}개 장소")
                         enhanced_results[category].extend(places)
+                    else:
+                        logger.warning(f"Google Places API 결과 없음: {keyword}")
                         
                 except Exception as e:
                     logger.error(f"Google Places API 호출 실패 ({category} - {keyword}): {e}")
                     continue
         
+        logger.info(f"Google Places API 강화 완료: {city}, 카테고리별 결과: {[(k, len(v)) for k, v in enhanced_results.items()]}")
         return enhanced_results
 
     def _step4_process_and_filter_v6(self, place_results: Dict[str, List[Dict]], max_items: int = 5):
         """
         v6.0: 결과 처리 및 필터링 - 다중 목적지 지원
         """
+        logger.info(f"결과 처리 및 필터링 시작: 카테고리 수 {len(place_results)}")
         filtered_results = {}
         
         for category, places in place_results.items():
+            logger.info(f"카테고리 '{category}' 처리: {len(places)}개 장소")
+            
             # 중복 제거 및 평점 기준 정렬
             unique_places = {}
             for place in places:
                 place_id = place.get('place_id')
                 if place_id and place_id not in unique_places:
                     unique_places[place_id] = place
+            
+            logger.info(f"카테고리 '{category}' 중복 제거 후: {len(unique_places)}개 장소")
             
             # 평점 기준으로 정렬 (평점이 높은 순)
             sorted_places = sorted(
@@ -264,7 +315,9 @@ class AdvancedItineraryService:
             
             # 상위 N개 선택
             filtered_results[category] = sorted_places[:max_items]
+            logger.info(f"카테고리 '{category}' 최종 결과: {len(filtered_results[category])}개 장소")
         
+        logger.info(f"결과 처리 및 필터링 완료: 카테고리별 결과 {[(k, len(v)) for k, v in filtered_results.items()]}")
         return filtered_results
 
     def _parse_text_to_keywords(self, text: str) -> Dict[str, List[str]]:
