@@ -65,7 +65,7 @@ class PlaceRecommendationService:
             return PlaceRecommendationResponse(
                 success=True,
                 city_id=city_id,
-                main_theme=ai_recommendations.get("main_theme", ""),
+                main_theme="",  # 새로운 프롬프트에는 main_theme가 없음
                 recommendations=enriched_places,
                 previously_recommended_count=len(existing_place_names),
                 newly_recommended_count=sum(len(places) for places in enriched_places.values())
@@ -95,15 +95,11 @@ class PlaceRecommendationService:
             else:
                 previously_recommended_text = "첫 번째 추천이므로 제약 없이 최고의 장소들을 추천해주세요."
             
-            # 프롬프트 변수 치환 (Supabase 템플릿 변수명에 맞게 매핑)
+            # 프롬프트 변수 치환 (실제 Supabase 프롬프트 변수명에 맞게 매핑)
             dynamic_prompt = base_prompt.format(
                 city=request.city,
                 country=request.country,
-                duration_days=request.total_duration,  # total_duration → duration_days 매핑 (Supabase 템플릿 기준)
-                travelers_count=request.travelers_count,
-                budget_range=request.budget_range,
-                travel_style=", ".join(request.travel_style) if request.travel_style else "자유여행",
-                special_requests=request.special_requests or "특별 요청 없음",
+                duration_days=request.total_duration,  # total_duration → duration_days 매핑
                 previously_recommended_places=previously_recommended_text
             )
             
@@ -125,18 +121,47 @@ class PlaceRecommendationService:
                 max_tokens=2000
             )
             
-            # JSON 파싱
+            # AI 응답 로깅 (디버깅용)
+            logger.info(f"AI 원본 응답: {ai_response[:500]}...")
+            
+            # JSON 파싱 강화
             try:
-                recommendations = json.loads(ai_response)
+                # 응답에서 JSON 부분만 추출 (마크다운 코드 블록 제거)
+                cleaned_response = self._extract_json_from_response(ai_response)
+                recommendations = json.loads(cleaned_response)
                 logger.info(f"AI 추천 결과 파싱 성공: {len(recommendations)}개 카테고리")
                 return recommendations
             except json.JSONDecodeError as e:
                 logger.error(f"AI 응답 JSON 파싱 실패: {e}")
+                logger.error(f"파싱 시도한 응답: {cleaned_response[:200]}...")
                 raise ValueError(f"AI 응답 형식 오류: {str(e)}")
                 
         except Exception as e:
             logger.error(f"AI 추천 요청 실패: {e}")
             raise ValueError(f"AI 추천 중 오류 발생: {str(e)}")
+    
+    def _extract_json_from_response(self, response: str) -> str:
+        """AI 응답에서 JSON 부분만 추출"""
+        try:
+            # 마크다운 코드 블록 제거
+            if "```json" in response:
+                start = response.find("```json") + 7
+                end = response.find("```", start)
+                if end != -1:
+                    return response[start:end].strip()
+            
+            # 일반 JSON 객체 찾기
+            if "{" in response and "}" in response:
+                start = response.find("{")
+                end = response.rfind("}") + 1
+                return response[start:end].strip()
+            
+            # 기본값: 전체 응답 반환
+            return response.strip()
+            
+        except Exception as e:
+            logger.warning(f"JSON 추출 실패: {e}")
+            return response.strip()
     
     async def _enrich_place_data(
         self, 
@@ -149,20 +174,26 @@ class PlaceRecommendationService:
             
             enriched_results = {}
             category_mapping = {
-                "볼거리": "tourist_attraction",
-                "먹거리": "restaurant", 
-                "즐길거리": "amusement_park",
-                "숙소": "lodging"
+                "tourism": "tourist_attraction",
+                "food": "restaurant", 
+                "activity": "amusement_park",
+                "accommodation": "lodging"
+            }
+            
+            # 카테고리명 한글 변환
+            category_translation = {
+                "tourism": "볼거리",
+                "food": "먹거리",
+                "activity": "즐길거리", 
+                "accommodation": "숙소"
             }
             
             for category, place_names in ai_recommendations.items():
-                if category in ["main_theme"]:  # 메타데이터 스킵
-                    continue
-                    
                 if not isinstance(place_names, list):
                     continue
                 
-                logger.info(f"{category} 카테고리 처리: {len(place_names)}개 장소")
+                translated_category = category_translation.get(category, category)
+                logger.info(f"{translated_category} 카테고리 처리: {len(place_names)}개 장소")
                 
                 enriched_places = []
                 for place_name in place_names:
@@ -177,7 +208,7 @@ class PlaceRecommendationService:
                         if places:
                             # 첫 번째 결과를 선택하고 카테고리 정보 추가
                             place = places[0]
-                            place['category'] = category
+                            place['category'] = translated_category
                             enriched_places.append(place)
                             logger.debug(f"{place_name} 정보 강화 완료")
                         else:
@@ -187,8 +218,8 @@ class PlaceRecommendationService:
                         logger.warning(f"{place_name} 정보 강화 실패: {e}")
                         continue
                 
-                enriched_results[category] = enriched_places
-                logger.info(f"{category} 카테고리 완료: {len(enriched_places)}개 장소")
+                enriched_results[translated_category] = enriched_places
+                logger.info(f"{translated_category} 카테고리 완료: {len(enriched_places)}개 장소")
             
             return enriched_results
             
