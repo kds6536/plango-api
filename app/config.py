@@ -40,14 +40,15 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # CORS 설정
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005,https://plango-zeta.vercel.app"
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:3000", 
         "http://localhost:3001", 
         "http://localhost:3002",
         "http://localhost:3003",
         "http://localhost:3004",
-        "http://localhost:3005"
+        "http://localhost:3005",
+        "https://plango-zeta.vercel.app"
     ]
     
     @property
