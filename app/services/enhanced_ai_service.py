@@ -124,7 +124,7 @@ class EnhancedAIService:
         """마스터 프롬프트를 사용한 일정 생성"""
         try:
             # Supabase에서 마스터 프롬프트 가져오기
-            master_prompt = await supabase_service.get_master_prompt('itinerary_generation')
+            master_prompt = await supabase_service.get_master_prompt('itinerary_generation_v1')
             
             # 입력 데이터를 JSON 문자열로 변환
             input_data_json = json.dumps(user_data, ensure_ascii=False, indent=2)
@@ -184,15 +184,21 @@ class EnhancedAIService:
     
     async def get_master_prompt(self, prompt_type: str = 'itinerary_generation') -> str:
         """마스터 프롬프트 조회"""
-        return await supabase_service.get_master_prompt(prompt_type)
+        # 기존 프롬프트 타입을 새로운 스키마 이름으로 매핑
+        prompt_mapping = {
+            'itinerary_generation': 'itinerary_generation_v1',
+            'place_recommendation': 'place_recommendation_v1'
+        }
+        new_prompt_name = prompt_mapping.get(prompt_type, prompt_type)
+        return await supabase_service.get_master_prompt(new_prompt_name)
     
     async def update_master_prompt(self, prompt_type: str, prompt_content: str) -> bool:
-        """마스터 프롬프트 업데이트"""
-        return await supabase_service.update_master_prompt(prompt_type, prompt_content)
+        """마스터 프롬프트 업데이트 - 현재는 지원하지 않음 (관리자 전용 기능)"""
+        raise NotImplementedError("프롬프트 업데이트는 관리자 인터페이스를 통해서만 가능합니다.")
     
     async def get_prompt_history(self, prompt_type: str):
-        """프롬프트 히스토리 조회"""
-        return await supabase_service.get_prompt_history(prompt_type)
+        """프롬프트 히스토리 조회 - 현재는 지원하지 않음"""
+        raise NotImplementedError("프롬프트 히스토리 조회는 현재 지원하지 않습니다.")
 
 
 # 전역 강화된 AI 서비스 인스턴스

@@ -43,7 +43,7 @@ class SupabaseService:
         """AI 설정 조회 (기존 settings 테이블만 사용)"""
         try:
             if not self.is_connected():
-                return self._get_local_ai_settings()
+                return self._get_default_ai_settings()
             
             # 기존 settings 테이블 사용
             response = self.client.table('settings').select('*').execute()
@@ -62,13 +62,13 @@ class SupabaseService:
                 
         except Exception as e:
             logger.error(f"AI 설정 조회 실패: {e}")
-            return self._get_local_ai_settings()
+            return self._get_default_ai_settings()
     
     async def update_ai_settings(self, settings_data: Dict[str, Any]) -> bool:
         """AI 설정 업데이트"""
         try:
             if not self.is_connected():
-                return self._update_local_ai_settings(settings_data)
+                raise ValueError("Supabase 연결 실패. AI 설정을 업데이트할 수 없습니다.")
             
             # 기존 settings 테이블 업데이트
             provider = settings_data.get('provider', 'openai')
@@ -91,126 +91,161 @@ class SupabaseService:
             logger.error(f"AI 설정 업데이트 실패: {e}")
             return False
     
-    async def get_master_prompt(self, prompt_type: str = 'itinerary_generation') -> str:
-        """마스터 프롬프트 조회 (새로운 prompts 테이블 스키마 사용)"""
+    async def get_master_prompt(self, prompt_name: str) -> str:
+        """마스터 프롬프트 조회 (name 컬럼으로 조회, 예외 발생 시 ValueError)"""
         try:
             if not self.is_connected():
-                return self._get_local_prompt(prompt_type)
+                raise ValueError(f"Supabase 연결 실패. {prompt_name} 프롬프트를 조회할 수 없습니다.")
             
-            # 새로운 스키마: name 컬럼으로 조회
-            response = self.client.table('prompts').select('value').eq('name', prompt_type).execute()
+            # name 컬럼으로 조회
+            response = self.client.table('prompts').select('value').eq('name', prompt_name).execute()
             
             if response.data:
-                logger.info(f"Supabase에서 프롬프트 조회 성공: {prompt_type}")
+                logger.info(f"Supabase에서 프롬프트 조회 성공: {prompt_name}")
                 return response.data[0]['value']
             else:
-                logger.warning(f"{prompt_type} 프롬프트가 없습니다. 기본값을 사용합니다.")
-                return self._get_default_prompt(prompt_type)
+                raise ValueError(f"{prompt_name} 프롬프트가 prompts 테이블에 존재하지 않습니다.")
                 
         except Exception as e:
             logger.error(f"마스터 프롬프트 조회 실패: {e}")
-            return self._get_local_prompt(prompt_type)
+            raise ValueError(f"{prompt_name} 프롬프트 조회 중 오류 발생: {str(e)}")
     
-    async def update_master_prompt(self, prompt_type: str, prompt_content: str) -> bool:
-        """마스터 프롬프트 업데이트 (새로운 prompts 테이블 스키마 사용)"""
+    # =============================================================================
+    # 새로운 DB 스키마 관련 함수들 (countries, cities, cached_places)
+    # =============================================================================
+    
+    async def get_or_create_country(self, country_name: str) -> int:
+        """국가 조회 또는 생성 (Get-or-Create 로직)"""
         try:
             if not self.is_connected():
-                return self._update_local_prompt(prompt_type, prompt_content)
+                raise ValueError("Supabase 연결 실패. 국가 정보를 처리할 수 없습니다.")
             
-            # 새로운 스키마: name을 기준으로 upsert 사용
-            upsert_data = {
-                'name': prompt_type,
-                'value': prompt_content,
-                'description': f"프롬프트: {prompt_type}"
-            }
-            
-            # Supabase upsert 사용 (name이 존재하면 업데이트, 없으면 새로 생성)
-            self.client.table('prompts').upsert(upsert_data).execute()
-            
-            logger.info(f"프롬프트 upsert 완료: {prompt_type}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"마스터 프롬프트 업데이트 실패: {e}")
-            return False
-    
-    async def get_prompt_history(self, prompt_type: str = None) -> List[Dict[str, Any]]:
-        """프롬프트 히스토리 조회 (새로운 스키마 사용)"""
-        try:
-            if not self.is_connected():
-                return []
-            
-            if prompt_type:
-                # 특정 프롬프트 조회
-                response = self.client.table('prompts').select('*').eq('name', prompt_type).execute()
-            else:
-                # 모든 프롬프트 조회
-                response = self.client.table('prompts').select('*').order('created_at', desc=True).execute()
-            
-            return response.data if response.data else []
-            
-        except Exception as e:
-            logger.error(f"프롬프트 히스토리 조회 실패: {e}")
-            return []
-    
-    async def delete_prompt(self, prompt_type: str) -> bool:
-        """프롬프트 삭제 (새로운 스키마 사용)"""
-        try:
-            if not self.is_connected():
-                return False
-            
-            # name을 기준으로 삭제
-            self.client.table('prompts').delete().eq('name', prompt_type).execute()
-            
-            logger.info(f"프롬프트 삭제 완료: {prompt_type}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"프롬프트 삭제 실패: {e}")
-            return False
-    
-    async def get_prompt_by_name(self, prompt_name: str) -> Optional[Dict[str, Any]]:
-        """이름으로 프롬프트 조회 (새로운 스키마 사용)"""
-        try:
-            if not self.is_connected():
-                return None
-            
-            response = self.client.table('prompts').select('*').eq('name', prompt_name).execute()
+            # 기존 국가 조회
+            response = self.client.table('countries').select('id').eq('name', country_name).execute()
             
             if response.data:
-                return response.data[0]
+                country_id = response.data[0]['id']
+                logger.info(f"기존 국가 조회 성공: {country_name} (ID: {country_id})")
+                return country_id
             else:
-                return None
-                
+                # 새로운 국가 생성
+                insert_response = self.client.table('countries').insert({'name': country_name}).execute()
+                if insert_response.data:
+                    country_id = insert_response.data[0]['id']
+                    logger.info(f"새로운 국가 생성 완료: {country_name} (ID: {country_id})")
+                    return country_id
+                else:
+                    raise ValueError(f"국가 생성 실패: {country_name}")
+                    
         except Exception as e:
-            logger.error(f"프롬프트 조회 실패: {e}")
-            return None
+            logger.error(f"국가 조회/생성 실패: {e}")
+            raise ValueError(f"국가 {country_name} 처리 중 오류 발생: {str(e)}")
     
-    async def list_all_prompts(self) -> List[Dict[str, Any]]:
-        """모든 프롬프트 목록 조회 (새로운 스키마 사용)"""
+    async def get_or_create_city(self, city_name: str, country_name: str) -> int:
+        """도시 조회 또는 생성 (Get-or-Create 로직)"""
         try:
             if not self.is_connected():
-                return []
+                raise ValueError("Supabase 연결 실패. 도시 정보를 처리할 수 없습니다.")
             
-            response = self.client.table('prompts').select('id, name, description, created_at').order('created_at', desc=True).execute()
+            # 먼저 국가 ID 획득
+            country_id = await self.get_or_create_country(country_name)
             
-            return response.data if response.data else []
+            # 기존 도시 조회 (이름과 국가 ID로 조회)
+            response = self.client.table('cities').select('id').eq('name', city_name).eq('country_id', country_id).execute()
             
+            if response.data:
+                city_id = response.data[0]['id']
+                logger.info(f"기존 도시 조회 성공: {city_name}, {country_name} (ID: {city_id})")
+                return city_id
+            else:
+                # 새로운 도시 생성
+                insert_data = {
+                    'name': city_name,
+                    'country_id': country_id
+                }
+                insert_response = self.client.table('cities').insert(insert_data).execute()
+                if insert_response.data:
+                    city_id = insert_response.data[0]['id']
+                    logger.info(f"새로운 도시 생성 완료: {city_name}, {country_name} (ID: {city_id})")
+                    return city_id
+                else:
+                    raise ValueError(f"도시 생성 실패: {city_name}, {country_name}")
+                    
         except Exception as e:
-            logger.error(f"프롬프트 목록 조회 실패: {e}")
-            return []
+            logger.error(f"도시 조회/생성 실패: {e}")
+            raise ValueError(f"도시 {city_name}, {country_name} 처리 중 오류 발생: {str(e)}")
     
-    def _get_local_ai_settings(self) -> Dict[str, Any]:
-        """로컬 파일에서 AI 설정 조회"""
+    async def get_existing_place_names(self, city_id: int) -> List[str]:
+        """특정 도시의 기존 추천 장소 이름 목록 조회"""
         try:
-            local_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'ai_settings.json')
-            if os.path.exists(local_file):
-                with open(local_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            if not self.is_connected():
+                raise ValueError("Supabase 연결 실패. 장소 정보를 조회할 수 없습니다.")
+            
+            # city_id로 cached_places에서 name 컬럼만 조회
+            response = self.client.table('cached_places').select('name').eq('city_id', city_id).execute()
+            
+            if response.data:
+                place_names = [place['name'] for place in response.data]
+                logger.info(f"도시 ID {city_id}의 기존 장소 {len(place_names)}개 조회 완료")
+                return place_names
+            else:
+                logger.info(f"도시 ID {city_id}에 기존 장소가 없습니다.")
+                return []
+                
         except Exception as e:
-            logger.error(f"로컬 AI 설정 조회 실패: {e}")
-        
-        return self._get_default_ai_settings()
+            logger.error(f"기존 장소 목록 조회 실패: {e}")
+            raise ValueError(f"도시 ID {city_id}의 장소 목록 조회 중 오류 발생: {str(e)}")
+    
+    async def save_cached_places(self, city_id: int, places_data: List[Dict[str, Any]]) -> bool:
+        """AI 추천 결과를 cached_places 테이블에 저장"""
+        try:
+            if not self.is_connected():
+                raise ValueError("Supabase 연결 실패. 장소 정보를 저장할 수 없습니다.")
+            
+            # 각 장소 정보를 cached_places 형식으로 변환
+            cached_places = []
+            for place in places_data:
+                cached_place = {
+                    'city_id': city_id,
+                    'place_id': place.get('place_id', ''),
+                    'name': place.get('name', ''),
+                    'category': place.get('category', ''),
+                    'address': place.get('address', ''),
+                    'coordinates': place.get('coordinates', {}),
+                    'rating': place.get('rating', 0.0),
+                    'total_ratings': place.get('total_ratings', 0),
+                    'phone': place.get('phone', ''),
+                    'website': place.get('website', ''),
+                    'photos': place.get('photos', []),
+                    'opening_hours': place.get('opening_hours', {}),
+                    'price_level': place.get('price_level', 0),
+                    'raw_data': place
+                }
+                cached_places.append(cached_place)
+            
+            # 배치로 저장
+            if cached_places:
+                insert_response = self.client.table('cached_places').insert(cached_places).execute()
+                if insert_response.data:
+                    logger.info(f"도시 ID {city_id}에 {len(cached_places)}개 장소 저장 완료")
+                    return True
+                else:
+                    raise ValueError("장소 데이터 저장 실패")
+            else:
+                logger.warning("저장할 장소 데이터가 없습니다.")
+                return False
+                
+        except Exception as e:
+            logger.error(f"장소 캐싱 실패: {e}")
+            raise ValueError(f"장소 캐싱 중 오류 발생: {str(e)}")
+    
+
+    
+
+    
+
+    
+
     
     def _get_default_ai_settings(self) -> Dict[str, Any]:
         """기본 AI 설정 반환"""
@@ -221,130 +256,6 @@ class SupabaseService:
             'temperature': 0.7,
             'max_tokens': 2000
         }
-    
-    def _update_local_ai_settings(self, settings_data: Dict[str, Any]) -> bool:
-        """로컬 파일에 AI 설정 저장"""
-        try:
-            local_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'ai_settings.json')
-            os.makedirs(os.path.dirname(local_file), exist_ok=True)
-            
-            with open(local_file, 'w', encoding='utf-8') as f:
-                json.dump(settings_data, f, ensure_ascii=False, indent=2)
-            
-            logger.info("로컬 AI 설정 업데이트 완료")
-            return True
-            
-        except Exception as e:
-            logger.error(f"로컬 AI 설정 업데이트 실패: {e}")
-            return False
-    
-    def _get_local_prompt(self, prompt_type: str) -> str:
-        """로컬 파일에서 프롬프트 조회"""
-        try:
-            local_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'prompts.json')
-            if os.path.exists(local_file):
-                with open(local_file, 'r', encoding='utf-8') as f:
-                    prompts = json.load(f)
-                    return prompts.get(prompt_type, self._get_default_prompt(prompt_type))
-        except Exception as e:
-            logger.error(f"로컬 프롬프트 조회 실패: {e}")
-        
-        return self._get_default_prompt(prompt_type)
-    
-    def _get_default_prompt(self, prompt_type: str) -> str:
-        """기본 프롬프트 반환"""
-        default_prompts = {
-            'itinerary_generation': '''너는 10년 경력의 전문 여행 큐레이터 "플랜고 플래너"야. 너의 전문 분야는 사용자가 선택한 장소들을 바탕으로, 가장 효율적인 동선과 감성적인 스토리를 담아 최고의 여행 일정을 기획하는 것이야.
-
-**//-- 절대 규칙 --//**
-
-1. **엄격한 JSON 출력:** 너의 답변은 반드시 유효한 JSON 객체여야만 한다.
-2. **논리적인 동선 구성:** 지리적으로 가까운 장소들을 묶어 이동 시간을 최소화해야 한다.
-3. **현실적인 시간 배분:** 각 활동에 필요한 시간을 합리적으로 할당해야 한다.
-4. **모든 장소 포함:** 사용자가 선택한 모든 장소를 반드시 포함시켜야 한다.
-5. **감성적인 콘텐츠:** 전문 여행 작가처럼 매력적인 문구를 작성해야 한다.
-
-**//-- 입력 데이터 --//**
-{input_data}
-
-**//-- 필수 JSON 출력 형식 --//**
-{
-  "여행_제목": "나만의 맞춤 여행",
-  "일정": [
-    {
-      "일차": 1,
-      "날짜": "YYYY-MM-DD",
-      "일일_테마": "여행의 시작",
-      "시간표": [
-        {
-          "시작시간": "09:00",
-          "종료시간": "10:00",
-          "활동": "활동명 🎯",
-          "장소명": "장소명",
-          "설명": "활동 설명",
-          "소요시간_분": 60,
-          "이동시간_분": 0
-        }
-      ]
-    }
-  ]
-}''',
-            'place_recommendation': '''당신은 여행 전문가입니다. 다음 정보를 바탕으로 {city}에서 방문할 만한 장소들을 추천해주세요.
-
-여행 정보:
-- 도시: {city}
-- 국가: {country}
-- 총 여행 기간: {total_duration}일
-- 여행자 수: {travelers_count}명
-- 예산: {budget_range}
-- 여행 스타일: {travel_style}
-- 특별 요청: {special_requests}
-{multi_destination_context}
-
-다음 카테고리별로 3-5개씩 추천해주세요:
-1. 관광지 (명소, 박물관, 역사적 장소)
-2. 음식점 (현지 음식, 맛집)
-3. 활동 (체험, 엔터테인먼트)
-4. 숙박 (호텔, 게스트하우스)
-
-각 장소는 실제 존재하는 곳이어야 하며, 구글에서 검색 가능한 이름이어야 합니다.
-
-JSON 형식으로 다음과 같이 응답해주세요:
-{
-  "관광지": ["경복궁", "북촌한옥마을", "남산타워"],
-  "음식점": ["명동교자", "광장시장", "이태원 맛집"],
-  "활동": ["한강공원", "동대문 쇼핑", "홍대 클럽"],
-  "숙박": ["롯데호텔", "명동 게스트하우스", "강남 호텔"]
-}'''
-        }
-        
-        return default_prompts.get(prompt_type, "기본 프롬프트가 없습니다.")
-    
-    def _update_local_prompt(self, prompt_type: str, prompt_content: str) -> bool:
-        """로컬 파일에 프롬프트 저장"""
-        try:
-            local_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'prompts.json')
-            os.makedirs(os.path.dirname(local_file), exist_ok=True)
-            
-            # 기존 프롬프트 로드
-            prompts = {}
-            if os.path.exists(local_file):
-                with open(local_file, 'r', encoding='utf-8') as f:
-                    prompts = json.load(f)
-            
-            # 업데이트
-            prompts[prompt_type] = prompt_content
-            
-            # 저장
-            with open(local_file, 'w', encoding='utf-8') as f:
-                json.dump(prompts, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"로컬 프롬프트 업데이트 완료: {prompt_type}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"로컬 프롬프트 업데이트 실패: {e}")
-            return False
 
 
 # 전역 Supabase 서비스 인스턴스

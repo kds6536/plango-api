@@ -165,7 +165,7 @@ class AdvancedItineraryService:
             # Supabase에서 프롬프트 동적 로드
             try:
                 from app.services.supabase_service import supabase_service
-                prompt_template = await supabase_service.get_master_prompt('place_recommendation')
+                prompt_template = await supabase_service.get_master_prompt('place_recommendation_v1')
                 logger.info("Supabase에서 place_recommendation 프롬프트 로드 완료")
             except Exception as e:
                 logger.warning(f"Supabase 프롬프트 로드 실패, 기본 프롬프트 사용: {e}")
@@ -446,9 +446,8 @@ JSON 형식으로 응답해주세요.
         """
         2단계: AI 브레인스토밍 - 장소 후보군 생성 (카테고리별 키워드 요청)
         """
-        prompts_dict = load_prompts_from_db()
         # [수정] 프롬프트 내용을 v5.1 최종 버전으로 교체합니다.
-        prompt_template_str = prompts_dict.get("stage2_destinations_prompt", """
+        prompt_template_str = """
 당신은 'Plango AI'라는 이름의 세계 최고의 여행 컨설턴트입니다.
 당신의 임무는 사용자의 요청을 분석하여, 4개의 지정된 카테고리에 맞춰 각각 **10개**의 **실제로 검색 가능하며 구체적인** 여행 키워드를 중요도 순서대로 제안하는 것입니다.
 
@@ -491,8 +490,8 @@ JSON 형식으로 응답해주세요.
 }
 
 **## 사용자 요청 정보 ##**
-${user_request_json}
-""")
+{user_request_json}
+"""
         
         # 사용자 요청 정보를 JSON 문자열로 변환
         user_request_data = {
@@ -505,9 +504,8 @@ ${user_request_json}
         }
         user_request_json = json.dumps(user_request_data, indent=2, ensure_ascii=False)
         
-        # Template 객체 생성
-        prompt_template = Template(prompt_template_str)
-        prompt = prompt_template.safe_substitute(user_request_json=user_request_json)
+        # 프롬프트에 사용자 요청 정보 삽입
+        prompt = prompt_template_str.format(user_request_json=user_request_json)
         
         try:
             handler = self._get_ai_handler()
