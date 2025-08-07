@@ -95,14 +95,14 @@ class PlaceRecommendationService:
             else:
                 previously_recommended_text = "첫 번째 추천이므로 제약 없이 최고의 장소들을 추천해주세요."
             
-            # 프롬프트 변수 치환
+            # 프롬프트 변수 치환 (Supabase 템플릿 변수명에 맞게 매핑)
             dynamic_prompt = base_prompt.format(
                 city=request.city,
                 country=request.country,
-                total_duration=request.total_duration,
+                duration_days=request.total_duration,  # total_duration → duration_days 매핑 (Supabase 템플릿 기준)
                 travelers_count=request.travelers_count,
                 budget_range=request.budget_range,
-                travel_style=request.travel_style,
+                travel_style=", ".join(request.travel_style) if request.travel_style else "자유여행",
                 special_requests=request.special_requests or "특별 요청 없음",
                 previously_recommended_places=previously_recommended_text
             )
