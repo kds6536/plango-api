@@ -194,8 +194,13 @@ class DynamicAIService:
         logger.info(f"🔍 [AI_SEARCH_PLAN] AI 검색 계획 수립 시작 - {city}, {country}")
         
         try:
-            # Supabase에서 검색 계획 전용 프롬프트 템플릿 조회
-            prompt_template = await supabase_service.get_master_prompt("search_strategy_v1")
+            # Supabase에서 검색 계획 전용 프롬프트 템플릿 조회 (폴백 포함)
+            try:
+                prompt_template = await supabase_service.get_master_prompt("search_strategy_v1")
+            except Exception as prompt_error:
+                logger.warning(f"⚠️ [FALLBACK] search_strategy_v1 프롬프트 로드 실패, 내장 폴백 사용: {prompt_error}")
+                # 내장 폴백 프롬프트 사용
+                prompt_template = self._get_fallback_search_strategy_prompt()
             
             # 기존 장소 목록을 문자열로 변환
             existing_places_text = ""
@@ -244,6 +249,48 @@ class DynamicAIService:
             }
             logger.info(f"🔄 [FALLBACK] 기본 검색 쿼리 사용: {fallback_queries}")
             return fallback_queries
+
+    def _get_fallback_search_strategy_prompt(self) -> str:
+        """Supabase 프롬프트 로드 실패 시 사용할 내장 폴백 프롬프트"""
+        return """당신은 여행 장소 검색 전문가입니다. 사용자가 요청한 도시에서 중복 없는 최적의 장소 검색 전략을 수립해주세요.
+
+**도시 정보:**
+- 도시: $city
+- 국가: $country
+
+**중복 방지 조건:**
+$existing_places
+
+**임무:**
+아래 4개 카테고리별로 Google Places API Text Search에 사용할 최적의 검색어(textQuery)를 생성해주세요.
+
+**검색 전략 원칙:**
+1. 각 카테고리마다 정확하고 구체적인 검색어 사용
+2. 기존 추천 장소와 중복되지 않도록 다른 키워드 선택  
+3. 현지 문화와 특색을 반영한 검색어 우선
+4. 너무 일반적이지 않고, 너무 구체적이지도 않은 적절한 수준
+
+**카테고리별 요구사항:**
+- tourism: 관광지, 랜드마크, 박물관, 문화유적 등
+- food: 음식점, 카페, 현지 음식, 맛집 등
+- activity: 액티비티, 엔터테인먼트, 스포츠, 야외활동 등  
+- accommodation: 호텔, 숙박, 게스트하우스, 리조트 등
+
+다음 JSON 형식으로만 응답하세요:
+{{
+  "tourism": "구체적인 관광 검색어",
+  "food": "구체적인 음식 검색어", 
+  "activity": "구체적인 액티비티 검색어",
+  "accommodation": "구체적인 숙박 검색어"
+}}
+
+예시:
+{{
+  "tourism": "Seoul Gyeongbokgung Palace Bukchon Hanok Village",
+  "food": "Seoul Korean BBQ galbi naengmyeon restaurants",
+  "activity": "Seoul Han River park cycling hiking",
+  "accommodation": "Seoul boutique hotels guesthouses Myeongdong"
+}}"""
 
     def get_provider_info(self) -> Dict[str, Any]:
         """현재 AI 제공자 정보 반환"""

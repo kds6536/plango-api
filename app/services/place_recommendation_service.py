@@ -22,7 +22,8 @@ class PlaceRecommendationService:
     def __init__(self):
         self.supabase = supabase_service
         self.ai_service = DynamicAIService()
-        self.google_places = GooglePlacesService()
+        from app.services.google_places_service import GooglePlacesService
+        self.google_places_service = GooglePlacesService()
     
     async def generate_place_recommendations(
         self, 
