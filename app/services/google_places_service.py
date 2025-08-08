@@ -4,11 +4,12 @@ Google Places API 서비스
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import googlemaps
 from app.config import settings
 import httpx
 import asyncio
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,149 @@ class GooglePlacesService:
             except Exception as e:
                 logger.error(f"장소 검색 중 예외 발생: {e}")
         return {}
+
+    async def parallel_search_by_categories(self, search_queries: Dict[str, str], 
+                                           target_count_per_category: int = 10) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        AI가 생성한 카테고리별 검색 쿼리를 병렬로 실행하고, 부족한 경우 재시도
+        
+        Args:
+            search_queries: AI가 생성한 카테고리별 검색 쿼리
+            target_count_per_category: 카테고리당 목표 장소 개수
+            
+        Returns:
+            Dict[str, List[Dict[str, Any]]]: 카테고리별 장소 목록
+        """
+        logger.info(f"🚀 [PARALLEL_SEARCH] 병렬 장소 검색 시작")
+        logger.info(f"📋 [SEARCH_QUERIES] 검색 쿼리: {search_queries}")
+        
+        # 1단계: 4개 카테고리 병렬 검색
+        initial_tasks = []
+        categories = ["tourism", "food", "activity", "accommodation"]
+        
+        for category in categories:
+            query = search_queries.get(category, f"{category} places")
+            initial_tasks.append(self._search_category_with_fallback(category, query))
+        
+        # 병렬 실행
+        initial_results = await asyncio.gather(*initial_tasks, return_exceptions=True)
+        
+        # 결과 정리
+        categorized_results = {}
+        retry_needed = []
+        
+        for i, result in enumerate(initial_results):
+            category = categories[i]
+            if isinstance(result, Exception):
+                logger.error(f"❌ [SEARCH_ERROR] {category} 검색 실패: {result}")
+                categorized_results[category] = []
+                retry_needed.append(category)
+            else:
+                places_count = len(result)
+                categorized_results[category] = result
+                logger.info(f"✅ [SEARCH_SUCCESS] {category}: {places_count}개 장소 발견")
+                
+                # 목표 개수 미달 시 재시도 대상에 추가
+                if places_count < target_count_per_category:
+                    retry_needed.append(category)
+                    logger.info(f"🔄 [RETRY_NEEDED] {category}: {places_count} < {target_count_per_category}, 재시도 필요")
+        
+        # 2단계: 부족한 카테고리 재시도
+        if retry_needed:
+            logger.info(f"🔁 [RETRY_START] 재시도 대상 카테고리: {retry_needed}")
+            await self._retry_insufficient_categories(categorized_results, retry_needed, 
+                                                   search_queries, target_count_per_category)
+        
+        # 최종 결과 로깅
+        final_counts = {cat: len(places) for cat, places in categorized_results.items()}
+        logger.info(f"🎯 [FINAL_RESULTS] 최종 장소 개수: {final_counts}")
+        
+        return categorized_results
+    
+    async def _search_category_with_fallback(self, category: str, query: str) -> List[Dict[str, Any]]:
+        """단일 카테고리 검색 with 폴백"""
+        fields = [
+            "id", "displayName", "formattedAddress", "rating", "userRatingCount",
+            "priceLevel", "primaryTypeDisplayName", "websiteUri", "location"
+        ]
+        
+        try:
+            result = await self.search_places_text(query, fields)
+            places = result.get("places", [])
+            
+            # 데이터 정제
+            processed_places = []
+            for place in places:
+                processed_place = {
+                    "place_id": place.get("id", f"{category}_{random.randint(1000, 9999)}"),
+                    "name": place.get("displayName", {}).get("text", "Unknown Place"),
+                    "address": place.get("formattedAddress", "주소 정보 없음"),
+                    "rating": place.get("rating", 0.0),
+                    "user_ratings_total": place.get("userRatingCount", 0),
+                    "price_level": place.get("priceLevel", 2),
+                    "category": category,
+                    "description": place.get("primaryTypeDisplayName", {}).get("text", ""),
+                    "website": place.get("websiteUri", ""),
+                    "lat": place.get("location", {}).get("latitude", 0.0),
+                    "lng": place.get("location", {}).get("longitude", 0.0)
+                }
+                processed_places.append(processed_place)
+            
+            return processed_places
+            
+        except Exception as e:
+            logger.error(f"❌ [CATEGORY_SEARCH_ERROR] {category} 검색 실패: {e}")
+            return []
+    
+    async def _retry_insufficient_categories(self, categorized_results: Dict[str, List[Dict[str, Any]]], 
+                                           retry_categories: List[str], 
+                                           original_queries: Dict[str, str],
+                                           target_count: int):
+        """부족한 카테고리에 대해 대체 검색어로 재시도"""
+        
+        # 대체 검색어 생성
+        alternative_queries = {
+            "tourism": ["landmarks", "museums", "cultural sites", "historical places", "attractions"],
+            "food": ["restaurants", "cafes", "local cuisine", "dining", "food courts"],
+            "activity": ["entertainment", "sports", "recreation", "outdoor activities", "fun"],
+            "accommodation": ["hotels", "lodging", "guesthouses", "hostels", "resorts"]
+        }
+        
+        retry_tasks = []
+        for category in retry_categories:
+            current_count = len(categorized_results[category])
+            needed_count = target_count - current_count
+            
+            if needed_count > 0:
+                # 원래 쿼리에서 도시명 추출
+                original_query = original_queries.get(category, "")
+                city_part = original_query.split()[0] if original_query else "Seoul"
+                
+                # 대체 검색어 선택
+                alternatives = alternative_queries.get(category, [category])
+                alt_query = f"{city_part} {random.choice(alternatives)}"
+                
+                logger.info(f"🔄 [RETRY] {category} 재시도: '{alt_query}' (필요: {needed_count}개)")
+                retry_tasks.append(self._search_category_with_fallback(category, alt_query))
+            else:
+                retry_tasks.append(asyncio.sleep(0))  # 더미 태스크
+        
+        if retry_tasks:
+            retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
+            
+            # 재시도 결과를 기존 결과에 추가
+            for i, category in enumerate(retry_categories):
+                if i < len(retry_results) and not isinstance(retry_results[i], Exception):
+                    additional_places = retry_results[i]
+                    if additional_places:
+                        # 중복 제거하면서 추가
+                        existing_place_ids = {place.get("place_id") for place in categorized_results[category]}
+                        for place in additional_places:
+                            if place.get("place_id") not in existing_place_ids:
+                                categorized_results[category].append(place)
+                        
+                        new_count = len(categorized_results[category])
+                        logger.info(f"✅ [RETRY_SUCCESS] {category}: {new_count}개로 증가")
 
     async def enrich_places_data(self, place_names: List[str], city: str) -> List[Dict[str, Any]]:
         """

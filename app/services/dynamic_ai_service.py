@@ -5,13 +5,14 @@
 
 import os
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import openai
 import google.generativeai as genai
 
 from app.config import settings
 from app.utils.logger import get_logger
 from app.routers.admin import load_ai_settings_from_db
+from app.services.supabase_service import supabase_service
 
 logger = get_logger(__name__)
 
@@ -172,6 +173,78 @@ class DynamicAIService:
             logger.error(f"Gemini API 호출 실패: {e}")
             raise Exception(f"Gemini 텍스트 생성 실패: {str(e)}")
     
+    async def create_search_queries(self, city: str, country: str, existing_places: List[str] = None) -> Dict[str, str]:
+        """
+        AI가 중복을 피하는 최적의 검색 쿼리를 4개 카테고리별로 생성
+        
+        Args:
+            city: 도시명
+            country: 국가명  
+            existing_places: 기존에 추천된 장소 목록 (중복 방지용)
+            
+        Returns:
+            Dict[str, str]: 카테고리별 검색 쿼리
+            {
+                "tourism": "서울 경복궁 창덕궁 불교 사찰",
+                "food": "서울 한식 맛집 갈비 냉면",  
+                "activity": "서울 한강 공원 트레킹",
+                "accommodation": "서울 호텔 게스트하우스"
+            }
+        """
+        logger.info(f"🔍 [AI_SEARCH_PLAN] AI 검색 계획 수립 시작 - {city}, {country}")
+        
+        try:
+            # Supabase에서 검색 계획 전용 프롬프트 템플릿 조회
+            prompt_template = await supabase_service.get_master_prompt("search_strategy_v1")
+            
+            # 기존 장소 목록을 문자열로 변환
+            existing_places_text = ""
+            if existing_places:
+                existing_places_text = f"""
+이미 추천된 장소들 (중복 금지):
+{', '.join(existing_places)}
+
+위 장소들과 중복되지 않는 완전히 새로운 장소만 검색해주세요."""
+            else:
+                existing_places_text = "첫 번째 검색이므로 제약 없이 최고의 장소들을 검색해주세요."
+            
+            # 프롬프트 템플릿에 데이터 치환
+            from string import Template
+            template = Template(prompt_template)
+            
+            search_prompt = template.safe_substitute(
+                city=city,
+                country=country,
+                existing_places=existing_places_text
+            )
+            
+            logger.info(f"📋 [SEARCH_PROMPT] 검색 계획 프롬프트 생성 완료 ({len(search_prompt)} 글자)")
+            
+            # AI에게 검색 계획 요청
+            response = await self.generate_text(search_prompt, max_tokens=1000)
+            
+            # JSON 응답 파싱
+            import re
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                search_queries = json.loads(json_match.group())
+                logger.info(f"✅ [SEARCH_QUERIES] AI 검색 계획 생성 완료: {search_queries}")
+                return search_queries
+            else:
+                raise ValueError("AI 응답에서 JSON 형태의 검색 계획을 찾을 수 없습니다")
+                
+        except Exception as e:
+            logger.error(f"❌ [SEARCH_PLAN_ERROR] AI 검색 계획 수립 실패: {e}")
+            # 폴백: 기본 검색 쿼리 반환
+            fallback_queries = {
+                "tourism": f"{city} {country} tourist attractions landmarks museums",
+                "food": f"{city} {country} restaurants local food specialties",
+                "activity": f"{city} {country} activities entertainment sports",
+                "accommodation": f"{city} {country} hotels accommodations lodging"
+            }
+            logger.info(f"🔄 [FALLBACK] 기본 검색 쿼리 사용: {fallback_queries}")
+            return fallback_queries
+
     def get_provider_info(self) -> Dict[str, Any]:
         """현재 AI 제공자 정보 반환"""
         current_provider = self._get_current_provider()

@@ -35,47 +35,117 @@ class PlaceRecommendationService:
         try:
             logger.info(f"장소 추천 요청: {request.city}, {request.country}")
             
+            # === 고도화된 아키텍처 적용 ===
+            logger.info(f"🎯 [ADVANCED_MODE] 고도화된 장소 추천 모드 활성화")
+            
             # 1. 국가와 도시 ID 확보 (Get-or-Create)
             city_id = await self.supabase.get_or_create_city(
                 city_name=request.city,
                 country_name=request.country
             )
-            logger.info(f"도시 ID 확보: {city_id}")
+            logger.info(f"🏙️ [CITY_ID] 도시 ID 확보: {city_id}")
             
-            # 2. 기존 추천 장소 이름 목록 조회
+            # 2. 기존 추천 장소 이름 목록 조회 (중복 방지용)
             existing_place_names = await self.supabase.get_existing_place_names(city_id)
-            logger.info(f"기존 추천 장소 {len(existing_place_names)}개 발견")
+            logger.info(f"📋 [EXISTING_PLACES] 기존 장소 {len(existing_place_names)}개 발견")
             
-            # 3. 프롬프트 동적 생성
+            # 3. AI 검색 계획 수립 (핵심 새 기능)
+            logger.info(f"🧠 [AI_SEARCH_STRATEGY] AI 검색 계획 수립 시작")
+            search_queries = await self.ai_service.create_search_queries(
+                city=request.city,
+                country=request.country,
+                existing_places=existing_place_names
+            )
+            logger.info(f"📋 [SEARCH_STRATEGY] AI 검색 계획 완료: {search_queries}")
+            
+            # 4. 병렬 Google Places API 호출 + 재시도 로직
+            logger.info(f"🚀 [PARALLEL_API_CALLS] 병렬 Google Places API 호출 시작")
+            categorized_places = await self.google_places_service.parallel_search_by_categories(
+                search_queries=search_queries,
+                target_count_per_category=10
+            )
+            logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료")
+            
+            # 5. 결과 데이터 후처리 및 한글 키 매핑  
+            recommendations = self._convert_to_korean_categories(categorized_places)
+            
+            # 6. 새로운 장소들을 cached_places에 저장
+            if recommendations:
+                await self._save_new_places(city_id, recommendations)
+                logger.info(f"💾 [CACHE_SAVE] 새로운 장소들 캐시 저장 완료")
+            
+            # 7. 응답 생성
+            total_new_places = sum(len(places) for places in recommendations.values())
+            return PlaceRecommendationResponse(
+                success=True,
+                city_id=city_id,
+                main_theme="AI 고도화 검색",
+                recommendations=recommendations,
+                previously_recommended_count=len(existing_place_names),
+                newly_recommended_count=total_new_places
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ [ADVANCED_ERROR] 고도화 추천 실패: {e}")
+            # 폴백: 기존 방식으로 재시도
+            logger.info(f"🔄 [FALLBACK] 기존 방식으로 폴백 시도")
+            return await self._fallback_to_legacy_recommendation(request)
+    
+    def _convert_to_korean_categories(self, categorized_places: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[str]]:
+        """영문 카테고리를 한글 카테고리로 변환하고 장소명만 추출"""
+        category_mapping = {
+            "tourism": "볼거리",
+            "food": "먹거리", 
+            "activity": "즐길거리",
+            "accommodation": "숙소"
+        }
+        
+        korean_recommendations = {}
+        for eng_category, places in categorized_places.items():
+            korean_category = category_mapping.get(eng_category, eng_category)
+            place_names = [place.get("name", "Unknown Place") for place in places]
+            korean_recommendations[korean_category] = place_names
+            
+        return korean_recommendations
+    
+    async def _fallback_to_legacy_recommendation(self, request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
+        """기존 방식으로 폴백 (AI 프롬프트 기반)"""
+        try:
+            logger.info(f"🔄 [LEGACY_MODE] 기존 방식으로 폴백 실행")
+            
+            city_id = await self.supabase.get_or_create_city(
+                city_name=request.city,
+                country_name=request.country
+            )
+            
+            existing_place_names = await self.supabase.get_existing_place_names(city_id)
+            
+            # 기존 방식: 프롬프트 기반 AI 추천
             dynamic_prompt = await self._create_dynamic_prompt(request, existing_place_names)
-            
-            # 4. AI에게 새로운 장소 추천 요청
             ai_recommendations = await self._get_ai_recommendations(dynamic_prompt)
             
             if not ai_recommendations:
                 raise ValueError("AI 추천 결과가 없습니다.")
             
-            # 5. Google Places API로 장소 정보 강화
+            # Google Places API로 장소 정보 강화
             enriched_places = await self._enrich_place_data(ai_recommendations, request.city)
             
-            # 6. 새로운 장소들을 cached_places에 저장
             if enriched_places:
                 await self._save_new_places(city_id, enriched_places)
             
-            # 7. 응답 생성
             return PlaceRecommendationResponse(
                 success=True,
                 city_id=city_id,
-                main_theme="",  # 새로운 프롬프트에는 main_theme가 없음
+                main_theme="기존 방식 폴백",
                 recommendations=enriched_places,
                 previously_recommended_count=len(existing_place_names),
                 newly_recommended_count=sum(len(places) for places in enriched_places.values())
             )
             
         except Exception as e:
-            logger.error(f"장소 추천 실패: {e}")
-            raise ValueError(f"장소 추천 중 오류 발생: {str(e)}")
-    
+            logger.error(f"❌ [LEGACY_FALLBACK_ERROR] 폴백 실행도 실패: {e}")
+            raise ValueError(f"모든 추천 방식 실패: {str(e)}")
+
     async def _create_dynamic_prompt(
         self, 
         request: PlaceRecommendationRequest, 
