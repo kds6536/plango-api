@@ -158,7 +158,11 @@ class PlaceRecommendationService:
             try:
                 base_prompt = await self.supabase.get_master_prompt("place_recommendation_v2")
             except Exception:
-                base_prompt = await self.supabase.get_master_prompt("place_recommendation_v1")
+                try:
+                    base_prompt = await self.supabase.get_master_prompt("place_recommendation_v1")
+                except Exception as e:
+                    logger.warning(f"⚠️ [FALLBACK] Supabase 프롬프트 로드 실패, 내장 프롬프트 사용: {e}")
+                    base_prompt = self._get_fallback_place_recommendation_prompt()
             
             # 기존 추천 장소 목록을 문자열로 변환
             if existing_places:
@@ -332,6 +336,42 @@ class PlaceRecommendationService:
         except Exception as e:
             logger.error(f"장소 저장 실패: {e}")
             return False
+
+    def _get_fallback_place_recommendation_prompt(self) -> str:
+        """Supabase 프롬프트 로드 실패 시 사용할 내장 폴백 프롬프트"""
+        return """당신은 세계 최고의 여행 전문가 '플랜고 AI'입니다. 사용자의 여행 정보를 바탕으로 맞춤형 장소를 추천해주세요.
+
+**사용자 여행 정보:**
+- 도시: $city
+- 국가: $country
+- 여행 기간: $total_duration일
+- 여행자 수: $travelers_count명
+- 예산: $budget_range
+- 여행 스타일: $travel_style
+
+$previously_recommended_places
+
+**추천 요구사항:**
+1. 각 카테고리별로 다양하고 특색 있는 장소 추천
+2. 현지인들이 실제로 가는 숨겨진 맛집과 명소 포함
+3. 사용자의 예산과 여행 스타일에 맞는 장소 선별
+4. 관광지는 유명한 곳과 로컬한 곳을 적절히 조합
+
+**카테고리별 추천 개수:**
+- 볼거리(관광지): 10-15개
+- 먹거리(음식점): 10-15개  
+- 즐길거리(액티비티): 8-12개
+- 숙소: 5-8개
+
+**JSON 출력 형식:**
+{{
+  "볼거리": ["장소명1", "장소명2", "장소명3", ...],
+  "먹거리": ["맛집명1", "맛집명2", "맛집명3", ...],
+  "즐길거리": ["액티비티명1", "액티비티명2", "액티비티명3", ...],
+  "숙소": ["숙소명1", "숙소명2", "숙소명3", ...]
+}}
+
+반드시 JSON 형식으로만 답변해주세요. 다른 설명은 포함하지 마세요."""
 
 
 # 전역 인스턴스
