@@ -71,6 +71,10 @@ app.include_router(setup_v6.router)  # v6.0 설정 및 테스트 라우터
 from app.routers import diagnosis
 app.include_router(diagnosis.router)
 
+# 관리자 대시보드 라우터 추가
+from app.routers import admin_dashboard
+app.include_router(admin_dashboard.router)
+
 # # 데이터베이스 및 테이블 생성
 # @app.on_event("startup")
 # def on_startup():

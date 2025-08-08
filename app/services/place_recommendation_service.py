@@ -12,6 +12,7 @@ from app.services.dynamic_ai_service import DynamicAIService
 from app.services.google_places_service import GooglePlacesService
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
 from app.utils.logger import get_logger
+from datetime import datetime
 
 logger = get_logger(__name__)
 
@@ -161,7 +162,12 @@ class PlaceRecommendationService:
                 try:
                     base_prompt = await self.supabase.get_master_prompt("place_recommendation_v1")
                 except Exception as e:
-                    logger.warning(f"⚠️ [FALLBACK] Supabase 프롬프트 로드 실패, 내장 프롬프트 사용: {e}")
+                    error_msg = f"Supabase 프롬프트 로드 실패: {e}"
+                    logger.warning(f"⚠️ [FALLBACK] {error_msg}")
+                    
+                    # 관리자에게 폴백 모드 알림
+                    self._notify_admin_fallback_mode(error_msg)
+                    
                     base_prompt = self._get_fallback_place_recommendation_prompt()
             
             # 기존 추천 장소 목록을 문자열로 변환
@@ -280,7 +286,7 @@ class PlaceRecommendationService:
                 for place_name in place_names:
                     try:
                         # Google Places API 검색
-                        places = await self.google_places.search_places(
+                        places = await self.google_places_service.search_places(
                             query=f"{place_name} {city}",
                             location=city,
                             place_type=category_mapping.get(category)
@@ -357,21 +363,70 @@ $previously_recommended_places
 3. 사용자의 예산과 여행 스타일에 맞는 장소 선별
 4. 관광지는 유명한 곳과 로컬한 곳을 적절히 조합
 
-**카테고리별 추천 개수:**
-- 볼거리(관광지): 10-15개
-- 먹거리(음식점): 10-15개  
-- 즐길거리(액티비티): 8-12개
-- 숙소: 5-8개
+**카테고리별 추천 개수 (최소 5개씩):**
+- 볼거리(관광지): 8-12개
+- 먹거리(음식점): 8-12개  
+- 즐길거리(액티비티): 6-10개
+- 숙소: 4-8개
 
-**JSON 출력 형식:**
+**도시별 추천 예시:**
+- 도쿄: 시부야, 하라주쿠, 아사쿠사, 긴자, 롯폰기
+- 서울: 홍대, 강남, 명동, 이태원, 북촌한옥마을
+- 부산: 해운대, 광안리, 태종대, 감천문화마을, 용두산공원
+
+**JSON 출력 형식 (반드시 이 형식으로만):**
 {{
-  "볼거리": ["장소명1", "장소명2", "장소명3", ...],
-  "먹거리": ["맛집명1", "맛집명2", "맛집명3", ...],
-  "즐길거리": ["액티비티명1", "액티비티명2", "액티비티명3", ...],
-  "숙소": ["숙소명1", "숙소명2", "숙소명3", ...]
+  "볼거리": ["장소명1", "장소명2", "장소명3", "장소명4", "장소명5"],
+  "먹거리": ["맛집명1", "맛집명2", "맛집명3", "맛집명4", "맛집명5"],
+  "즐길거리": ["액티비티명1", "액티비티명2", "액티비티명3", "액티비티명4"],
+  "숙소": ["숙소명1", "숙소명2", "숙소명3", "숙소명4"]
 }}
 
-반드시 JSON 형식으로만 답변해주세요. 다른 설명은 포함하지 마세요."""
+⚠️ 중요: 반드시 JSON 형식으로만 답변해주세요. 다른 설명이나 마크다운 문법은 포함하지 마세요."""
+
+    def _notify_admin_fallback_mode(self, error_details: str):
+        """관리자에게 폴백 모드 사용을 알림"""
+        import logging
+        admin_logger = logging.getLogger("admin_notifications")
+        
+        notification_message = f"""
+🚨 [ADMIN ALERT] Plango 시스템이 폴백 모드로 전환되었습니다!
+
+📅 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🌐 환경: Railway Production
+🔧 문제 유형: Supabase prompts 테이블 접근 실패
+❌ 오류 상세: {error_details}
+
+📊 현재 상태:
+- Supabase 연결: {'정상' if self.supabase.is_connected() else '실패'}
+- AI 서비스: {'정상' if self.ai_service else '실패'}
+- 폴백 시스템: 활성화됨
+
+💡 권장 조치사항:
+1. Supabase prompts 테이블 존재 여부 확인
+2. Railway 환경변수 SUPABASE_URL, SUPABASE_KEY 확인
+3. Supabase 프로젝트 권한 설정 확인
+4. 필요시 prompts 테이블 재생성
+
+🔗 확인 링크:
+- Railway 대시보드: https://railway.com/dashboard
+- Supabase 대시보드: https://supabase.com/dashboard
+
+⚠️ 이 알림은 시스템 안정성을 위해 자동으로 생성되었습니다.
+        """
+        
+        # 로그에 기록
+        admin_logger.warning(notification_message)
+        
+        # 콘솔에 출력 (개발/디버깅용)
+        print("=" * 80)
+        print("🚨 ADMIN ALERT: FALLBACK MODE ACTIVATED")
+        print("=" * 80)
+        print(notification_message)
+        print("=" * 80)
+        
+        # 추후 Slack, Discord, Email 등으로 확장 가능
+        # await self._send_admin_notification(notification_message)
 
 
 # 전역 인스턴스
