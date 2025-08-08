@@ -92,23 +92,31 @@ class SupabaseService:
             return False
     
     async def get_master_prompt(self, prompt_name: str) -> str:
-        """마스터 프롬프트 조회 (name 컬럼으로 조회, 예외 발생 시 ValueError)"""
+        """마스터 프롬프트 조회 (name 컬럼으로 조회, prompts 테이블 부재 시 예외 발생)"""
         try:
             if not self.is_connected():
+                logger.warning(f"⚠️ Supabase 연결 없음 - {prompt_name} 프롬프트 조회 실패")
                 raise ValueError(f"Supabase 연결 실패. {prompt_name} 프롬프트를 조회할 수 없습니다.")
             
             # name 컬럼으로 조회
             response = self.client.table('prompts').select('value').eq('name', prompt_name).execute()
             
             if response.data:
-                logger.info(f"Supabase에서 프롬프트 조회 성공: {prompt_name}")
+                logger.info(f"✅ Supabase에서 프롬프트 조회 성공: {prompt_name}")
                 return response.data[0]['value']
             else:
+                logger.warning(f"⚠️ {prompt_name} 프롬프트가 prompts 테이블에 존재하지 않음")
                 raise ValueError(f"{prompt_name} 프롬프트가 prompts 테이블에 존재하지 않습니다.")
                 
         except Exception as e:
-            logger.error(f"마스터 프롬프트 조회 실패: {e}")
-            raise ValueError(f"{prompt_name} 프롬프트 조회 중 오류 발생: {str(e)}")
+            # prompts 테이블이 존재하지 않는 경우 특별 처리
+            error_msg = str(e)
+            if "relation \"public.prompts\" does not exist" in error_msg:
+                logger.warning(f"⚠️ prompts 테이블이 존재하지 않음 - {prompt_name} 프롬프트 조회 불가")
+                raise ValueError(f"prompts 테이블이 존재하지 않습니다. {prompt_name} 프롬프트를 조회할 수 없습니다.")
+            else:
+                logger.error(f"❌ 마스터 프롬프트 조회 실패: {e}")
+                raise ValueError(f"{prompt_name} 프롬프트 조회 중 오류 발생: {error_msg}")
     
     # =============================================================================
     # 새로운 DB 스키마 관련 함수들 (countries, cities, cached_places)
