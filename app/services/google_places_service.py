@@ -117,18 +117,27 @@ class GooglePlacesService:
     
     async def _search_category_with_fallback(self, category: str, query: str) -> List[Dict[str, Any]]:
         """단일 카테고리 검색 with 폴백"""
+        # Google Places API (New) 공식 필드 마스크 형식
         fields = [
-            "id", "displayName", "formattedAddress", "rating", "userRatingCount",
-            "priceLevel", "primaryTypeDisplayName", "websiteUri", "location"
+            "places.id",
+            "places.displayName",
+            "places.formattedAddress", 
+            "places.rating",
+            "places.userRatingCount",
+            "places.priceLevel",
+            "places.primaryTypeDisplayName",
+            "places.websiteUri",
+            "places.location"
         ]
         
         try:
             result = await self.search_places_text(query, fields)
             places = result.get("places", [])
             
-            # 데이터 정제
+            # 데이터 정제 (Google Places API New 응답 구조에 맞게)
             processed_places = []
             for place in places:
+                # API 응답 구조: displayName.text, location.latitude 등
                 processed_place = {
                     "place_id": place.get("id", f"{category}_{random.randint(1000, 9999)}"),
                     "name": place.get("displayName", {}).get("text", "Unknown Place"),
@@ -211,10 +220,20 @@ class GooglePlacesService:
         tasks = []
         for place_name in place_names:
             query = f"{place_name} in {city}"
+            # Google Places API (New) 공식 필드 마스크 형식
             fields = [
-                "id", "displayName", "formattedAddress", "rating", "userRatingCount",
-                "priceLevel", "primaryTypeDisplayName", "takeout", "delivery",
-                "dineIn", "websiteUri", "location"
+                "places.id",
+                "places.displayName", 
+                "places.formattedAddress",
+                "places.rating",
+                "places.userRatingCount",
+                "places.priceLevel",
+                "places.primaryTypeDisplayName",
+                "places.takeout",
+                "places.delivery", 
+                "places.dineIn",
+                "places.websiteUri",
+                "places.location"
             ]
             tasks.append(self.search_places_text(query, fields))
 
@@ -224,7 +243,7 @@ class GooglePlacesService:
         for res in results:
             if res and "places" in res:
                 for place in res["places"]:
-                    # 필요한 정보만 추출하여 새로운 딕셔너리 생성
+                    # Google Places API (New) 응답 구조에 맞게 정보 추출
                     enriched_place = {
                         "id": place.get("id"),
                         "displayName": place.get("displayName", {}).get("text"),
