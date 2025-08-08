@@ -82,8 +82,15 @@ class PlaceRecommendationService:
     ) -> str:
         """프롬프트 동적 생성"""
         try:
-            # prompts 테이블에서 place_recommendation_v1 템플릿 조회
-            base_prompt = await self.supabase.get_master_prompt("place_recommendation_v1")
+            # prompts 테이블에서 place_recommendation_v2 우선 조회, 실패 시 v1 사용
+            try:
+                base_prompt = await self.supabase.get_master_prompt("place_recommendation_v2")
+            except Exception:
+                base_prompt = await self.supabase.get_master_prompt("place_recommendation_v1")
+            
+            # 프롬프트 템플릿 내 JSON 예시 구간의 중괄호 이스케이프 처리
+            # 구분자 이후에 등장하는 {, } 만 각각 {{, }} 로 변경하여 .format() 충돌을 방지
+            base_prompt = self._escape_json_section_braces(base_prompt)
             
             # 기존 추천 장소 목록을 문자열로 변환
             if existing_places:
@@ -110,6 +117,25 @@ class PlaceRecommendationService:
             logger.error(f"프롬프트 생성 실패: {e}")
             raise ValueError(f"프롬프트 생성 중 오류 발생: {str(e)}")
     
+    def _escape_json_section_braces(self, prompt_template: str) -> str:
+        """프롬프트 내 '//-- 필수 JSON 출력 형식 --//' 이후의 중괄호를 이스케이프 처리
+
+        - 구분자 이전 구간은 그대로 둔다.
+        - 구분자 이후 구간에서 '{' -> '{{', '}' -> '}}' 로 치환한다.
+        """
+        try:
+            delimiter = "//-- 필수 JSON 출력 형식 --//"
+            idx = prompt_template.find(delimiter)
+            if idx == -1:
+                return prompt_template
+            before = prompt_template[: idx + len(delimiter)]
+            after = prompt_template[idx + len(delimiter) :]
+            after = after.replace("{", "{{").replace("}", "}}")
+            return before + after
+        except Exception:
+            # 문제 발생 시 원본을 그대로 반환하여 실패를 피함
+            return prompt_template
+
     async def _get_ai_recommendations(self, prompt: str) -> Dict[str, Any]:
         """AI에게 장소 추천 요청"""
         try:
