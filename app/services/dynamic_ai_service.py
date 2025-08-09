@@ -194,13 +194,8 @@ class DynamicAIService:
         logger.info(f"🔍 [AI_SEARCH_PLAN] AI 검색 계획 수립 시작 - {city}, {country}")
         
         try:
-            # Supabase에서 검색 계획 전용 프롬프트 템플릿 조회 (폴백 포함)
-            try:
-                prompt_template = await supabase_service.get_master_prompt("search_strategy_v1")
-            except Exception as prompt_error:
-                logger.warning(f"⚠️ [FALLBACK] search_strategy_v1 프롬프트 로드 실패, 내장 폴백 사용: {prompt_error}")
-                # 내장 폴백 프롬프트 사용
-                prompt_template = self._get_fallback_search_strategy_prompt()
+            # Supabase에서 검색 계획 전용 프롬프트 템플릿 조회 (고정: search_strategy_v1)
+            prompt_template = await supabase_service.get_master_prompt("search_strategy_v1")
             
             # 기존 장소 목록을 문자열로 변환
             existing_places_text = ""
@@ -240,15 +235,8 @@ class DynamicAIService:
                 
         except Exception as e:
             logger.error(f"❌ [SEARCH_PLAN_ERROR] AI 검색 계획 수립 실패: {e}")
-            # 폴백: 기본 검색 쿼리 반환
-            fallback_queries = {
-                "tourism": f"{city} {country} tourist attractions landmarks museums",
-                "food": f"{city} {country} restaurants local food specialties",
-                "activity": f"{city} {country} activities entertainment sports",
-                "accommodation": f"{city} {country} hotels accommodations lodging"
-            }
-            logger.info(f"🔄 [FALLBACK] 기본 검색 쿼리 사용: {fallback_queries}")
-            return fallback_queries
+            # 더 이상 폴백을 사용하지 않고 즉시 실패 처리
+            raise
 
     def _get_fallback_search_strategy_prompt(self) -> str:
         """Supabase 프롬프트 로드 실패 시 사용할 내장 폴백 프롬프트"""

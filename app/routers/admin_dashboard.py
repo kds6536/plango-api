@@ -159,9 +159,9 @@ async def test_supabase_connection() -> Dict[str, Any]:
                     "error": str(e)
                 }
         
-        # 3. 프롬프트 조회 테스트
+        # 3. 프롬프트 조회 테스트 (고정 이름)
         try:
-            test_prompt = await supabase_service.get_master_prompt("place_recommendation_v1")
+            test_prompt = await supabase_service.get_master_prompt("search_strategy_v1")
             result["details"]["prompt_retrieval"] = {
                 "success": True,
                 "prompt_length": len(test_prompt)

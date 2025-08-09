@@ -51,8 +51,8 @@ class PlaceRecommendationService:
             existing_place_names = await self.supabase.get_existing_place_names(city_id)
             logger.info(f"📋 [EXISTING_PLACES] 기존 장소 {len(existing_place_names)}개 발견")
             
-            # 3. AI 검색 계획 수립 (핵심 새 기능)
-            logger.info(f"🧠 [AI_SEARCH_STRATEGY] AI 검색 계획 수립 시작")
+            # 3. AI 검색 계획 수립 (고정 프롬프트: search_strategy_v1)
+            logger.info(f"🧠 [AI_SEARCH_STRATEGY] AI 검색 계획 수립 시작 (search_strategy_v1)")
             search_queries = await self.ai_service.create_search_queries(
                 city=request.city,
                 country=request.country,
@@ -153,22 +153,11 @@ class PlaceRecommendationService:
         request: PlaceRecommendationRequest, 
         existing_places: List[str]
     ) -> str:
-        """프롬프트 동적 생성"""
+        """프롬프트 동적 생성 (고정 프롬프트: search_strategy_v1 사용 금지, 본 메서드는 레거시 제거 예정)"""
         try:
-            # prompts 테이블에서 place_recommendation_v2 우선 조회, 실패 시 v1 사용
-            try:
-                base_prompt = await self.supabase.get_master_prompt("place_recommendation_v2")
-            except Exception:
-                try:
-                    base_prompt = await self.supabase.get_master_prompt("place_recommendation_v1")
-                except Exception as e:
-                    error_msg = f"Supabase 프롬프트 로드 실패: {e}"
-                    logger.warning(f"⚠️ [FALLBACK] {error_msg}")
-                    
-                    # 관리자에게 폴백 모드 알림
-                    self._notify_admin_fallback_mode(error_msg)
-                    
-                    base_prompt = self._get_fallback_place_recommendation_prompt()
+            # 장소 추천의 프롬프트는 더 이상 사용하지 않음. 규칙에 따라 검색 전략은 search_strategy_v1로 처리함.
+            # 여기서는 명시적으로 예외를 던져 호출 경로를 재검토하도록 한다.
+            raise ValueError("_create_dynamic_prompt는 사용되지 않습니다. 검색 전략은 search_strategy_v1을 사용하세요.")
             
             # 기존 추천 장소 목록을 문자열로 변환
             if existing_places:

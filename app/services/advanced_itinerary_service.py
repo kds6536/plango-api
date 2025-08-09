@@ -162,35 +162,10 @@ class AdvancedItineraryService:
             ai_handler = await self._get_ai_handler()
             logger.info(f"AI 핸들러 가져오기 완료: {type(ai_handler).__name__}")
             
-            # Supabase에서 프롬프트 동적 로드
-            try:
-                from app.services.supabase_service import supabase_service
-                prompt_template = await supabase_service.get_master_prompt('place_recommendation_v1')
-                logger.info("Supabase에서 place_recommendation 프롬프트 로드 완료")
-            except Exception as e:
-                logger.warning(f"Supabase 프롬프트 로드 실패, 기본 프롬프트 사용: {e}")
-                prompt_template = """
-당신은 여행 전문가입니다. 다음 정보를 바탕으로 {city}에서 방문할 만한 장소들을 추천해주세요.
-
-여행 정보:
-- 도시: {city}
-- 국가: {country}
-- 총 여행 기간: {total_duration}일
-- 여행자 수: {travelers_count}명
-- 예산: {budget_range}
-- 여행 스타일: {travel_style}
-- 특별 요청: {special_requests}
-{multi_destination_context}
-
-다음 카테고리별로 3-5개씩 추천해주세요:
-1. 관광지 (명소, 박물관, 역사적 장소)
-2. 음식점 (현지 음식, 맛집)
-3. 활동 (체험, 엔터테인먼트)
-4. 숙박 (호텔, 게스트하우스)
-
-각 장소는 실제 존재하는 곳이어야 하며, 구글에서 검색 가능한 이름이어야 합니다.
-JSON 형식으로 응답해주세요.
-"""
+            # 고정 프롬프트 규칙: 검색 전략은 search_strategy_v1, 일정 생성은 itinerary_generation
+            from app.services.supabase_service import supabase_service
+            prompt_template = await supabase_service.get_master_prompt('search_strategy_v1')
+            logger.info("Supabase에서 search_strategy_v1 프롬프트 로드 완료")
             
             # 다중 목적지 컨텍스트 구성
             context = self._build_multi_destination_context(request, destination_index)

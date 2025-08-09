@@ -124,7 +124,8 @@ class EnhancedAIService:
         """마스터 프롬프트를 사용한 일정 생성"""
         try:
             # Supabase에서 마스터 프롬프트 가져오기
-            master_prompt = await supabase_service.get_master_prompt('itinerary_generation_v1')
+            # 고정 프롬프트: itinerary_generation
+            master_prompt = await supabase_service.get_master_prompt('itinerary_generation')
             
             # 입력 데이터를 JSON 문자열로 변환
             input_data_json = json.dumps(user_data, ensure_ascii=False, indent=2)
@@ -183,14 +184,8 @@ class EnhancedAIService:
             return response
     
     async def get_master_prompt(self, prompt_type: str = 'itinerary_generation') -> str:
-        """마스터 프롬프트 조회"""
-        # 기존 프롬프트 타입을 새로운 스키마 이름으로 매핑
-        prompt_mapping = {
-            'itinerary_generation': 'itinerary_generation_v1',
-            'place_recommendation': 'place_recommendation_v1'
-        }
-        new_prompt_name = prompt_mapping.get(prompt_type, prompt_type)
-        return await supabase_service.get_master_prompt(new_prompt_name)
+        """마스터 프롬프트 조회: 매핑/폴백 없이 지정 명칭 그대로 사용"""
+        return await supabase_service.get_master_prompt(prompt_type)
     
     async def update_master_prompt(self, prompt_type: str, prompt_content: str) -> bool:
         """마스터 프롬프트 업데이트 - 현재는 지원하지 않음 (관리자 전용 기능)"""
