@@ -230,13 +230,10 @@ class SupabaseService:
                     'latitude': latitude,
                     'longitude': longitude,
                     'rating': place.get('rating', 0.0),
-                    'total_ratings': place.get('user_ratings_total') or place.get('total_ratings', 0),
-                    'phone': place.get('phone', ''),
-                    'website': place.get('website', ''),
-                    'photos': place.get('photos', []) or ([place.get('photo_url')] if place.get('photo_url') else []),
-                    'opening_hours': place.get('opening_hours', {}),
-                    'price_level': place.get('price_level', 0),
-                    'raw_data': place
+                    'user_ratings_total': place.get('user_ratings_total') or place.get('total_ratings', 0),
+                    'photo_url': place.get('photo_url') or (place.get('photos', [None])[0] if isinstance(place.get('photos'), list) else None) or '',
+                    'website_url': place.get('website') or place.get('website_url') or '',
+                    'opening_hour': place.get('opening_hours') or place.get('opening_hour') or {},
                 }
                 cached_places.append(cached_place)
             
