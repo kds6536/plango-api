@@ -67,7 +67,9 @@ class PlaceRecommendationService:
                 logger.info(f"🚀 [PARALLEL_API_CALLS] 병렬 Google Places API 호출 시작")
                 categorized_places = await self.google_places_service.parallel_search_by_categories(
                     search_queries=search_queries,
-                    target_count_per_category=10
+                    target_count_per_category=10,
+                    city=request.city,
+                    country=request.country
                 )
                 logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료")
                 

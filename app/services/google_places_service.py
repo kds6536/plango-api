@@ -194,7 +194,9 @@ class GooglePlacesService:
         return await self.search_places(query=query, location=location, radius=radius, place_type="restaurant")
 
     async def parallel_search_by_categories(self, search_queries: Dict[str, str], 
-                                           target_count_per_category: int = 10) -> Dict[str, List[Dict[str, Any]]]:
+                                           target_count_per_category: int = 10,
+                                           city: Optional[str] = None,
+                                           country: Optional[str] = None) -> Dict[str, List[Dict[str, Any]]]:
         """
         AI가 생성한 카테고리별 검색 쿼리를 병렬로 실행하고, 부족한 경우 재시도
         
@@ -213,8 +215,11 @@ class GooglePlacesService:
         categories = ["tourism", "food", "activity", "accommodation"]
         
         for category in categories:
-            query = search_queries.get(category, f"{category} places")
-            initial_tasks.append(self._search_category_with_fallback(category, query))
+            base_query = search_queries.get(category, f"{category} places")
+            # 도시/국가 접두어 보강
+            location_prefix = " ".join([part for part in [city, country] if part])
+            final_query = f"{location_prefix} {base_query}".strip() if location_prefix else base_query
+            initial_tasks.append(self._search_category_with_fallback(category, final_query))
         
         # 병렬 실행
         initial_results = await asyncio.gather(*initial_tasks, return_exceptions=True)
