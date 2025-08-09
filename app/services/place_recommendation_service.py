@@ -69,7 +69,8 @@ class PlaceRecommendationService:
                     search_queries=search_queries,
                     target_count_per_category=10,
                     city=request.city,
-                    country=request.country
+                    country=request.country,
+                    language_code=(getattr(request, 'language_code', None) or 'ko')
                 )
                 logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료")
                 

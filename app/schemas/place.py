@@ -89,6 +89,7 @@ class PlaceRecommendationRequest(BaseModel):
     budget_range: str = Field(..., description="예산 범위")
     travel_style: List[str] = Field(default_factory=list, description="여행 스타일 목록")
     special_requests: Optional[str] = Field(None, description="특별 요청사항")
+    language_code: Optional[str] = Field("ko", description="검색/결과 언어 코드 (예: ko, ja, en, zh-CN, id, vi)")
 
 
 class PlaceRecommendationResponse(BaseModel):

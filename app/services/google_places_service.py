@@ -196,7 +196,8 @@ class GooglePlacesService:
     async def parallel_search_by_categories(self, search_queries: Dict[str, str], 
                                            target_count_per_category: int = 10,
                                            city: Optional[str] = None,
-                                           country: Optional[str] = None) -> Dict[str, List[Dict[str, Any]]]:
+                                           country: Optional[str] = None,
+                                           language_code: str = "ko") -> Dict[str, List[Dict[str, Any]]]:
         """
         AI가 생성한 카테고리별 검색 쿼리를 병렬로 실행하고, 부족한 경우 재시도
         
@@ -219,7 +220,7 @@ class GooglePlacesService:
             # 도시/국가 접두어 보강
             location_prefix = " ".join([part for part in [city, country] if part])
             final_query = f"{location_prefix} {base_query}".strip() if location_prefix else base_query
-            initial_tasks.append(self._search_category_with_fallback(category, final_query))
+            initial_tasks.append(self._search_category_with_fallback(category, final_query, language_code))
         
         # 병렬 실행
         initial_results = await asyncio.gather(*initial_tasks, return_exceptions=True)
@@ -256,7 +257,7 @@ class GooglePlacesService:
         
         return categorized_results
     
-    async def _search_category_with_fallback(self, category: str, query: str) -> List[Dict[str, Any]]:
+    async def _search_category_with_fallback(self, category: str, query: str, language_code: str = "ko") -> List[Dict[str, Any]]:
         """단일 카테고리 검색 with 폴백"""
         # Google Places API (New) 공식 필드 마스크 형식
         fields = [
@@ -273,7 +274,7 @@ class GooglePlacesService:
         ]
         
         try:
-            result = await self.search_places_text(query, fields)
+            result = await self.search_places_text(query, fields, language_code)
             places = result.get("places", [])
             
             # 데이터 정제 (Google Places API New 응답 구조에 맞게)
