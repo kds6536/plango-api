@@ -101,8 +101,8 @@ class PlaceRecommendationService:
             logger.info(f"🔄 [FALLBACK] 기존 방식으로 폴백 시도")
             return await self._fallback_to_legacy_recommendation(request)
     
-    def _convert_to_korean_categories(self, categorized_places: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[str]]:
-        """영문 카테고리를 한글 카테고리로 변환하고 장소명만 추출"""
+    def _convert_to_korean_categories(self, categorized_places: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+        """영문 카테고리를 한글 카테고리로 변환하되, 장소 dict를 그대로 유지합니다."""
         category_mapping = {
             "tourism": "볼거리",
             "food": "먹거리", 
@@ -110,12 +110,16 @@ class PlaceRecommendationService:
             "accommodation": "숙소"
         }
         
-        korean_recommendations = {}
+        korean_recommendations: Dict[str, List[Dict[str, Any]]] = {}
         for eng_category, places in categorized_places.items():
             korean_category = category_mapping.get(eng_category, eng_category)
-            place_names = [place.get("name", "Unknown Place") for place in places]
-            korean_recommendations[korean_category] = place_names
-            
+            preserved_places: List[Dict[str, Any]] = []
+            for place in places:
+                # 각 place dict에 카테고리 한글 라벨을 반영
+                place_copy = dict(place)
+                place_copy["category"] = korean_category
+                preserved_places.append(place_copy)
+            korean_recommendations[korean_category] = preserved_places
         return korean_recommendations
     
     def _normalize_search_queries(self, raw_queries: Any) -> Dict[str, str]:
