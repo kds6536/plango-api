@@ -19,7 +19,9 @@ class GooglePlacesService:
         GooglePlacesService 초기화
         - settings에서 API 키를 가져와 googlemaps.Client를 초기화합니다.
         """
-        self.api_key = api_key or settings.MAPS_PLATFORM_API_KEY
+        # Railway 변수명은 'MAPS_PLATFORM_API_KEY' 사용. settings에도 동일 키를 노출하고 있으므로 우선 사용.
+        # 하위 호환을 위해 GOOGLE_MAPS_API_KEY가 설정되어 있으면 그것도 사용.
+        self.api_key = api_key or getattr(settings, "MAPS_PLATFORM_API_KEY", None) or getattr(settings, "GOOGLE_MAPS_API_KEY", None)
         self.gmaps = None
         if self.api_key:
             try:

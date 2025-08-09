@@ -67,11 +67,12 @@ async def get_system_status() -> Dict[str, Any]:
                 "error": str(e)
             }
         
-        # 3. Google Places API 상태
+        # 3. Google Places API 상태 (MAPS_PLATFORM_API_KEY 우선, 없으면 GOOGLE_MAPS_API_KEY 폴백)
         try:
+            gmaps_key = getattr(settings, "MAPS_PLATFORM_API_KEY", None) or getattr(settings, "GOOGLE_MAPS_API_KEY", None)
             status["services"]["google_places"] = {
-                "configured": bool(settings.GOOGLE_MAPS_API_KEY),
-                "key_preview": settings.GOOGLE_MAPS_API_KEY[:20] + "..." if settings.GOOGLE_MAPS_API_KEY else "Missing"
+                "configured": bool(gmaps_key),
+                "key_preview": (gmaps_key[:20] + "...") if gmaps_key else "Missing"
             }
         except Exception as e:
             status["services"]["google_places"] = {
