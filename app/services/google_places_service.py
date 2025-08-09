@@ -58,7 +58,9 @@ class GooglePlacesService:
             "X-Goog-Api-Key": self.api_key,
             "X-Goog-FieldMask": ",".join(fields),
         }
-        data = {"textQuery": text_query, "languageCode": language_code}
+        # Google Places API(New)는 textQuery에 문자열만 허용. radius/place_type 같은 필드는 body가 아닌 쿼리에 쓸 수 없으므로 생략.
+        # languageCode만 함께 전달한다.
+        data = {"textQuery": str(text_query), "languageCode": language_code}
 
         async with httpx.AsyncClient() as client:
             try:

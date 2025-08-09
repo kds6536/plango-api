@@ -213,18 +213,27 @@ class SupabaseService:
             # 각 장소 정보를 cached_places 형식으로 변환
             cached_places = []
             for place in places_data:
+                # 좌표는 DB에서 latitude/longitude 컬럼을 사용 (coordinates JSONB 사용 안 함)
+                latitude = place.get('lat')
+                longitude = place.get('lng')
+                if not isinstance(latitude, (int, float)) and isinstance(place.get('coordinates'), dict):
+                    latitude = place['coordinates'].get('lat')
+                if not isinstance(longitude, (int, float)) and isinstance(place.get('coordinates'), dict):
+                    longitude = place['coordinates'].get('lng')
+
                 cached_place = {
                     'city_id': city_id,
                     'place_id': place.get('place_id', ''),
                     'name': place.get('name', ''),
                     'category': place.get('category', ''),
                     'address': place.get('address', ''),
-                    'coordinates': place.get('coordinates', {}),
+                    'latitude': latitude,
+                    'longitude': longitude,
                     'rating': place.get('rating', 0.0),
-                    'total_ratings': place.get('total_ratings', 0),
+                    'total_ratings': place.get('user_ratings_total') or place.get('total_ratings', 0),
                     'phone': place.get('phone', ''),
                     'website': place.get('website', ''),
-                    'photos': place.get('photos', []),
+                    'photos': place.get('photos', []) or ([place.get('photo_url')] if place.get('photo_url') else []),
                     'opening_hours': place.get('opening_hours', {}),
                     'price_level': place.get('price_level', 0),
                     'raw_data': place

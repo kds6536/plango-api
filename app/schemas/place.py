@@ -30,6 +30,7 @@ class CachedPlace(BaseModel):
     name: str = Field(..., description="장소명")
     category: str = Field(..., description="카테고리 (볼거리, 먹거리, 즐길거리, 숙소)")
     address: Optional[str] = Field(None, description="주소")
+    # DB에는 latitude/longitude로 저장하지만, 하위 호환을 위해 입력으로 coordinates를 허용할 수 있음
     coordinates: Optional[Dict[str, float]] = Field(None, description="좌표 (lat, lng)")
     rating: Optional[float] = Field(None, description="평점")
     total_ratings: Optional[int] = Field(None, description="총 평가 수")
