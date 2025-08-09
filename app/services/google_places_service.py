@@ -32,6 +32,18 @@ class GooglePlacesService:
         else:
             logger.warning("⚠️ MAPS_PLATFORM_API_KEY가 설정되지 않았습니다.")
 
+    def _extract_photo_url(self, place: Dict[str, Any], max_height_px: int = 400) -> str:
+        """Places API(New) 사진 리소스 이름으로 미디어 URL을 생성"""
+        try:
+            photos = place.get("photos") or []
+            if photos and isinstance(photos, list):
+                name = photos[0].get("name")
+                if name and isinstance(name, str):
+                    return f"https://places.googleapis.com/v1/{name}/media?maxHeightPx={max_height_px}&key={self.api_key}"
+        except Exception:
+            pass
+        return ""
+
     async def search_places_text(self, text_query: str, fields: List[str], language_code: str = "ko") -> Dict[str, Any]:
         """
         Google Places API (Text Search)를 사용하여 장소를 검색합니다.
@@ -89,6 +101,7 @@ class GooglePlacesService:
             "places.primaryTypeDisplayName",
             "places.websiteUri",
             "places.location",
+            "places.photos",
         ]
 
         try:
@@ -108,6 +121,7 @@ class GooglePlacesService:
                     "website": place.get("websiteUri", ""),
                     "lat": place.get("location", {}).get("latitude"),
                     "lng": place.get("location", {}).get("longitude"),
+                    "photo_url": self._extract_photo_url(place),
                 })
 
             # place_type이 주어지면 1차 필터링(응답의 primaryType 기준)
@@ -140,6 +154,7 @@ class GooglePlacesService:
                 "location",
                 "primaryType",
                 "primaryTypeDisplayName",
+                "photos",
             ]),
         }
         params = {"languageCode": language_code}
@@ -246,7 +261,8 @@ class GooglePlacesService:
             "places.priceLevel",
             "places.primaryTypeDisplayName",
             "places.websiteUri",
-            "places.location"
+            "places.location",
+            "places.photos",
         ]
         
         try:
@@ -268,7 +284,8 @@ class GooglePlacesService:
                     "description": place.get("primaryTypeDisplayName", {}).get("text", ""),
                     "website": place.get("websiteUri", ""),
                     "lat": place.get("location", {}).get("latitude", 0.0),
-                    "lng": place.get("location", {}).get("longitude", 0.0)
+                    "lng": place.get("location", {}).get("longitude", 0.0),
+                    "photo_url": self._extract_photo_url(place),
                 }
                 processed_places.append(processed_place)
             
