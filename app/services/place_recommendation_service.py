@@ -51,41 +51,45 @@ class PlaceRecommendationService:
             existing_place_names = await self.supabase.get_existing_place_names(city_id)
             logger.info(f"📋 [EXISTING_PLACES] 기존 장소 {len(existing_place_names)}개 발견")
             
-            # 3. AI 검색 계획 수립 (고정 프롬프트: search_strategy_v1)
-            logger.info(f"🧠 [AI_SEARCH_STRATEGY] AI 검색 계획 수립 시작 (search_strategy_v1)")
-            search_queries = await self.ai_service.create_search_queries(
-                city=request.city,
-                country=request.country,
-                existing_places=existing_place_names
-            )
-            logger.info(f"📋 [SEARCH_STRATEGY] AI 검색 계획 완료: {search_queries}")
-            
-            # 4. 병렬 Google Places API 호출 + 재시도 로직
-            logger.info(f"🚀 [PARALLEL_API_CALLS] 병렬 Google Places API 호출 시작")
-            categorized_places = await self.google_places_service.parallel_search_by_categories(
-                search_queries=search_queries,
-                target_count_per_category=10
-            )
-            logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료")
-            
-            # 5. 결과 데이터 후처리 및 한글 키 매핑  
-            recommendations = self._convert_to_korean_categories(categorized_places)
-            
-            # 6. 새로운 장소들을 cached_places에 저장
-            if recommendations:
-                await self._save_new_places(city_id, recommendations)
-                logger.info(f"💾 [CACHE_SAVE] 새로운 장소들 캐시 저장 완료")
-            
-            # 7. 응답 생성
-            total_new_places = sum(len(places) for places in recommendations.values())
-            return PlaceRecommendationResponse(
-                success=True,
-                city_id=city_id,
-                main_theme="AI 고도화 검색",
-                recommendations=recommendations,
-                previously_recommended_count=len(existing_place_names),
-                newly_recommended_count=total_new_places
-            )
+            # === Plan A: search_strategy_v1로 고도화 검색 시도 ===
+            logger.info("🧠 [PLAN_A] Attempting advanced search with search_strategy_v1.")
+            try:
+                search_queries = await self.ai_service.create_search_queries(
+                    city=request.city,
+                    country=request.country,
+                    existing_places=existing_place_names
+                )
+                logger.info(f"📋 [SEARCH_STRATEGY] AI 검색 계획 완료: {search_queries}")
+                
+                # 병렬 Google Places API 호출 + 재시도 로직
+                logger.info(f"🚀 [PARALLEL_API_CALLS] 병렬 Google Places API 호출 시작")
+                categorized_places = await self.google_places_service.parallel_search_by_categories(
+                    search_queries=search_queries,
+                    target_count_per_category=10
+                )
+                logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료")
+                
+                # 결과 데이터 후처리 및 한글 키 매핑  
+                recommendations = self._convert_to_korean_categories(categorized_places)
+                
+                # 새로운 장소들을 cached_places에 저장
+                if recommendations:
+                    await self._save_new_places(city_id, recommendations)
+                    logger.info(f"💾 [CACHE_SAVE] 새로운 장소들 캐시 저장 완료")
+                
+                # 응답 생성
+                total_new_places = sum(len(places) for places in recommendations.values())
+                return PlaceRecommendationResponse(
+                    success=True,
+                    city_id=city_id,
+                    main_theme="AI 고도화 검색",
+                    recommendations=recommendations,
+                    previously_recommended_count=len(existing_place_names),
+                    newly_recommended_count=total_new_places
+                )
+            except Exception as advanced_error:
+                logger.warning(f"⚠️ [PLAN_A_FAILED] Advanced search failed. Falling back to place_recommendation_v1. 이유: {advanced_error}")
+                return await self._fallback_to_legacy_recommendation(request)
             
         except Exception as e:
             logger.error(f"❌ [ADVANCED_ERROR] 고도화 추천 실패: {e}")

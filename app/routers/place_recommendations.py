@@ -106,28 +106,11 @@ async def get_city_recommendation_stats(city_id: int):
 @router.post("/test-prompt-generation")
 async def test_prompt_generation(request: PlaceRecommendationRequest):
     """
-    프롬프트 동적 생성 테스트 (개발용)
+    개발용: 고도화(Plan A) → 폴백(Plan B) 흐름으로 실제 추천 결과를 테스트합니다.
     """
     try:
-        # 도시 ID 확보
-        city_id = await place_recommendation_service.supabase.get_or_create_city(
-            city_name=request.city,
-            country_name=request.country
-        )
-        
-        # 기존 장소 목록 조회
-        existing_places = await place_recommendation_service.supabase.get_existing_place_names(city_id)
-        
-        # 프롬프트 생성
-        dynamic_prompt = await place_recommendation_service._create_dynamic_prompt(request, existing_places)
-        
-        return {
-            "city_id": city_id,
-            "existing_places_count": len(existing_places),
-            "existing_places": existing_places[:5],  # 최대 5개만 표시
-            "generated_prompt": dynamic_prompt[:1000] + "..." if len(dynamic_prompt) > 1000 else dynamic_prompt
-        }
-        
+        response = await place_recommendation_service.generate_place_recommendations(request)
+        return response
     except Exception as e:
-        logger.error(f"프롬프트 테스트 실패: {e}")
-        raise HTTPException(status_code=500, detail=f"프롬프트 테스트 중 오류가 발생했습니다: {str(e)}")
+        logger.error(f"프롬프트(실제 추천) 테스트 실패: {e}")
+        raise HTTPException(status_code=500, detail=f"추천 테스트 중 오류: {str(e)}")
