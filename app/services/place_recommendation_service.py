@@ -54,12 +54,14 @@ class PlaceRecommendationService:
             # === Plan A: search_strategy_v1로 고도화 검색 시도 ===
             logger.info("🧠 [PLAN_A] Attempting advanced search with search_strategy_v1.")
             try:
-                search_queries = await self.ai_service.create_search_queries(
+                raw_search_queries = await self.ai_service.create_search_queries(
                     city=request.city,
                     country=request.country,
                     existing_places=existing_place_names
                 )
-                logger.info(f"📋 [SEARCH_STRATEGY] AI 검색 계획 완료: {search_queries}")
+                # AI 응답 정규화: 카테고리별 문자열 쿼리로 변환
+                search_queries = self._normalize_search_queries(raw_search_queries)
+                logger.info(f"📋 [SEARCH_STRATEGY] AI 검색 계획 완료(정규화됨): {search_queries}")
                 
                 # 병렬 Google Places API 호출 + 재시도 로직
                 logger.info(f"🚀 [PARALLEL_API_CALLS] 병렬 Google Places API 호출 시작")
@@ -113,6 +115,54 @@ class PlaceRecommendationService:
             korean_recommendations[korean_category] = place_names
             
         return korean_recommendations
+    
+    def _normalize_search_queries(self, raw_queries: Any) -> Dict[str, str]:
+        """
+        AI(search_strategy_v1) 응답을 카테고리별 텍스트 쿼리 딕셔너리로 정규화
+        허용 입력 형태:
+        - Dict[str, str]: 이미 완성된 쿼리 맵
+        - Dict[str, Dict[str, Any]]: {category: {primary_query: str, ...}} 형태
+        - 기타: 예외 처리
+        """
+        try:
+            if isinstance(raw_queries, dict):
+                normalized: Dict[str, str] = {}
+                for key, value in raw_queries.items():
+                    category = key.lower()
+                    # value가 문자열이면 그대로 사용
+                    if isinstance(value, str):
+                        normalized[category] = value
+                    elif isinstance(value, dict):
+                        # primary_query, query, text 등 자주 쓰는 키 우선
+                        for candidate in ["primary_query", "query", "text", "q"]:
+                            if isinstance(value.get(candidate), str) and value.get(candidate).strip():
+                                normalized[category] = value.get(candidate).strip()
+                                break
+                        else:
+                            # value의 첫 번째 문자열 값을 사용
+                            str_val = next((v for v in value.values() if isinstance(v, str) and v.strip()), None)
+                            if str_val:
+                                normalized[category] = str_val.strip()
+                    # 리스트면 첫 항목 문자열 채택
+                    elif isinstance(value, list) and value:
+                        first = value[0]
+                        if isinstance(first, str):
+                            normalized[category] = first
+                        elif isinstance(first, dict):
+                            str_val = first.get("primary_query") or first.get("query") or first.get("text")
+                            if isinstance(str_val, str):
+                                normalized[category] = str_val
+                # 최소한의 기본 카테고리 보장
+                return {
+                    "tourism": normalized.get("tourism") or normalized.get("attractions") or normalized.get("관광") or "tourist attractions",
+                    "food": normalized.get("food") or normalized.get("foods") or normalized.get("먹거리") or "restaurants",
+                    "activity": normalized.get("activity") or normalized.get("activities") or normalized.get("즐길거리") or "activities",
+                    "accommodation": normalized.get("accommodation") or normalized.get("accommodations") or normalized.get("숙소") or "hotels"
+                }
+            else:
+                raise ValueError("AI 검색 전략 응답이 dict 형태가 아닙니다")
+        except Exception as e:
+            raise ValueError(f"검색 전략 정규화 실패: {e}")
     
     async def _fallback_to_legacy_recommendation(self, request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
         """기존 방식으로 폴백 (AI 프롬프트 기반)"""
