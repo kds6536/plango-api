@@ -59,6 +59,123 @@ class GooglePlacesService:
                 logger.error(f"장소 검색 중 예외 발생: {e}")
         return {}
 
+    async def search_places(
+        self,
+        query: str,
+        location: Optional[str] = None,
+        radius: int = 5000,
+        place_type: Optional[str] = None,
+        language_code: str = "ko",
+    ) -> List[Dict[str, Any]]:
+        """
+        기존 라우터/서비스에서 기대하는 인터페이스의 검색 함수.
+        Google Places API(New) Text Search를 사용해 결과를 표준 구조로 반환한다.
+        """
+        if not self.api_key:
+            logger.error("Google Maps API 키가 설정되지 않아 검색을 진행할 수 없습니다.")
+            return []
+
+        # 질의문 구성: location이 있으면 함께 붙여 정확도를 높인다
+        text_query = f"{query} {location}".strip() if location else query
+
+        fields = [
+            "places.id",
+            "places.displayName",
+            "places.formattedAddress",
+            "places.rating",
+            "places.userRatingCount",
+            "places.priceLevel",
+            "places.primaryType",
+            "places.primaryTypeDisplayName",
+            "places.websiteUri",
+            "places.location",
+        ]
+
+        try:
+            result = await self.search_places_text(text_query=text_query, fields=fields, language_code=language_code)
+            places = result.get("places", [])
+            normalized: List[Dict[str, Any]] = []
+            for place in places:
+                normalized.append({
+                    "place_id": place.get("id"),
+                    "name": place.get("displayName", {}).get("text", "Unknown Place"),
+                    "address": place.get("formattedAddress"),
+                    "rating": place.get("rating", 0.0),
+                    "user_ratings_total": place.get("userRatingCount", 0),
+                    "price_level": place.get("priceLevel", 0),
+                    "type": place.get("primaryType"),
+                    "description": place.get("primaryTypeDisplayName", {}).get("text", ""),
+                    "website": place.get("websiteUri", ""),
+                    "lat": place.get("location", {}).get("latitude"),
+                    "lng": place.get("location", {}).get("longitude"),
+                })
+
+            # place_type이 주어지면 1차 필터링(응답의 primaryType 기준)
+            if place_type:
+                normalized = [p for p in normalized if (p.get("type") or "").endswith(place_type) or place_type in (p.get("type") or "")]
+
+            return normalized
+        except Exception as e:
+            logger.error(f"검색 중 예외 발생: {e}")
+            return []
+
+    async def get_place_details(self, place_id: str, language_code: str = "ko") -> Dict[str, Any]:
+        """장소 상세 정보 조회 (Places API New)"""
+        if not self.api_key:
+            logger.error("Google Maps API 키가 설정되지 않아 상세 조회를 진행할 수 없습니다.")
+            return {}
+
+        url = f"https://places.googleapis.com/v1/places/{place_id}"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.api_key,
+            "X-Goog-FieldMask": ",".join([
+                "id",
+                "displayName",
+                "formattedAddress",
+                "rating",
+                "userRatingCount",
+                "priceLevel",
+                "websiteUri",
+                "location",
+                "primaryType",
+                "primaryTypeDisplayName",
+            ]),
+        }
+        params = {"languageCode": language_code}
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                data = response.json()
+                return {
+                    "place_id": data.get("id"),
+                    "name": data.get("displayName", {}).get("text"),
+                    "address": data.get("formattedAddress"),
+                    "rating": data.get("rating"),
+                    "user_ratings_total": data.get("userRatingCount"),
+                    "price_level": data.get("priceLevel"),
+                    "website": data.get("websiteUri"),
+                    "lat": data.get("location", {}).get("latitude"),
+                    "lng": data.get("location", {}).get("longitude"),
+                    "type": data.get("primaryType"),
+                    "description": data.get("primaryTypeDisplayName", {}).get("text", ""),
+                }
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP 오류 발생(상세): {e.response.status_code} - {e.response.text}")
+            except Exception as e:
+                logger.error(f"상세 조회 중 예외 발생: {e}")
+        return {}
+
+    async def get_nearby_attractions(self, location: str, radius: int = 10000) -> List[Dict[str, Any]]:
+        query = f"{location} 관광명소"
+        return await self.search_places(query=query, location=location, radius=radius, place_type="tourist_attraction")
+
+    async def get_nearby_restaurants(self, location: str, radius: int = 5000) -> List[Dict[str, Any]]:
+        query = f"{location} 맛집"
+        return await self.search_places(query=query, location=location, radius=radius, place_type="restaurant")
+
     async def parallel_search_by_categories(self, search_queries: Dict[str, str], 
                                            target_count_per_category: int = 10) -> Dict[str, List[Dict[str, Any]]]:
         """
