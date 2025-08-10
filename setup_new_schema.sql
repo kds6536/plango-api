@@ -9,14 +9,25 @@ CREATE TABLE IF NOT EXISTS public.countries (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+-- 1.5. 지역(광역 행정구역) 테이블
+CREATE TABLE IF NOT EXISTS public.regions (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    country_id INTEGER NOT NULL REFERENCES public.countries(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    UNIQUE(name, country_id)
+);
+
 -- 2. 도시 테이블
 CREATE TABLE IF NOT EXISTS public.cities (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     country_id INTEGER NOT NULL REFERENCES public.countries(id) ON DELETE CASCADE,
+    region_id INTEGER REFERENCES public.regions(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    UNIQUE(name, country_id)
+    UNIQUE(name, region_id)
 );
 
 -- 3. 캐시된 장소 테이블
@@ -51,7 +62,8 @@ CREATE TABLE IF NOT EXISTS public.prompts (
 
 -- 인덱스 생성
 CREATE INDEX IF NOT EXISTS idx_countries_name ON public.countries(name);
-CREATE INDEX IF NOT EXISTS idx_cities_name_country ON public.cities(name, country_id);
+CREATE INDEX IF NOT EXISTS idx_regions_name_country ON public.regions(name, country_id);
+CREATE INDEX IF NOT EXISTS idx_cities_name_region ON public.cities(name, region_id);
 CREATE INDEX IF NOT EXISTS idx_cached_places_city ON public.cached_places(city_id);
 CREATE INDEX IF NOT EXISTS idx_cached_places_category ON public.cached_places(category);
 CREATE INDEX IF NOT EXISTS idx_cached_places_name ON public.cached_places(name);

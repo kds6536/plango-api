@@ -195,7 +195,36 @@ class SupabaseService:
             logger.error(f"국가 조회/생성 실패: {e}")
             raise ValueError(f"국가 {country_name} 처리 중 오류 발생: {str(e)}")
     
-    async def get_or_create_city(self, city_name: str, country_name: str) -> int:
+    async def get_or_create_region(self, country_id: int, region_name: str) -> int:
+        """광역 행정구역(주/도) 조회 또는 생성"""
+        try:
+            if not self.is_connected():
+                raise ValueError("Supabase 연결 실패. 지역 정보를 처리할 수 없습니다.")
+
+            if not region_name:
+                # 지역명이 없으면 국가 단위 지역을 가상으로 생성/사용
+                region_name = "_DEFAULT_"
+
+            resp = (
+                self.client
+                .table('regions')
+                .select('id')
+                .eq('name', region_name)
+                .eq('country_id', country_id)
+                .execute()
+            )
+            if resp.data:
+                return resp.data[0]['id']
+
+            ins = self.client.table('regions').insert({'name': region_name, 'country_id': country_id}).execute()
+            if ins.data:
+                return ins.data[0]['id']
+            raise ValueError("지역 생성 실패")
+        except Exception as e:
+            logger.error(f"지역 조회/생성 실패: {e}")
+            raise ValueError(f"지역 처리 중 오류 발생: {str(e)}")
+
+    async def get_or_create_city(self, city_name: str, country_name: str, region_name: str | None = None) -> int:
         """도시 조회 또는 생성 (Get-or-Create 로직)"""
         try:
             if not self.is_connected():
@@ -241,9 +270,17 @@ class SupabaseService:
             country_name = country_name.strip() if country_name else country_name
             city_name = normalize_city_name(city_name)
             country_id = await self.get_or_create_country(country_name)
+            region_id = await self.get_or_create_region(country_id, region_name or "")
             
             # 기존 도시 조회 (이름과 국가 ID로 조회)
-            response = self.client.table('cities').select('id').eq('name', city_name).eq('country_id', country_id).execute()
+            response = (
+                self.client
+                .table('cities')
+                .select('id')
+                .eq('name', city_name)
+                .eq('region_id', region_id)
+                .execute()
+            )
             
             if response.data:
                 city_id = response.data[0]['id']
@@ -253,6 +290,7 @@ class SupabaseService:
                 # 새로운 도시 생성
                 insert_data = {
                     'name': city_name,
+                    'region_id': region_id,
                     'country_id': country_id
                 }
                 insert_response = self.client.table('cities').insert(insert_data).execute()

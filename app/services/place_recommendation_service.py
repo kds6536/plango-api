@@ -10,6 +10,7 @@ from string import Template
 from app.services.supabase_service import supabase_service
 from app.services.dynamic_ai_service import DynamicAIService
 from app.services.google_places_service import GooglePlacesService
+from app.services.geocoding_service import geocoding_service
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
 from app.utils.logger import get_logger
 from datetime import datetime
@@ -40,10 +41,30 @@ class PlaceRecommendationService:
             # === 고도화된 아키텍처 적용 ===
             logger.info(f"🎯 [ADVANCED_MODE] 고도화된 장소 추천 모드 활성화")
             
-            # 1. 국가와 도시 ID 확보 (Get-or-Create)
+            # 1. 지오코딩으로 표준화 & 지역/도시 식별
+            geo_res = await geocoding_service.standardize_location(request.country, request.city)
+            if geo_res.get('status') == 'AMBIGUOUS':
+                return PlaceRecommendationResponse(
+                    success=True,
+                    city_id=0,
+                    main_theme='AMBIGUOUS',
+                    recommendations={},
+                    previously_recommended_count=0,
+                    newly_recommended_count=0
+                )
+            if geo_res.get('status') == 'NOT_FOUND':
+                raise ValueError('입력한 도시를 찾을 수 없습니다.')
+
+            std = geo_res.get('data', {})
+            normalized_country = std.get('country') or request.country
+            normalized_region = std.get('region') or ''
+            normalized_city = std.get('city') or request.city
+
+            # 2. 국가/지역/도시 ID 확보
             city_id = await self.supabase.get_or_create_city(
-                city_name=request.city,
-                country_name=request.country
+                city_name=normalized_city,
+                country_name=normalized_country,
+                region_name=normalized_region
             )
             logger.info(f"🏙️ [CITY_ID] 도시 ID 확보: {city_id}")
             
