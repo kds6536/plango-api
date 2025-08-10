@@ -101,7 +101,10 @@ class PlaceRecommendationService:
                 
                 # 새로운 장소들을 cached_places에 저장
                 if recommendations:
-                    await self._save_new_places(city_id, recommendations)
+                    try:
+                        await self._save_new_places(city_id, recommendations)
+                    except Exception as e:
+                        logger.warning(f"캐시 저장 중 경고: {e}")
                     logger.info(f"💾 [CACHE_SAVE] 새로운 장소들 캐시 저장 완료")
                 
                 # 응답 생성

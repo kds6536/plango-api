@@ -309,7 +309,13 @@ class SupabaseService:
             
             # 배치로 저장
             if cached_places:
-                insert_response = self.client.table('cached_places').insert(cached_places).execute()
+                # upsert로 중복(place_id, city_id) 시 갱신되도록 처리
+                insert_response = (
+                    self.client
+                    .table('cached_places')
+                    .upsert(cached_places, on_conflict='city_id,place_id')
+                    .execute()
+                )
                 if insert_response.data:
                     logger.info(f"도시 ID {city_id}에 {len(cached_places)}개 장소 저장 완료")
                     return True
