@@ -251,11 +251,28 @@ class GooglePlacesService:
             await self._retry_insufficient_categories(categorized_results, retry_needed, 
                                                    search_queries, target_count_per_category)
         
+        # 3단계: 카테고리별로 정확히 target_count_per_category 개수로 정규화
+        normalized_results: Dict[str, List[Dict[str, Any]]] = {}
+        for category, places in categorized_results.items():
+            # place_id 기준 중복 제거
+            unique: Dict[str, Dict[str, Any]] = {}
+            for p in places:
+                pid = p.get("place_id") or p.get("id")
+                if pid and pid not in unique:
+                    unique[pid] = p
+            deduped = list(unique.values())
+
+            # 평점/리뷰수 기준 정렬 후 상위 N개 슬라이싱
+            deduped.sort(key=lambda x: (x.get("rating", 0), x.get("user_ratings_total", 0)), reverse=True)
+            trimmed = deduped[:target_count_per_category]
+
+            normalized_results[category] = trimmed
+
         # 최종 결과 로깅
-        final_counts = {cat: len(places) for cat, places in categorized_results.items()}
-        logger.info(f"🎯 [FINAL_RESULTS] 최종 장소 개수: {final_counts}")
-        
-        return categorized_results
+        final_counts = {cat: len(places) for cat, places in normalized_results.items()}
+        logger.info(f"🎯 [FINAL_RESULTS] 최종 장소 개수(정규화): {final_counts}")
+
+        return normalized_results
     
     async def _search_category_with_fallback(self, category: str, query: str, language_code: str = "ko") -> List[Dict[str, Any]]:
         """단일 카테고리 검색 with 폴백"""

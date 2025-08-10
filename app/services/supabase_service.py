@@ -128,6 +128,52 @@ class SupabaseService:
             if not self.is_connected():
                 raise ValueError("Supabase 연결 실패. 국가 정보를 처리할 수 없습니다.")
             
+            # 다국어 표기 정규화
+            def normalize_country_name(name: str) -> str:
+                if not name:
+                    return name
+                name = name.strip()
+                mapping = {
+                    # East Asia
+                    "대한민국": "South Korea",
+                    "한국": "South Korea",
+                    "South Korea": "South Korea",
+                    "Republic of Korea": "South Korea",
+                    "韓国": "South Korea",
+                    "Korea": "South Korea",
+                    "日本": "Japan",
+                    "일본": "Japan",
+                    "Japan": "Japan",
+                    # Common
+                    "United States": "United States",
+                    "USA": "United States",
+                    "미국": "United States",
+                    "中國": "China",
+                    "中国": "China",
+                    "중국": "China",
+                    "France": "France",
+                    "프랑스": "France",
+                    "Italia": "Italy",
+                    "이탈리아": "Italy",
+                    "スペイン": "Spain",
+                    "스페인": "Spain",
+                    "독일": "Germany",
+                    "ドイツ": "Germany",
+                    "Germany": "Germany",
+                    "영국": "United Kingdom",
+                    "United Kingdom": "United Kingdom",
+                    "UK": "United Kingdom",
+                    "Thailand": "Thailand",
+                    "태국": "Thailand",
+                    "Vietnam": "Vietnam",
+                    "베트남": "Vietnam",
+                    "Singapore": "Singapore",
+                    "싱가포르": "Singapore",
+                }
+                return mapping.get(name, name)
+
+            country_name = normalize_country_name(country_name)
+
             # 기존 국가 조회
             response = self.client.table('countries').select('id').eq('name', country_name).execute()
             
@@ -156,6 +202,44 @@ class SupabaseService:
                 raise ValueError("Supabase 연결 실패. 도시 정보를 처리할 수 없습니다.")
             
             # 먼저 국가 ID 획득
+            # 도시/국가 다국어 표기 정규화
+            def normalize_city_name(name: str) -> str:
+                if not name:
+                    return name
+                name = name.strip()
+                mapping = {
+                    # Japan
+                    "도쿄": "Tokyo",
+                    "東京": "Tokyo",
+                    "오사카": "Osaka",
+                    "大阪": "Osaka",
+                    "교토": "Kyoto",
+                    "京都": "Kyoto",
+                    # Korea
+                    "서울": "Seoul",
+                    "부산": "Busan",
+                    "제주": "Jeju",
+                    # China
+                    "베이징": "Beijing",
+                    "北京": "Beijing",
+                    "상하이": "Shanghai",
+                    "上海": "Shanghai",
+                    # US/EU common
+                    "뉴욕": "New York",
+                    "로스앤젤레스": "Los Angeles",
+                    "파리": "Paris",
+                    "로마": "Rome",
+                    "바르셀로나": "Barcelona",
+                    "베를린": "Berlin",
+                    "런던": "London",
+                    "방콕": "Bangkok",
+                    "호치민": "Ho Chi Minh City",
+                    "싱가포르": "Singapore",
+                }
+                return mapping.get(name, name)
+
+            country_name = country_name.strip() if country_name else country_name
+            city_name = normalize_city_name(city_name)
             country_id = await self.get_or_create_country(country_name)
             
             # 기존 도시 조회 (이름과 국가 ID로 조회)
@@ -213,27 +297,13 @@ class SupabaseService:
             # 각 장소 정보를 cached_places 형식으로 변환
             cached_places = []
             for place in places_data:
-                # 좌표는 DB에서 latitude/longitude 컬럼을 사용 (coordinates JSONB 사용 안 함)
-                latitude = place.get('lat')
-                longitude = place.get('lng')
-                if not isinstance(latitude, (int, float)) and isinstance(place.get('coordinates'), dict):
-                    latitude = place['coordinates'].get('lat')
-                if not isinstance(longitude, (int, float)) and isinstance(place.get('coordinates'), dict):
-                    longitude = place['coordinates'].get('lng')
-
+                # 현재 DB 스키마 최소 컬럼에 맞춰 저장 (city_id, place_id, name, category, address)
                 cached_place = {
                     'city_id': city_id,
                     'place_id': place.get('place_id', ''),
                     'name': place.get('name', ''),
                     'category': place.get('category', ''),
                     'address': place.get('address', ''),
-                    'latitude': latitude,
-                    'longitude': longitude,
-                    'rating': place.get('rating', 0.0),
-                    'user_ratings_total': place.get('user_ratings_total') or place.get('total_ratings', 0),
-                    'photo_url': place.get('photo_url') or (place.get('photos', [None])[0] if isinstance(place.get('photos'), list) else None) or '',
-                    'website_url': place.get('website') or place.get('website_url') or '',
-                    'opening_hour': place.get('opening_hours') or place.get('opening_hour') or {},
                 }
                 cached_places.append(cached_place)
             
@@ -252,6 +322,26 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"장소 캐싱 실패: {e}")
             raise ValueError(f"장소 캐싱 중 오류 발생: {str(e)}")
+
+    async def get_cached_places_by_category(self, city_id: int, category: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """카테고리별 캐시된 장소를 조회 (부족분 보충용)"""
+        try:
+            if not self.is_connected():
+                raise ValueError("Supabase 연결 실패. 장소 정보를 조회할 수 없습니다.")
+
+            response = (
+                self.client
+                .table('cached_places')
+                .select('place_id, name, category, address')
+                .eq('city_id', city_id)
+                .eq('category', category)
+                .limit(limit)
+                .execute()
+            )
+            return response.data or []
+        except Exception as e:
+            logger.error(f"캐시 조회 실패: {e}")
+            return []
     
 
     

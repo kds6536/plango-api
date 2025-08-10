@@ -74,8 +74,30 @@ class PlaceRecommendationService:
                 )
                 logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료")
                 
-                # 결과 데이터 후처리 및 한글 키 매핑  
-                recommendations = self._convert_to_korean_categories(categorized_places)
+                # 결과 데이터 후처리: 카테고리 라벨을 요청 언어로 변환
+                recommendations = self._convert_categories_by_language(
+                    categorized_places,
+                    getattr(request, 'language_code', None) or 'ko'
+                )
+
+                # 카테고리별 결과가 10개 미만인 경우, 캐시에서 부족분 보충
+                try:
+                    for k in list(recommendations.keys()):
+                        places = recommendations.get(k, [])
+                        if len(places) < 10:
+                            needed = 10 - len(places)
+                            cached = await self.supabase.get_cached_places_by_category(city_id, k, needed)
+                            for c in cached:
+                                if all(p.get('place_id') != c.get('place_id') for p in places):
+                                    places.append({
+                                        'place_id': c.get('place_id'),
+                                        'name': c.get('name'),
+                                        'category': c.get('category'),
+                                        'address': c.get('address'),
+                                    })
+                            recommendations[k] = places
+                except Exception as fill_err:
+                    logger.warning(f"캐시 보충 중 경고: {fill_err}")
                 
                 # 새로운 장소들을 cached_places에 저장
                 if recommendations:
@@ -102,26 +124,41 @@ class PlaceRecommendationService:
             logger.info(f"🔄 [FALLBACK] 기존 방식으로 폴백 시도")
             return await self._fallback_to_legacy_recommendation(request)
     
-    def _convert_to_korean_categories(self, categorized_places: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
-        """영문 카테고리를 한글 카테고리로 변환하되, 장소 dict를 그대로 유지합니다."""
-        category_mapping = {
-            "tourism": "볼거리",
-            "food": "먹거리", 
-            "activity": "즐길거리",
-            "accommodation": "숙소"
+    def _convert_categories_by_language(self, categorized_places: Dict[str, List[Dict[str, Any]]], language_code: str) -> Dict[str, List[Dict[str, Any]]]:
+        """영문 카테고리를 요청 언어에 맞는 라벨로 변환하되, 장소 dict를 그대로 유지합니다."""
+        lang = (language_code or 'ko').lower()
+        mapping_by_lang = {
+            'ko': {
+                'tourism': '볼거리', 'food': '먹거리', 'activity': '즐길거리', 'accommodation': '숙소'
+            },
+            'en': {
+                'tourism': 'Tourism', 'food': 'Food', 'activity': 'Activities', 'accommodation': 'Accommodation'
+            },
+            'ja': {
+                'tourism': '観光', 'food': 'グルメ', 'activity': 'アクティビティ', 'accommodation': '宿泊'
+            },
+            'zh': {
+                'tourism': '旅游', 'food': '美食', 'activity': '活动', 'accommodation': '住宿'
+            },
+            'vi': {
+                'tourism': 'Tham quan', 'food': 'Ẩm thực', 'activity': 'Hoạt động', 'accommodation': 'Lưu trú'
+            },
+            'id': {
+                'tourism': 'Wisata', 'food': 'Makanan', 'activity': 'Aktivitas', 'accommodation': 'Akomodasi'
+            }
         }
-        
-        korean_recommendations: Dict[str, List[Dict[str, Any]]] = {}
+        mapping = mapping_by_lang.get(lang, mapping_by_lang['en'])
+
+        localized: Dict[str, List[Dict[str, Any]]] = {}
         for eng_category, places in categorized_places.items():
-            korean_category = category_mapping.get(eng_category, eng_category)
-            preserved_places: List[Dict[str, Any]] = []
-            for place in places:
-                # 각 place dict에 카테고리 한글 라벨을 반영
-                place_copy = dict(place)
-                place_copy["category"] = korean_category
-                preserved_places.append(place_copy)
-            korean_recommendations[korean_category] = preserved_places
-        return korean_recommendations
+            label = mapping.get(eng_category, eng_category)
+            out_places: List[Dict[str, Any]] = []
+            for p in places:
+                q = dict(p)
+                q['category'] = label
+                out_places.append(q)
+            localized[label] = out_places
+        return localized
     
     def _normalize_search_queries(self, raw_queries: Any) -> Dict[str, str]:
         """
