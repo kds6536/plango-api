@@ -288,6 +288,7 @@ class GooglePlacesService:
             "places.websiteUri",
             "places.location",
             "places.photos",
+            "places.editorialSummary",
         ]
         
         try:
@@ -306,7 +307,7 @@ class GooglePlacesService:
                     "user_ratings_total": place.get("userRatingCount", 0),
                     "price_level": place.get("priceLevel", 2),
                     "category": category,
-                    "description": place.get("primaryTypeDisplayName", {}).get("text", ""),
+                    "description": place.get("editorialSummary", {}).get("text") or place.get("primaryTypeDisplayName", {}).get("text", ""),
                     "website": place.get("websiteUri", ""),
                     "lat": place.get("location", {}).get("latitude", 0.0),
                     "lng": place.get("location", {}).get("longitude", 0.0),
