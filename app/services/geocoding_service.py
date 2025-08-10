@@ -40,12 +40,13 @@ class GeocodingService:
         - city: prefer 'locality', fallback to 'administrative_area_level_2'
         """
         comps: List[Dict[str, Any]] = result.get("address_components", [])
-        get_name = lambda types: next((c.get("long_name") for c in comps if set(types).issubset(set(c.get("types", [])))), None)
+        def get_name(types: List[str]) -> Optional[str]:
+            return next((c.get("long_name") for c in comps if set(types).issubset(set(c.get("types", [])))), None)
 
         country = get_name(["country"]) or None
         region = get_name(["administrative_area_level_1"]) or None
-        # 도시: locality 우선, 없으면 행정구역 2단계
-        city = get_name(["locality"]) or get_name(["administrative_area_level_2"]) or None
+        # 도시: 표준 로직은 locality 기준(요구사항에 따라 fallback 제거)
+        city = get_name(["locality"]) or None
         return {"country": country, "region": region, "city": city}
 
     async def standardize_location(self, country: str, city: str) -> Dict[str, Any]:
@@ -66,7 +67,6 @@ class GeocodingService:
                         "country": comp.get("country"),
                         "region": comp.get("region"),
                         "city": comp.get("city"),
-                        "formatted_address": results[0].get("formatted_address"),
                     },
                 }
 

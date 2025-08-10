@@ -123,56 +123,12 @@ class SupabaseService:
     # =============================================================================
     
     async def get_or_create_country(self, country_name: str) -> int:
-        """국가 조회 또는 생성 (Get-or-Create 로직)"""
+        """국가 조회 또는 생성 (영문 표준명만 입력)"""
         try:
             if not self.is_connected():
                 raise ValueError("Supabase 연결 실패. 국가 정보를 처리할 수 없습니다.")
             
-            # 다국어 표기 정규화
-            def normalize_country_name(name: str) -> str:
-                if not name:
-                    return name
-                name = name.strip()
-                mapping = {
-                    # East Asia
-                    "대한민국": "South Korea",
-                    "한국": "South Korea",
-                    "South Korea": "South Korea",
-                    "Republic of Korea": "South Korea",
-                    "韓国": "South Korea",
-                    "Korea": "South Korea",
-                    "日本": "Japan",
-                    "일본": "Japan",
-                    "Japan": "Japan",
-                    # Common
-                    "United States": "United States",
-                    "USA": "United States",
-                    "미국": "United States",
-                    "中國": "China",
-                    "中国": "China",
-                    "중국": "China",
-                    "France": "France",
-                    "프랑스": "France",
-                    "Italia": "Italy",
-                    "이탈리아": "Italy",
-                    "スペイン": "Spain",
-                    "스페인": "Spain",
-                    "독일": "Germany",
-                    "ドイツ": "Germany",
-                    "Germany": "Germany",
-                    "영국": "United Kingdom",
-                    "United Kingdom": "United Kingdom",
-                    "UK": "United Kingdom",
-                    "Thailand": "Thailand",
-                    "태국": "Thailand",
-                    "Vietnam": "Vietnam",
-                    "베트남": "Vietnam",
-                    "Singapore": "Singapore",
-                    "싱가포르": "Singapore",
-                }
-                return mapping.get(name, name)
-
-            country_name = normalize_country_name(country_name)
+            country_name = (country_name or '').strip()
 
             # 기존 국가 조회
             response = self.client.table('countries').select('id').eq('name', country_name).execute()
@@ -196,7 +152,7 @@ class SupabaseService:
             raise ValueError(f"국가 {country_name} 처리 중 오류 발생: {str(e)}")
     
     async def get_or_create_region(self, country_id: int, region_name: str) -> int:
-        """광역 행정구역(주/도) 조회 또는 생성"""
+        """광역 행정구역(주/도) 조회 또는 생성 (영문 표준명만 입력)"""
         try:
             if not self.is_connected():
                 raise ValueError("Supabase 연결 실패. 지역 정보를 처리할 수 없습니다.")
@@ -225,48 +181,12 @@ class SupabaseService:
             raise ValueError(f"지역 처리 중 오류 발생: {str(e)}")
 
     async def get_or_create_city(self, region_id: int, city_name: str) -> int:
-        """도시 조회 또는 생성 (Get-or-Create 로직, region_id 기반)"""
+        """도시 조회 또는 생성 (영문 표준명만 입력, region_id 기반)"""
         try:
             if not self.is_connected():
                 raise ValueError("Supabase 연결 실패. 도시 정보를 처리할 수 없습니다.")
             
-            # 도시명 정규화(간단 매핑)
-            def normalize_city_name(name: str) -> str:
-                if not name:
-                    return name
-                name = name.strip()
-                mapping = {
-                    # Japan
-                    "도쿄": "Tokyo",
-                    "東京": "Tokyo",
-                    "오사카": "Osaka",
-                    "大阪": "Osaka",
-                    "교토": "Kyoto",
-                    "京都": "Kyoto",
-                    # Korea
-                    "서울": "Seoul",
-                    "부산": "Busan",
-                    "제주": "Jeju",
-                    # China
-                    "베이징": "Beijing",
-                    "北京": "Beijing",
-                    "상하이": "Shanghai",
-                    "上海": "Shanghai",
-                    # US/EU common
-                    "뉴욕": "New York",
-                    "로스앤젤레스": "Los Angeles",
-                    "파리": "Paris",
-                    "로마": "Rome",
-                    "바르셀로나": "Barcelona",
-                    "베를린": "Berlin",
-                    "런던": "London",
-                    "방콕": "Bangkok",
-                    "호치민": "Ho Chi Minh City",
-                    "싱가포르": "Singapore",
-                }
-                return mapping.get(name, name)
-
-            city_name = normalize_city_name(city_name)
+            city_name = (city_name or '').strip()
             
             # 기존 도시 조회 (이름과 국가 ID로 조회)
             response = (
