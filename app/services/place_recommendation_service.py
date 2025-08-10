@@ -60,12 +60,10 @@ class PlaceRecommendationService:
             normalized_region = std.get('region') or ''
             normalized_city = std.get('city') or request.city
 
-            # 2. 국가/지역/도시 ID 확보
-            city_id = await self.supabase.get_or_create_city(
-                city_name=normalized_city,
-                country_name=normalized_country,
-                region_name=normalized_region
-            )
+            # 2. 국가/지역/도시 ID 확보 (region_id 기반 도시 생성)
+            country_id = await self.supabase.get_or_create_country(normalized_country)
+            region_id = await self.supabase.get_or_create_region(country_id, normalized_region)
+            city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=normalized_city)
             logger.info(f"🏙️ [CITY_ID] 도시 ID 확보: {city_id}")
             
             # 2. 기존 추천 장소 이름 목록 조회 (중복 방지용)

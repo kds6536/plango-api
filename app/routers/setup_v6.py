@@ -34,7 +34,9 @@ async def test_country_city_creation():
             city_results = []
             
             for city_name in cities:
-                city_id = await supabase_service.get_or_create_city(city_name, country_name)
+                country_id = await supabase_service.get_or_create_country(country_name)
+                region_id = await supabase_service.get_or_create_region(country_id, "_DEFAULT_")
+                city_id = await supabase_service.get_or_create_city(region_id, city_name)
                 city_results.append({
                     "city_name": city_name,
                     "city_id": city_id

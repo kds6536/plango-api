@@ -224,14 +224,13 @@ class SupabaseService:
             logger.error(f"지역 조회/생성 실패: {e}")
             raise ValueError(f"지역 처리 중 오류 발생: {str(e)}")
 
-    async def get_or_create_city(self, city_name: str, country_name: str, region_name: str | None = None) -> int:
-        """도시 조회 또는 생성 (Get-or-Create 로직)"""
+    async def get_or_create_city(self, region_id: int, city_name: str) -> int:
+        """도시 조회 또는 생성 (Get-or-Create 로직, region_id 기반)"""
         try:
             if not self.is_connected():
                 raise ValueError("Supabase 연결 실패. 도시 정보를 처리할 수 없습니다.")
             
-            # 먼저 국가 ID 획득
-            # 도시/국가 다국어 표기 정규화
+            # 도시명 정규화(간단 매핑)
             def normalize_city_name(name: str) -> str:
                 if not name:
                     return name
@@ -267,10 +266,7 @@ class SupabaseService:
                 }
                 return mapping.get(name, name)
 
-            country_name = country_name.strip() if country_name else country_name
             city_name = normalize_city_name(city_name)
-            country_id = await self.get_or_create_country(country_name)
-            region_id = await self.get_or_create_region(country_id, region_name or "")
             
             # 기존 도시 조회 (이름과 국가 ID로 조회)
             response = (
@@ -284,26 +280,25 @@ class SupabaseService:
             
             if response.data:
                 city_id = response.data[0]['id']
-                logger.info(f"기존 도시 조회 성공: {city_name}, {country_name} (ID: {city_id})")
+                logger.info(f"기존 도시 조회 성공: {city_name}, region_id={region_id} (ID: {city_id})")
                 return city_id
             else:
                 # 새로운 도시 생성
                 insert_data = {
                     'name': city_name,
-                    'region_id': region_id,
-                    'country_id': country_id
+                    'region_id': region_id
                 }
                 insert_response = self.client.table('cities').insert(insert_data).execute()
                 if insert_response.data:
                     city_id = insert_response.data[0]['id']
-                    logger.info(f"새로운 도시 생성 완료: {city_name}, {country_name} (ID: {city_id})")
+                    logger.info(f"새로운 도시 생성 완료: {city_name}, region_id={region_id} (ID: {city_id})")
                     return city_id
                 else:
-                    raise ValueError(f"도시 생성 실패: {city_name}, {country_name}")
+                    raise ValueError(f"도시 생성 실패: {city_name}, region_id={region_id}")
                     
         except Exception as e:
             logger.error(f"도시 조회/생성 실패: {e}")
-            raise ValueError(f"도시 {city_name}, {country_name} 처리 중 오류 발생: {str(e)}")
+            raise ValueError(f"도시 {city_name}, region_id={region_id} 처리 중 오류 발생: {str(e)}")
     
     async def get_existing_place_names(self, city_id: int) -> List[str]:
         """특정 도시의 기존 추천 장소 이름 목록 조회"""
