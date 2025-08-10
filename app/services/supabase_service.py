@@ -294,9 +294,19 @@ class SupabaseService:
             if not self.is_connected():
                 raise ValueError("Supabase 연결 실패. 장소 정보를 저장할 수 없습니다.")
             
+            # (city_id, place_id) 중복 제거: 여러 카테고리에서 동일 장소가 올 수 있음
+            dedup_map: Dict[str, Dict[str, Any]] = {}
+            for p in places_data:
+                pid = str(p.get('place_id') or '').strip()
+                if not pid:
+                    continue
+                dedup_map[pid] = p  # 같은 place_id가 오면 마지막 것이 유지
+
+            unique_places = list(dedup_map.values())
+
             # 각 장소 정보를 cached_places 형식으로 변환
             cached_places = []
-            for place in places_data:
+            for place in unique_places:
                 # 현재 DB 스키마 최소 컬럼에 맞춰 저장 (city_id, place_id, name, category, address)
                 cached_place = {
                     'city_id': city_id,
