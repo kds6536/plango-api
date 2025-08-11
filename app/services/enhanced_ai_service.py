@@ -39,8 +39,8 @@ class EnhancedAIService:
             # Gemini 핸들러
             if settings.GEMINI_API_KEY:
                 genai.configure(api_key=settings.GEMINI_API_KEY)
-                gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-                self.gemini_handler = GeminiHandler(gemini_model, 'gemini-1.5-flash')
+                # GeminiHandler는 GenerativeModel 인스턴스 또는 genai 모듈을 받아 동작하도록 수정됨
+                self.gemini_handler = GeminiHandler(genai, 'gemini-1.5-flash')
                 logger.info("Gemini 핸들러 초기화 완료")
                 
         except Exception as e:

@@ -1006,14 +1006,15 @@ class AdvancedItineraryService:
                 nonlocal current_time, activities
                 end_time_min = min(current_time + minutes, end_min)
                 start_hh = f"{current_time // 60:02d}:{current_time % 60:02d}"
+                # ActivityDetail 생성 시 모든 값을 문자열/기본값으로 안전 보정
                 activities.append(ActivityDetail(
-                    time=f"{start_hh}",
-                    place_name=place.name,
-                    activity_description=f"{label}",
+                    time=str(start_hh),
+                    place_name=str(place.name or ""),
+                    activity_description=str(label or ""),
                     transportation_details="도보/대중교통",
-                    place_id=place.place_id,
-                    lat=place.lat,
-                    lng=place.lng
+                    place_id=str(place.place_id or ""),
+                    lat=float(place.lat or 0.0),
+                    lng=float(place.lng or 0.0)
                 ))
                 current_time = end_time_min + 30  # 기본 이동 30분
 
@@ -1068,10 +1069,27 @@ class AdvancedItineraryService:
             except StopIteration:
                 pass
 
+            # DayPlan 생성 전 활동 리스트가 올바른지 검증/보정
+            sanitized_activities: List[ActivityItem] = []
+            for a in activities:
+                try:
+                    # 이미 ActivityDetail이므로 ActivityItem과 별개 모델이지만, 스키마 요구에 따라 ActivityItem으로 다운캐스팅
+                    sanitized_activities.append(ActivityItem(
+                        time=str(a.time),
+                        activity=str(a.activity_description or a.place_name),
+                        location=str(a.place_name),
+                        description=str(a.activity_description or ""),
+                        duration="120분",
+                        cost=None,
+                        tips=None
+                    ))
+                except Exception:
+                    continue
+
             daily_plans.append(DayPlan(
-                day=day,
-                theme=f"{day}일차 최적화 일정",
-                activities=activities,
+                day=int(day),
+                theme=str(f"{day}일차 최적화 일정"),
+                activities=sanitized_activities,
                 meals={"lunch": "규칙 적용", "dinner": "규칙 적용"},
                 transportation=["도보", "대중교통"],
                 estimated_cost="-"

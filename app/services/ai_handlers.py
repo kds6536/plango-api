@@ -32,6 +32,27 @@ class OpenAIHandler(AIModelHandler):
 
 class GeminiHandler(AIModelHandler):
     async def get_completion(self, prompt: str) -> str:
-        gemini_model = self.client.GenerativeModel(self.model_name)
-        response = await gemini_model.generate_content_async(prompt)
-        return response.text 
+        # self.client는 GenerativeModel 인스턴스이거나 genai 모듈일 수 있다.
+        model = self.client
+        try:
+            # GenerativeModel 인스턴스인 경우
+            generate = getattr(model, "generate_content_async", None)
+            if callable(generate):
+                response = await model.generate_content_async(prompt)
+                return getattr(response, "text", str(response))
+            # genai 모듈이 넘어온 경우
+            if hasattr(model, "GenerativeModel"):
+                m = model.GenerativeModel(self.model_name)
+                response = await m.generate_content_async(prompt)
+                return getattr(response, "text", str(response))
+            raise AttributeError("Invalid Gemini client provided")
+        except Exception as e:
+            # 동기 API만 가능한 환경 대비 폴백
+            try:
+                sync_generate = getattr(model, "generate_content", None)
+                if callable(sync_generate):
+                    response = model.generate_content(prompt)
+                    return getattr(response, "text", str(response))
+            except Exception:
+                pass
+            raise
