@@ -41,7 +41,7 @@ class PlaceRecommendationService:
             # === 고도화된 아키텍처 적용 ===
             logger.info(f"🎯 [ADVANCED_MODE] 고도화된 장소 추천 모드 활성화")
             
-            # 1. 지오코딩으로 표준화 & 지역/도시 식별
+            # 1. 지오코딩으로 표준화 & 지역/도시 식별 (항상 호출)
             geo_res = await geocoding_service.standardize_location(request.country, request.city)
             if geo_res.get('status') == 'AMBIGUOUS':
                 # 프론트 모달 표시를 위한 상태/옵션 동봉
@@ -56,7 +56,16 @@ class PlaceRecommendationService:
                     options=geo_res.get('options', [])
                 )
             if geo_res.get('status') == 'NOT_FOUND':
-                raise ValueError('입력한 도시를 찾을 수 없습니다.')
+                return PlaceRecommendationResponse(
+                    success=False,
+                    city_id=0,
+                    main_theme='NOT_FOUND',
+                    recommendations={},
+                    previously_recommended_count=0,
+                    newly_recommended_count=0,
+                    status='NOT_FOUND',
+                    options=[]
+                )
 
             std = geo_res.get('data', {})
             normalized_country = std.get('country') or request.country
