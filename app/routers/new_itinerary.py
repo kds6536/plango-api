@@ -4,7 +4,7 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Body
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from supabase import Client
 import logging
 
@@ -72,7 +72,7 @@ async def generate_recommendations(
 
 @router.post("/optimize", response_model=OptimizeResponse)
 async def optimize_itinerary(
-    places: List[PlaceData] = Body(..., embed=True),
+    payload: Dict[str, Any] = Body(...),
     service: AdvancedItineraryService = Depends(get_itinerary_service)
 ):
     """
@@ -80,13 +80,30 @@ async def optimize_itinerary(
            Google Directions API를 통해 이동 시간을 계산하여 최종 일정을 반환합니다.
     """
     try:
-        logging.info(f"경로 최적화 요청: {len(places)}개의 장소")
-        
+        # 호환성 처리: {places:[...]} 또는 {selected_places:[...]} 모두 허용
+        raw_places = payload.get("places") or payload.get("selected_places") or []
+        if not isinstance(raw_places, list):
+            raise HTTPException(status_code=422, detail="요청 본문에 places 배열이 필요합니다.")
+
+        places: List[PlaceData] = [PlaceData(**p) if isinstance(p, dict) else p for p in raw_places]
+
+        # 시간 제약 및 기간 기본값
+        constraints = {
+            "daily_start_time": payload.get("daily_start_time") or "09:00",
+            "daily_end_time": payload.get("daily_end_time") or "22:00",
+            "duration": int(payload.get("duration") or max(1, len(places) // 3)),
+        }
+
+        logging.info(
+            f"경로 최적화 요청: 장소 {len(places)}개, 기간 {constraints['duration']}일, "
+            f"시간 {constraints['daily_start_time']}~{constraints['daily_end_time']}"
+        )
+
         if len(places) < 2:
             raise HTTPException(status_code=400, detail="최적화를 위해 최소 2곳 이상의 장소가 필요합니다.")
         
-        # create_final_itinerary는 비동기 함수이므로 await가 필요합니다.
-        final_itinerary = await service.create_final_itinerary(places)
+        # create_final_itinerary는 비동기 함수
+        final_itinerary = await service.create_final_itinerary(places, constraints=constraints)
 
         if not final_itinerary:
             raise HTTPException(status_code=404, detail="최종 일정을 생성하지 못했습니다.")

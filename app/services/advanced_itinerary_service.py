@@ -789,15 +789,18 @@ class AdvancedItineraryService:
             places=place_data_list
         )
 
-    async def create_final_itinerary(self, places: List[PlaceData]) -> OptimizeResponse:
+    async def create_final_itinerary(self, places: List[PlaceData], constraints: Optional[Dict[str, Any]] = None) -> OptimizeResponse:
         """
         v6.0: 선택된 장소들을 Supabase 마스터 프롬프트와 AI로 최적화하여 최종 일정을 생성합니다.
         """
         try:
             logger.info(f"🎯 [OPTIMIZE] 최종 일정 생성 시작: {len(places)}개 장소")
             
-            # 기본값 설정
-            duration = max(1, len(places) // 3)  # 장소 3개당 1일 계산
+            # 기본값/제약 설정
+            constraints = constraints or {}
+            duration = int(constraints.get("duration") or max(1, len(places) // 3))
+            daily_start_time = constraints.get("daily_start_time") or "09:00"
+            daily_end_time = constraints.get("daily_end_time") or "22:00"
             
             # v6.0: Enhanced AI Service를 사용한 마스터 프롬프트 기반 일정 생성
             try:
@@ -819,6 +822,17 @@ class AdvancedItineraryService:
                 }
                 
                 logger.info("Enhanced AI Service로 일정 생성 시도")
+                # 제약 정보를 AI에 전달하여 시간 규칙을 강화
+                user_data["일일_시간_제약"] = {
+                    "시작": daily_start_time,
+                    "종료": daily_end_time,
+                    "식사_규칙": {
+                        "점심": "12:00-14:00 사이 1회",
+                        "저녁": "18:00-20:00 사이 1회",
+                        "카페": "15:00-17:00 우선 배치"
+                    },
+                    "숙소_규칙": "각 일자의 마지막은 숙소 배치, 다음날 첫 장소와 지리적으로 가까운 숙소 선호"
+                }
                 ai_response = await enhanced_ai_service.generate_itinerary_with_master_prompt(user_data)
                 
                 # AI 응답을 TravelPlan으로 변환
@@ -827,7 +841,8 @@ class AdvancedItineraryService:
             except Exception as ai_error:
                 logger.warning(f"AI 기반 일정 생성 실패, 폴백 사용: {ai_error}")
                 # 폴백으로 간단한 일정 생성
-                optimized_plan = self._create_optimized_travel_plan(places, duration)
+                # 제약을 반영한 폴백 일정 생성
+                optimized_plan = self._create_time_constrained_plan(places, duration, daily_start_time, daily_end_time)
             
             return OptimizeResponse(
                 optimized_plan=optimized_plan,
@@ -838,7 +853,11 @@ class AdvancedItineraryService:
                     "places_count": len(places),
                     "days_count": duration,
                     "optimized": True,
-                    "supabase_prompt": True
+                    "supabase_prompt": True,
+                    "constraints": {
+                        "daily_start_time": daily_start_time,
+                        "daily_end_time": daily_end_time
+                    }
                 }
             )
             
@@ -887,6 +906,126 @@ class AdvancedItineraryService:
         return TravelPlan(
             title="AI 최적화 여행 일정",
             concept="선택하신 장소들을 최적의 동선으로 구성한 맞춤 여행 계획",
+            daily_plans=daily_plans,
+            places=places
+        )
+
+    def _create_time_constrained_plan(
+        self,
+        places: List[PlaceData],
+        duration: int,
+        daily_start: str,
+        daily_end: str,
+    ) -> TravelPlan:
+        """시간 제약, 식사/숙소 배치 규칙을 적용한 간단한 휴리스틱 일정 생성"""
+        # 카테고리 분류 (한글 카테고리 기준)
+        foods = [p for p in places if (p.category or "").startswith("먹")]
+        accommodations = [p for p in places if (p.category or "").startswith("숙")]
+        others = [p for p in places if p not in foods and p not in accommodations]
+
+        # 캐파 계산: 기본 2시간/장소 + 이동 0.5시간 가정
+        def time_to_minutes(t: str) -> int:
+            h, m = t.split(":")
+            return int(h) * 60 + int(m)
+
+        start_min = time_to_minutes(daily_start)
+        end_min = time_to_minutes(daily_end)
+        available_per_day = max(0, end_min - start_min)
+        slot_per_day = max(1, (available_per_day // 150) - 2)  # 점심/저녁 2개 블록 고려
+
+        daily_plans: List[DayPlan] = []
+        place_cursor = 0
+
+        # others를 우선 분배, 식사/숙소 규칙 삽입
+        others_iter = iter(others)
+        lunch_iter = iter(foods)
+        dinner_iter = iter(foods)
+        accom_iter = iter(accommodations)
+
+        for day in range(1, duration + 1):
+            activities: List[ActivityDetail] = []
+
+            # 오전 블록: 시작부터 12:00 전까지 채우기
+            current_time = start_min
+            def add_activity(place: PlaceData, minutes: int, label: str = "관광"):
+                nonlocal current_time, activities
+                end_time_min = min(current_time + minutes, end_min)
+                start_hh = f"{current_time // 60:02d}:{current_time % 60:02d}"
+                activities.append(ActivityDetail(
+                    time=f"{start_hh}",
+                    place_name=place.name,
+                    activity_description=f"{label}",
+                    transportation_details="도보/대중교통",
+                    place_id=place.place_id,
+                    lat=place.lat,
+                    lng=place.lng
+                ))
+                current_time = end_time_min + 30  # 기본 이동 30분
+
+            # 오전 채우기
+            while current_time + 120 <= min(end_min, time_to_minutes("12:00")) and slot_per_day > 0:
+                try:
+                    p = next(others_iter)
+                except StopIteration:
+                    break
+                add_activity(p, 120)
+
+            # 점심
+            if current_time < time_to_minutes("14:00"):
+                try:
+                    p = next(lunch_iter)
+                    current_time = max(current_time, time_to_minutes("12:00"))
+                    add_activity(p, 60, label="점심")
+                except StopIteration:
+                    pass
+
+            # 오후 블록 15~17 카페 우선은 foods에서 하나 더 사용
+            if current_time < time_to_minutes("17:00"):
+                try:
+                    p = next(dinner_iter)
+                    current_time = max(current_time, time_to_minutes("15:00"))
+                    add_activity(p, 45, label="카페/디저트")
+                except StopIteration:
+                    pass
+
+            # 저녁 전까지 관광 채우기
+            while current_time + 120 <= min(end_min, time_to_minutes("18:00")):
+                try:
+                    p = next(others_iter)
+                except StopIteration:
+                    break
+                add_activity(p, 120)
+
+            # 저녁
+            if current_time < time_to_minutes("20:00"):
+                try:
+                    p = next(dinner_iter)
+                    current_time = max(current_time, time_to_minutes("18:00"))
+                    add_activity(p, 60, label="저녁")
+                except StopIteration:
+                    pass
+
+            # 숙소를 마지막에 배치
+            try:
+                p = next(accom_iter)
+                if current_time + 45 <= end_min:
+                    add_activity(p, 45, label="체크인/휴식")
+            except StopIteration:
+                pass
+
+            daily_plans.append(DayPlan(
+                day=day,
+                theme=f"{day}일차 최적화 일정",
+                activities=activities,
+                meals={"lunch": "규칙 적용", "dinner": "규칙 적용"},
+                transportation=["도보", "대중교통"],
+                estimated_cost="-"
+            ))
+
+        # TravelPlan places는 입력 전체 유지
+        return TravelPlan(
+            title="시간 제약 최적화 일정",
+            concept="시간 제약, 식사/숙소 규칙을 반영한 자동 구성 일정",
             daily_plans=daily_plans,
             places=places
         )
