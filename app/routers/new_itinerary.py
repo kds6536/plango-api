@@ -71,7 +71,7 @@ async def generate_recommendations(
 
 
 @router.post("/optimize", response_model=OptimizeResponse)
-def optimize_itinerary(
+async def optimize_itinerary(
     places: List[PlaceData] = Body(..., embed=True),
     service: AdvancedItineraryService = Depends(get_itinerary_service)
 ):
@@ -85,7 +85,8 @@ def optimize_itinerary(
         if len(places) < 2:
             raise HTTPException(status_code=400, detail="최적화를 위해 최소 2곳 이상의 장소가 필요합니다.")
         
-        final_itinerary = service.create_final_itinerary(places)
+        # create_final_itinerary는 비동기 함수이므로 await가 필요합니다.
+        final_itinerary = await service.create_final_itinerary(places)
 
         if not final_itinerary:
             raise HTTPException(status_code=404, detail="최종 일정을 생성하지 못했습니다.")

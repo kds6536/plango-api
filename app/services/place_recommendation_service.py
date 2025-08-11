@@ -44,13 +44,16 @@ class PlaceRecommendationService:
             # 1. 지오코딩으로 표준화 & 지역/도시 식별
             geo_res = await geocoding_service.standardize_location(request.country, request.city)
             if geo_res.get('status') == 'AMBIGUOUS':
+                # 프론트 모달 표시를 위한 상태/옵션 동봉
                 return PlaceRecommendationResponse(
                     success=True,
                     city_id=0,
                     main_theme='AMBIGUOUS',
                     recommendations={},
                     previously_recommended_count=0,
-                    newly_recommended_count=0
+                    newly_recommended_count=0,
+                    status='AMBIGUOUS',
+                    options=geo_res.get('options', [])
                 )
             if geo_res.get('status') == 'NOT_FOUND':
                 raise ValueError('입력한 도시를 찾을 수 없습니다.')

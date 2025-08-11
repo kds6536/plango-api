@@ -100,3 +100,6 @@ class PlaceRecommendationResponse(BaseModel):
     recommendations: Dict[str, List[Dict[str, Any]]] = Field(..., description="카테고리별 추천 장소")
     previously_recommended_count: int = Field(..., description="기존 추천 장소 수")
     newly_recommended_count: int = Field(..., description="새로 추천된 장소 수")
+    # AMBIGUOUS(동음이의) 응답 처리를 위한 필드들 (프론트 모달 표시용)
+    status: Optional[str] = Field(default=None, description="응답 상태 (예: AMBIGUOUS, SUCCESS, NOT_FOUND)")
+    options: Optional[List[str]] = Field(default=None, description="모호한 경우 사용자가 선택할 수 있는 후보 주소/도시 목록")
