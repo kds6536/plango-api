@@ -41,8 +41,10 @@ class PlaceRecommendationService:
             # === 고도화된 아키텍처 적용 ===
             logger.info(f"🎯 [ADVANCED_MODE] 고도화된 장소 추천 모드 활성화")
             
-            # 1. 지오코딩으로 표준화 & 지역/도시 식별 (항상 호출)
+            # 1. 지오코딩으로 표준화 & 지역/도시 식별 (항상 호출) - 디버그 로그 포함
+            logger.info(f"[GEO] 표준화 시작 - country='{request.country}', city='{request.city}'")
             geo_res = await geocoding_service.standardize_location(request.country, request.city)
+            logger.info(f"[GEO] 표준화 결과 - status={geo_res.get('status')}")
             if geo_res.get('status') == 'AMBIGUOUS':
                 # 프론트 모달 표시를 위한 상태/옵션 동봉
                 return PlaceRecommendationResponse(
