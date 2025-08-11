@@ -45,8 +45,8 @@ class GeocodingService:
 
         country = get_name(["country"]) or None
         region = get_name(["administrative_area_level_1"]) or None
-        # 도시: 표준 로직은 locality 기준(요구사항에 따라 fallback 제거)
-        city = get_name(["locality"]) or None
+        # 도시: locality 우선, 없으면 administrative_area_level_2로 폴백
+        city = get_name(["locality"]) or get_name(["administrative_area_level_2"]) or None
         return {"country": country, "region": region, "city": city}
 
     async def standardize_location(self, country: str, city: str) -> Dict[str, Any]:

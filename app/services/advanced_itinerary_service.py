@@ -845,7 +845,7 @@ class AdvancedItineraryService:
                 optimized_plan = self._create_time_constrained_plan(places, duration, daily_start_time, daily_end_time)
             
             return OptimizeResponse(
-                optimized_plan=optimized_plan,
+                optimized_plan=self._ensure_schema_compat(optimized_plan),
                 total_distance="약 50km",
                 total_duration="약 2시간",
                 optimization_details={
@@ -864,6 +864,61 @@ class AdvancedItineraryService:
         except Exception as e:
             logger.error(f"최종 일정 생성 실패: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
+
+    def _ensure_schema_compat(self, plan: TravelPlan) -> TravelPlan:
+        """Pydantic 스키마 적합성 보정: 문자열/누락 필드 보완"""
+        # daily_plans의 activities는 ActivityItem 목록이어야 하므로, 잘못된 타입을 방지
+        sanitized_daily = []
+        for day in plan.daily_plans:
+            # theme 누락/비문자 방어
+            theme = day.theme if isinstance(day.theme, str) and day.theme else f"Day {day.day}"
+            activities = []
+            for a in day.activities:
+                # a가 dict일 가능성도 방어
+                if isinstance(a, ActivityItem):
+                    activities.append(a)
+                elif isinstance(a, dict):
+                    activities.append(ActivityItem(
+                        time=str(a.get("time", "09:00")),
+                        activity=str(a.get("activity", a.get("place_name", "활동"))),
+                        location=str(a.get("location", a.get("place_name", "장소"))),
+                        description=str(a.get("description", a.get("activity_description", ""))),
+                        duration=str(a.get("duration", "60분")),
+                        cost=str(a.get("cost", "")) if a.get("cost") else None,
+                        tips=str(a.get("tips", "")) if a.get("tips") else None,
+                    ))
+                else:
+                    # 알 수 없는 타입은 건너뜀
+                    continue
+            sanitized_daily.append(DayPlan(
+                day=day.day,
+                theme=theme,
+                activities=activities,
+                meals=day.meals if isinstance(day.meals, dict) else {},
+                transportation=day.transportation if isinstance(day.transportation, list) else [],
+                estimated_cost=str(day.estimated_cost) if day.estimated_cost is not None else "-",
+            ))
+
+        # places 보정: description/주소 등 문자열화
+        sanitized_places = []
+        for p in plan.places:
+            sanitized_places.append(PlaceData(
+                place_id=str(p.place_id),
+                name=str(p.name),
+                category=str(p.category or "관광"),
+                lat=float(p.lat or 0.0),
+                lng=float(p.lng or 0.0),
+                rating=float(p.rating) if p.rating is not None else None,
+                address=str(p.address) if p.address else None,
+                description=str(p.description) if p.description else None,
+            ))
+
+        return TravelPlan(
+            title=plan.title or "여행 일정",
+            concept=plan.concept or "AI 생성 일정",
+            daily_plans=sanitized_daily,
+            places=sanitized_places,
+        )
 
     def _create_optimized_travel_plan(self, places: List[PlaceData], duration: int) -> TravelPlan:
         """
