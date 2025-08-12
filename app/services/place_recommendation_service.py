@@ -10,7 +10,6 @@ from string import Template
 from app.services.supabase_service import supabase_service
 from app.services.dynamic_ai_service import DynamicAIService
 from app.services.google_places_service import GooglePlacesService
-from app.services.geocoding_service import geocoding_service
 from fastapi import HTTPException
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
 from app.utils.logger import get_logger
@@ -42,15 +41,41 @@ class PlaceRecommendationService:
             # === 고도화된 아키텍처 적용 ===
             logger.info(f"🎯 [ADVANCED_MODE] 고도화된 장소 추천 모드 활성화")
             
-            # 1. 지오코딩으로 표준화 & 지역/도시 식별 (항상 호출) - 디버그 로그 포함
-            logger.info(f"[GEO] 표준화 시작 - country='{request.country}', city='{request.city}'")
-            geo_res = await geocoding_service.standardize_location(request.country, request.city)
-            status = geo_res.get('status')
-            logger.info(f"[GEO] 표준화 결과 - status={status}")
+            # 1. search_strategy_v1 프롬프트 호출 (도시 모호성 해결 + 검색전략 동시 처리)
+            logger.info("🧠 [AI] search_strategy_v1 호출 시작 (도시 모호성 + 검색전략)")
+            try:
+                prompt_template = await self.supabase.get_master_prompt('search_strategy_v1')
+            except Exception as e:
+                logger.error(f"프롬프트 로드 실패: {e}")
+                raise HTTPException(status_code=500, detail="프롬프트 로드 실패")
 
-            # === 엄격 분기 처리 ===
+            template = Template(prompt_template)
+            ai_prompt = template.safe_substitute(
+                city=request.city,
+                country=request.country,
+                total_duration=request.total_duration,
+                travelers_count=request.travelers_count,
+                budget_range=request.budget_range,
+                travel_style=", ".join(request.travel_style) if request.travel_style else "없음",
+                special_requests=getattr(request, 'special_requests', None) or "없음",
+                existing_places=""
+            )
+
+            ai_raw = await self.ai_service.generate_text(ai_prompt, max_tokens=1200)
+            logger.info("🤖 [AI] search_strategy_v1 응답 수신")
+            try:
+                cleaned = self._extract_json_from_response(ai_raw)
+                ai_result = json.loads(cleaned)
+            except Exception as parse_err:
+                logger.error(f"AI 응답 파싱 실패: {parse_err}")
+                raise HTTPException(status_code=500, detail="AI 응답 파싱 실패")
+
+            status = (ai_result.get('status') or '').upper()
+            logger.info(f"🧠 [AI] 상태 판별: {status}")
+
+            # === 1-A. AMBIGUOUS: 즉시 반환 ===
             if status == 'AMBIGUOUS':
-                # 후속 로직(캐시 조회, AI, Places API) 절대 실행 금지 - 즉시 반환
+                options = ai_result.get('options') or []
                 return PlaceRecommendationResponse(
                     success=True,
                     city_id=0,
@@ -59,39 +84,30 @@ class PlaceRecommendationService:
                     previously_recommended_count=0,
                     newly_recommended_count=0,
                     status='AMBIGUOUS',
-                    options=geo_res.get('options', []),
+                    options=options,
                     message="입력하신 도시가 모호합니다. 아래 목록에서 정확한 도시를 선택해주세요."
                 )
 
-            if status == 'NOT_FOUND':
-                # 즉시 404 반환 (라우터에서 HTTPException을 그대로 재전달하도록 수정됨)
-                raise HTTPException(status_code=404, detail="해당 도시를 찾을 수 없습니다.")
+            # === 1-B. SUCCESS: 표준화된 위치 → ID 확정 → 검색전략 실행 ===
+            if status == 'SUCCESS':
+                std = ai_result.get('standardized_location') or {}
+                normalized_country = std.get('country') or request.country
+                normalized_region = std.get('region') or ''
+                normalized_city = std.get('city') or request.city
 
-            std = geo_res.get('data', {})
-            normalized_country = std.get('country') or request.country
-            normalized_region = std.get('region') or ''
-            normalized_city = std.get('city') or request.city
+                # 2. 국가/지역/도시 ID 확보 (region_id 기반 도시 생성)
+                country_id = await self.supabase.get_or_create_country(normalized_country)
+                region_id = await self.supabase.get_or_create_region(country_id, normalized_region)
+                city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=normalized_city)
+                logger.info(f"🏙️ [CITY_ID] 도시 ID 확보: {city_id}")
 
-            # 2. 국가/지역/도시 ID 확보 (region_id 기반 도시 생성)
-            country_id = await self.supabase.get_or_create_country(normalized_country)
-            region_id = await self.supabase.get_or_create_region(country_id, normalized_region)
-            city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=normalized_city)
-            logger.info(f"🏙️ [CITY_ID] 도시 ID 확보: {city_id}")
-            
-            # 2. 기존 추천 장소 이름 목록 조회 (중복 방지용)
-            existing_place_names = await self.supabase.get_existing_place_names(city_id)
-            logger.info(f"📋 [EXISTING_PLACES] 기존 장소 {len(existing_place_names)}개 발견")
-            
-            # === Plan A: search_strategy_v1로 고도화 검색 시도 ===
-            logger.info("🧠 [PLAN_A] Attempting advanced search with search_strategy_v1.")
-            try:
-                raw_search_queries = await self.ai_service.create_search_queries(
-                    city=request.city,
-                    country=request.country,
-                    existing_places=existing_place_names
-                )
-                # AI 응답 정규화: 카테고리별 문자열 쿼리로 변환
-                search_queries = self._normalize_search_queries(raw_search_queries)
+                # 3. 기존 추천 장소 이름 목록 조회 (중복 방지용)
+                existing_place_names = await self.supabase.get_existing_place_names(city_id)
+                logger.info(f"📋 [EXISTING_PLACES] 기존 장소 {len(existing_place_names)}개 발견")
+
+                # 4. AI가 제공한 검색전략에서 primary_query 사용
+                raw_queries = ai_result.get('search_queries') or {}
+                search_queries = self._normalize_search_queries(raw_queries)
                 logger.info(f"📋 [SEARCH_STRATEGY] AI 검색 계획 완료(정규화됨): {search_queries}")
                 
                 # 병렬 Google Places API 호출 + 재시도 로직
@@ -99,8 +115,8 @@ class PlaceRecommendationService:
                 categorized_places = await self.google_places_service.parallel_search_by_categories(
                     search_queries=search_queries,
                     target_count_per_category=10,
-                    city=request.city,
-                    country=request.country,
+                    city=normalized_city,
+                    country=normalized_country,
                     language_code=(getattr(request, 'language_code', None) or 'ko')
                 )
                 logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료")
@@ -148,9 +164,9 @@ class PlaceRecommendationService:
                     previously_recommended_count=len(existing_place_names),
                     newly_recommended_count=total_new_places
                 )
-            except Exception as advanced_error:
-                logger.warning(f"⚠️ [PLAN_A_FAILED] Advanced search failed. Falling back to place_recommendation_v1. 이유: {advanced_error}")
-                return await self._fallback_to_legacy_recommendation(request)
+
+            # === 1-C. 그 외: 예외 처리 ===
+            raise HTTPException(status_code=500, detail="AI 응답 상태가 올바르지 않습니다")
             
         except Exception as e:
             logger.error(f"❌ [ADVANCED_ERROR] 고도화 추천 실패: {e}")
