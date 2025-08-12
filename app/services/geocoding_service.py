@@ -54,23 +54,31 @@ class GeocodingService:
         """사용자 입력(country, city)을 영문 표준명으로 정규화"""
         try:
             query = f"{country} {city}".strip()
-            # 요청 직전 로그
-            logger.info(f"Geocoding API에 주소 요청: '{query}'")
+            
+            # 강제 출력으로 호출 확인
+            print(f"🌍 [GEOCODING_DEBUG] standardize_location 호출됨: '{query}'")
+            logger.info(f"🌍 [GEO] 표준화 시작 - query='{query}'")
+            
             data = await self._request(query, language="en")
-            # 응답 직후 로그
+            
+            # 응답 결과 로그
             try:
                 results_len = len(data.get("results", []))
             except Exception:
                 results_len = 0
-            logger.info(f"Geocoding API 응답 결과 수: {results_len}개")
-            logger.debug(f"Geocoding API 전체 응답: {data}")
+                
+            print(f"🌍 [GEOCODING_DEBUG] API 응답 결과 수: {results_len}개")
+            logger.info(f"🌍 [GEO] Geocoding API 응답 결과 수: {results_len}개")
+            logger.debug(f"🌍 [GEO] Geocoding API 전체 응답: {data}")
+            
             results: List[Dict[str, Any]] = data.get("results", [])
 
             # === 엄격한 최우선 분기 처리 ===
             if not results or len(results) == 0:
                 status = "NOT_FOUND"
-                logger.info("Geocoding result is NOT_FOUND (no results).")
-                logger.info(f"최종 정규화 상태: '{status}'")
+                print(f"🌍 [GEOCODING_DEBUG] 분기: NOT_FOUND")
+                logger.info("🌍 [GEO] Geocoding result is NOT_FOUND (no results).")
+                logger.info(f"🌍 [GEO] 최종 정규화 상태: '{status}'")
                 return {"status": status}
 
             if len(results) > 1:
@@ -80,15 +88,19 @@ class GeocodingService:
                     if isinstance(r, dict) and r.get("formatted_address")
                 ]
                 status = "AMBIGUOUS"
-                logger.info(f"Geocoding result is AMBIGUOUS with {len(options)} options.")
-                logger.info(f"최종 정규화 상태: '{status}', 후보 {len(options)}개")
+                print(f"🌍 [GEOCODING_DEBUG] 분기: AMBIGUOUS with {len(options)} options")
+                print(f"🌍 [GEOCODING_DEBUG] 옵션들: {options[:3]}")  # 처음 3개만
+                logger.info(f"🌍 [GEO] Geocoding result is AMBIGUOUS with {len(options)} options.")
+                logger.info(f"🌍 [GEO] 최종 정규화 상태: '{status}', 후보 {len(options)}개")
                 return {"status": status, "options": options[:10]}
 
             # len(results) == 1 인 경우에만 SUCCESS 처리
             comp = self._extract_components(results[0])
             status = "SUCCESS"
-            logger.info("Geocoding result is SUCCESS (single match).")
-            logger.info(f"최종 정규화 상태: '{status}'")
+            print(f"🌍 [GEOCODING_DEBUG] 분기: SUCCESS (single match)")
+            print(f"🌍 [GEOCODING_DEBUG] 표준화 결과: country={comp.get('country')}, region={comp.get('region')}, city={comp.get('city')}")
+            logger.info("🌍 [GEO] Geocoding result is SUCCESS (single match).")
+            logger.info(f"🌍 [GEO] 최종 정규화 상태: '{status}'")
             return {
                 "status": status,
                 "data": {
