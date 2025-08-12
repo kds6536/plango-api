@@ -66,29 +66,37 @@ class GeocodingService:
             logger.debug(f"Geocoding API 전체 응답: {data}")
             results: List[Dict[str, Any]] = data.get("results", [])
 
-            if not results:
+            # === 엄격한 최우선 분기 처리 ===
+            if not results or len(results) == 0:
                 status = "NOT_FOUND"
+                logger.info("Geocoding result is NOT_FOUND (no results).")
                 logger.info(f"최종 정규화 상태: '{status}'")
                 return {"status": status}
 
-            if len(results) == 1:
-                comp = self._extract_components(results[0])
-                status = "SUCCESS"
-                logger.info(f"최종 정규화 상태: '{status}'")
-                return {
-                    "status": status,
-                    "data": {
-                        "country": comp.get("country"),
-                        "region": comp.get("region"),
-                        "city": comp.get("city"),
-                    },
-                }
+            if len(results) > 1:
+                options = [
+                    r.get("formatted_address")
+                    for r in results
+                    if isinstance(r, dict) and r.get("formatted_address")
+                ]
+                status = "AMBIGUOUS"
+                logger.info(f"Geocoding result is AMBIGUOUS with {len(options)} options.")
+                logger.info(f"최종 정규화 상태: '{status}', 후보 {len(options)}개")
+                return {"status": status, "options": options[:10]}
 
-            # 여러 개일 경우: formatted_address 제공
-            options = [r.get("formatted_address") for r in results if r.get("formatted_address")]
-            status = "AMBIGUOUS"
-            logger.info(f"최종 정규화 상태: '{status}', 후보 {len(options)}개")
-            return {"status": status, "options": options[:10]}
+            # len(results) == 1 인 경우에만 SUCCESS 처리
+            comp = self._extract_components(results[0])
+            status = "SUCCESS"
+            logger.info("Geocoding result is SUCCESS (single match).")
+            logger.info(f"최종 정규화 상태: '{status}'")
+            return {
+                "status": status,
+                "data": {
+                    "country": comp.get("country"),
+                    "region": comp.get("region"),
+                    "city": comp.get("city"),
+                },
+            }
         except Exception as e:
             logger.error(f"Geocoding 표준화 실패: {e}")
             status = "NOT_FOUND"
