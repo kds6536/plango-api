@@ -91,9 +91,10 @@ class PlaceRecommendationService:
             # === 1-B. SUCCESS: 표준화된 위치 → ID 확정 → 검색전략 실행 ===
             if status == 'SUCCESS':
                 std = ai_result.get('standardized_location') or {}
-                normalized_country = std.get('country') or request.country
+                # 프론트에서 명시적으로 보낸 도시/국가가 있다면 이를 최우선으로 사용
+                normalized_country = (getattr(request, 'country', None) or '').strip() or (std.get('country') or '')
                 normalized_region = std.get('region') or ''
-                normalized_city = std.get('city') or request.city
+                normalized_city = (getattr(request, 'city', None) or '').strip() or (std.get('city') or '')
 
                 # 2. 국가/지역/도시 ID 확보 (region_id 기반 도시 생성)
                 country_id = await self.supabase.get_or_create_country(normalized_country)
