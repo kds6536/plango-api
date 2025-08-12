@@ -11,6 +11,7 @@ from app.services.supabase_service import supabase_service
 from app.services.dynamic_ai_service import DynamicAIService
 from app.services.google_places_service import GooglePlacesService
 from app.services.geocoding_service import geocoding_service
+from fastapi import HTTPException
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
 from app.utils.logger import get_logger
 from datetime import datetime
@@ -44,9 +45,12 @@ class PlaceRecommendationService:
             # 1. 지오코딩으로 표준화 & 지역/도시 식별 (항상 호출) - 디버그 로그 포함
             logger.info(f"[GEO] 표준화 시작 - country='{request.country}', city='{request.city}'")
             geo_res = await geocoding_service.standardize_location(request.country, request.city)
-            logger.info(f"[GEO] 표준화 결과 - status={geo_res.get('status')}")
-            if geo_res.get('status') == 'AMBIGUOUS':
-                # 프론트 모달 표시를 위한 상태/옵션 동봉
+            status = geo_res.get('status')
+            logger.info(f"[GEO] 표준화 결과 - status={status}")
+
+            # === 엄격 분기 처리 ===
+            if status == 'AMBIGUOUS':
+                # 후속 로직(캐시 조회, AI, Places API) 절대 실행 금지 - 즉시 반환
                 return PlaceRecommendationResponse(
                     success=True,
                     city_id=0,
@@ -55,19 +59,13 @@ class PlaceRecommendationService:
                     previously_recommended_count=0,
                     newly_recommended_count=0,
                     status='AMBIGUOUS',
-                    options=geo_res.get('options', [])
+                    options=geo_res.get('options', []),
+                    message="입력하신 도시가 모호합니다. 아래 목록에서 정확한 도시를 선택해주세요."
                 )
-            if geo_res.get('status') == 'NOT_FOUND':
-                return PlaceRecommendationResponse(
-                    success=False,
-                    city_id=0,
-                    main_theme='NOT_FOUND',
-                    recommendations={},
-                    previously_recommended_count=0,
-                    newly_recommended_count=0,
-                    status='NOT_FOUND',
-                    options=[]
-                )
+
+            if status == 'NOT_FOUND':
+                # 즉시 404 반환 (라우터에서 HTTPException을 그대로 재전달하도록 수정됨)
+                raise HTTPException(status_code=404, detail="해당 도시를 찾을 수 없습니다.")
 
             std = geo_res.get('data', {})
             normalized_country = std.get('country') or request.country

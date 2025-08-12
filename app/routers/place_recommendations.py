@@ -25,16 +25,18 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
     """
     try:
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
-        
+
         # 장소 추천 서비스 호출
         response = await place_recommendation_service.generate_place_recommendations(request)
-        
-        logger.info(f"장소 추천 완료: 도시 ID {response.city_id}, "
-                   f"기존 {response.previously_recommended_count}개, "
-                   f"신규 {response.newly_recommended_count}개")
-        
+
+        logger.info(
+            f"장소 추천 완료: 도시 ID {response.city_id}, 기존 {response.previously_recommended_count}개, 신규 {response.newly_recommended_count}개"
+        )
+
         return response
-        
+
+    except HTTPException as he:  # 서비스에서 명시적으로 404 등을 던진 경우 그대로 전달
+        raise he
     except ValueError as ve:
         logger.error(f"장소 추천 요청 검증 실패: {ve}")
         raise HTTPException(status_code=400, detail=str(ve))

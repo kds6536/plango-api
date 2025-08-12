@@ -103,3 +103,4 @@ class PlaceRecommendationResponse(BaseModel):
     # AMBIGUOUS(동음이의) 응답 처리를 위한 필드들 (프론트 모달 표시용)
     status: Optional[str] = Field(default=None, description="응답 상태 (예: AMBIGUOUS, SUCCESS, NOT_FOUND)")
     options: Optional[List[str]] = Field(default=None, description="모호한 경우 사용자가 선택할 수 있는 후보 주소/도시 목록")
+    message: Optional[str] = Field(default=None, description="상태에 대한 사용자 지향 메시지")
