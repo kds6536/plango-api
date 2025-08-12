@@ -262,11 +262,11 @@ class PlaceRecommendationService:
         """기존 방식으로 폴백 (AI 프롬프트 기반)"""
         try:
             logger.info(f"🔄 [LEGACY_MODE] 기존 방식으로 폴백 실행")
-            
-            city_id = await self.supabase.get_or_create_city(
-                city_name=request.city,
-                country_name=request.country
-            )
+            # 잘못된 country_name 인자 사용을 수정하고, 올바른 순서로 ID를 확보한다
+            # 1) 국가 → 2) 지역(없으면 빈 문자열) → 3) 도시
+            country_id = await self.supabase.get_or_create_country(request.country)
+            region_id = await self.supabase.get_or_create_region(country_id, "")
+            city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=request.city)
             
             existing_place_names = await self.supabase.get_existing_place_names(city_id)
             

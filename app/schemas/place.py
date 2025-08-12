@@ -1,7 +1,7 @@
 """새로운 장소 관련 스키마"""
 
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
 
 
@@ -102,5 +102,9 @@ class PlaceRecommendationResponse(BaseModel):
     newly_recommended_count: int = Field(..., description="새로 추천된 장소 수")
     # AMBIGUOUS(동음이의) 응답 처리를 위한 필드들 (프론트 모달 표시용)
     status: Optional[str] = Field(default=None, description="응답 상태 (예: AMBIGUOUS, SUCCESS, NOT_FOUND)")
-    options: Optional[List[str]] = Field(default=None, description="모호한 경우 사용자가 선택할 수 있는 후보 주소/도시 목록")
+    # options는 프롬프트 개편으로 문자열 또는 상세 객체(dict)를 모두 허용한다
+    options: Optional[List[Union[str, Dict[str, Any]]]] = Field(
+        default=None,
+        description="모호한 경우 사용자가 선택할 수 있는 후보 목록 (문자열 또는 상세 객체)"
+    )
     message: Optional[str] = Field(default=None, description="상태에 대한 사용자 지향 메시지")
