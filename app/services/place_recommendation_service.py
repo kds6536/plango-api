@@ -60,22 +60,33 @@ class PlaceRecommendationService:
                 special_requests=getattr(request, 'special_requests', None) or "없음",
                 existing_places=""
             )
-            # 디버그: AI에 전달되는 최종 프롬프트 전체 기록
-            logger.debug(f"[AI_REQUEST_PROMPT] {ai_prompt}")
+            # 디버깅: AI에 전달되는 최종 프롬프트 전체 기록
+            try:
+                logger.info("[AI_REQUEST_PROMPT] 프롬프트 전송 (요약) - city=%s, country=%s, region=%s, length=%d", getattr(request, 'city', ''), getattr(request, 'country', ''), getattr(request, 'region', ''), len(ai_prompt))
+                logger.debug(f"[AI_REQUEST_PROMPT] {ai_prompt}")
+            except Exception:
+                pass
 
             ai_raw = await self.ai_service.generate_text(ai_prompt, max_tokens=1200)
             logger.info("🤖 [AI] search_strategy_v1 응답 수신")
-            # 디버그: AI 원본 응답 전체 기록 (파싱 전)
-            logger.debug(f"[AI_RESPONSE_RAW] {ai_raw}")
+            # 디버깅: AI 원본 응답 전체 기록 (파싱 전)
+            try:
+                trimmed = (ai_raw[:1000] + "…") if isinstance(ai_raw, str) and len(ai_raw) > 1000 else ai_raw
+                logger.info("[AI_RESPONSE_RAW] 원본 응답(요약): %s", trimmed)
+                logger.debug(f"[AI_RESPONSE_RAW] {ai_raw}")
+            except Exception:
+                pass
             try:
                 cleaned = self._extract_json_from_response(ai_raw)
                 ai_result = json.loads(cleaned)
             except Exception as parse_err:
                 # 에러: JSON 파싱 실패 시 원본 응답도 함께 기록
-                logger.error(
-                    f"[AI_RESPONSE_PARSING_ERROR] JSON 파싱 실패: {parse_err}. 원본 응답: {ai_raw}",
-                    exc_info=True
-                )
+                try:
+                    logger.error("[AI_RESPONSE_PARSING_ERROR] JSON 파싱 실패: %s", parse_err, exc_info=True)
+                    logger.error("[AI_RESPONSE_PARSING_ERROR] 원본 응답: %s", ai_raw)
+                    logger.error("[AI_RESPONSE_PARSING_ERROR] 정제 시도 문자열: %s", self._extract_json_from_response(ai_raw))
+                except Exception:
+                    logger.error("[AI_RESPONSE_PARSING_ERROR] 추가 로깅 중 오류 발생", exc_info=True)
                 raise HTTPException(status_code=500, detail="AI 응답 파싱 실패")
 
             status = (ai_result.get('status') or '').upper()
