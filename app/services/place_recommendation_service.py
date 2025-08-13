@@ -60,14 +60,22 @@ class PlaceRecommendationService:
                 special_requests=getattr(request, 'special_requests', None) or "없음",
                 existing_places=""
             )
+            # 디버그: AI에 전달되는 최종 프롬프트 전체 기록
+            logger.debug(f"[AI_REQUEST_PROMPT] {ai_prompt}")
 
             ai_raw = await self.ai_service.generate_text(ai_prompt, max_tokens=1200)
             logger.info("🤖 [AI] search_strategy_v1 응답 수신")
+            # 디버그: AI 원본 응답 전체 기록 (파싱 전)
+            logger.debug(f"[AI_RESPONSE_RAW] {ai_raw}")
             try:
                 cleaned = self._extract_json_from_response(ai_raw)
                 ai_result = json.loads(cleaned)
             except Exception as parse_err:
-                logger.error(f"AI 응답 파싱 실패: {parse_err}")
+                # 에러: JSON 파싱 실패 시 원본 응답도 함께 기록
+                logger.error(
+                    f"[AI_RESPONSE_PARSING_ERROR] JSON 파싱 실패: {parse_err}. 원본 응답: {ai_raw}",
+                    exc_info=True
+                )
                 raise HTTPException(status_code=500, detail="AI 응답 파싱 실패")
 
             status = (ai_result.get('status') or '').upper()
