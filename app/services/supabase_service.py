@@ -258,9 +258,8 @@ class SupabaseService:
             unique_places = list(dedup_map.values())
 
             # 각 장소 정보를 cached_places 형식으로 변환
-            cached_places = []
+            cached_places: List[Dict[str, Any]] = []
             for place in unique_places:
-                # 현재 DB 스키마 최소 컬럼에 맞춰 저장 (city_id, place_id, name, category, address)
                 cached_place = {
                     'city_id': city_id,
                     'place_id': place.get('place_id', ''),
@@ -269,23 +268,68 @@ class SupabaseService:
                     'address': place.get('address', ''),
                 }
                 cached_places.append(cached_place)
-            
-            # 배치로 저장
-            if cached_places:
-                # upsert로 중복(place_id, city_id) 시 갱신되도록 처리
-                insert_response = (
+
+            if not cached_places:
+                logger.warning("저장할 장소 데이터가 없습니다.")
+                return False
+
+            # 1) 선조회: 이미 존재하는 place_id를 수집하여 '진짜 신규'만 선별
+            incoming_ids = [cp['place_id'] for cp in cached_places if cp.get('place_id')]
+            try:
+                existing_resp = (
                     self.client
                     .table('cached_places')
-                    .upsert(cached_places, on_conflict='city_id,place_id')
+                    .select('place_id')
+                    .eq('city_id', city_id)
+                    .in_('place_id', incoming_ids)
                     .execute()
                 )
-                if insert_response.data:
-                    logger.info(f"도시 ID {city_id}에 {len(cached_places)}개 장소 저장 완료")
+                existing_ids = set([row['place_id'] for row in (existing_resp.data or [])])
+            except Exception as se:
+                # 조회 실패 시에도 전체를 신규로 간주하고 삽입 로직으로 진행
+                logger.warning(f"기존 place_id 선조회 실패(무시하고 진행): {se}")
+                existing_ids = set()
+
+            new_records = [cp for cp in cached_places if cp['place_id'] not in existing_ids]
+            if not new_records:
+                logger.info(f"도시 ID {city_id}: 신규로 저장할 장소가 없습니다. (중복 {len(cached_places)})")
+                return True
+
+            # 2) 배치 삽입 시도
+            try:
+                resp = (
+                    self.client
+                    .table('cached_places')
+                    .insert(new_records)
+                    .execute()
+                )
+                if resp.data:
+                    logger.info(f"도시 ID {city_id}에 신규 {len(new_records)}개 장소 저장 완료")
                     return True
-                else:
-                    raise ValueError("장소 데이터 저장 실패")
-            else:
-                logger.warning("저장할 장소 데이터가 없습니다.")
+                # 데이터가 비어있어도 에러가 없다면 성공으로 간주
+                logger.info("배치 삽입 응답에 데이터가 없지만 에러 없음. 계속 진행")
+                return True
+            except Exception as be:
+                # 3) 중복/경합 등으로 인한 배치 실패 폴백: 개별 삽입으로 지속
+                error_msg = str(be)
+                logger.warning(f"배치 삽입 중 오류 발생, 폴백 수행: {error_msg}")
+                success_count = 0
+                for rec in new_records:
+                    try:
+                        r = self.client.table('cached_places').insert(rec).execute()
+                        if r.data:
+                            success_count += 1
+                    except Exception as ie:
+                        msg = str(ie)
+                        # 여전히 duplicate 발생 시 무시하고 계속
+                        if 'duplicate key' in msg or '23505' in msg:
+                            logger.info(f"중복 place_id 무시: {rec.get('place_id')}")
+                            continue
+                        logger.error(f"단일 삽입 실패: {msg}")
+                        continue
+                if success_count > 0:
+                    logger.info(f"개별 삽입 폴백 성공: {success_count}/{len(new_records)}")
+                    return True
                 return False
                 
         except Exception as e:
