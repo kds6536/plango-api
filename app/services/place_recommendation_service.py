@@ -73,7 +73,19 @@ class PlaceRecommendationService:
             status = (ai_result.get('status') or '').upper()
             logger.info(f"🧠 [AI] 상태 판별: {status}")
 
-            # === 1-A. AMBIGUOUS: 즉시 반환 ===
+            # 선택으로 이미 도시/국가가 명확히 전달된 경우, AMBIGUOUS라도 강제 확정 처리
+            force_resolve = bool((request.city or '').strip() and (request.country or '').strip())
+            if status == 'AMBIGUOUS' and force_resolve:
+                logger.info("🔧 [FORCE_RESOLVE] 프론트에서 명확한 도시/국가를 전달하여 AMBIGUOUS를 무시하고 진행합니다.")
+                ai_result['status'] = 'SUCCESS'
+                ai_result['standardized_location'] = ai_result.get('standardized_location') or {
+                    'city': request.city,
+                    'country': request.country,
+                    'region': ''
+                }
+                status = 'SUCCESS'
+
+            # === 1-A. AMBIGUOUS: 즉시 반환 (강제 확정 조건이 아닐 때만)
             if status == 'AMBIGUOUS':
                 options = ai_result.get('options') or []
                 return PlaceRecommendationResponse(
