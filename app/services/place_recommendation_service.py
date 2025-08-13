@@ -73,8 +73,22 @@ class PlaceRecommendationService:
             status = (ai_result.get('status') or '').upper()
             logger.info(f"🧠 [AI] 상태 판별: {status}")
 
-            # 선택으로 이미 도시/국가가 명확히 전달된 경우에도, 우선 AMBIGUOUS 안내를 프론트에 전달해 사용자가 선택하도록 함
-            # (프론트의 강제 확정 요청은 제거되었음)
+            # 모달에서 선택된 옵션인지 확인 (region 정보가 명확하게 포함된 경우)
+            has_explicit_region = bool(getattr(request, 'region', '').strip())
+            logger.info(f"🔍 [FORCE_RESOLVE_CHECK] 명시적 region 존재: {has_explicit_region} (region: '{getattr(request, 'region', '')}')")
+            
+            # region이 명확하게 포함된 요청이면 AI가 AMBIGUOUS라고 해도 강제로 SUCCESS 처리
+            if has_explicit_region and status == 'AMBIGUOUS':
+                logger.info(f"⚡ [FORCE_SUCCESS] region이 명시적으로 포함되어 AMBIGUOUS를 SUCCESS로 강제 변경")
+                status = 'SUCCESS'
+                # AI가 AMBIGUOUS로 판단했지만 standardized_location이 없을 수 있으므로 요청값으로 대체
+                if not ai_result.get('standardized_location'):
+                    ai_result['standardized_location'] = {
+                        'country': getattr(request, 'country', ''),
+                        'region': getattr(request, 'region', ''),
+                        'city': getattr(request, 'city', '')
+                    }
+                    logger.info(f"🔧 [STANDARDIZED_FALLBACK] standardized_location을 요청값으로 생성: {ai_result['standardized_location']}")
 
             # === 1-A. AMBIGUOUS: 즉시 반환 (강제 확정 조건이 아닐 때만)
             if status == 'AMBIGUOUS':
