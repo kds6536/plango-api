@@ -94,6 +94,8 @@ class PlaceRecommendationService:
             # === 1-B. SUCCESS: 표준화된 위치 → ID 확정 → 검색전략 실행 ===
             if status == 'SUCCESS':
                 std = ai_result.get('standardized_location') or {}
+                logger.info(f"🔍 [AI_ANALYSIS] AI 표준화 결과: {std}")
+                
                 # 표준화: AI가 제공한 영어명을 우선 사용. 없으면 한국어명, 최후엔 요청값
                 normalized_country = (
                     std.get('country_en') or 
@@ -118,32 +120,52 @@ class PlaceRecommendationService:
                 ).strip()
                 
                 logger.info(f"🌐 [STANDARDIZED] Country: {normalized_country}, Region: {normalized_region}, City: {normalized_city}")
+                logger.info(f"🔍 [DEBUG] 원본 요청: country={getattr(request, 'country', '')}, city={getattr(request, 'city', '')}")
 
                 # 2. 국가/지역/도시 ID 확보 (region_id 기반 도시 생성)
-                country_id = await self.supabase.get_or_create_country(normalized_country)
-                region_id = await self.supabase.get_or_create_region(country_id, normalized_region)
-                city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=normalized_city)
-                logger.info(f"🏙️ [CITY_ID] 도시 ID 확보: {city_id}")
+                logger.info(f"🏗️ [DB_SETUP] 국가/지역/도시 ID 확보 시작")
+                try:
+                    country_id = await self.supabase.get_or_create_country(normalized_country)
+                    logger.info(f"🌍 [COUNTRY_ID] 국가 ID 확보: {country_id} ({normalized_country})")
+                    
+                    region_id = await self.supabase.get_or_create_region(country_id, normalized_region)
+                    logger.info(f"🗺️ [REGION_ID] 지역 ID 확보: {region_id} ({normalized_region})")
+                    
+                    city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=normalized_city)
+                    logger.info(f"🏙️ [CITY_ID] 도시 ID 확보: {city_id} ({normalized_city})")
+                except Exception as db_error:
+                    logger.error(f"💥 [DB_ERROR] Supabase ID 확보 실패: {db_error}")
+                    raise HTTPException(status_code=500, detail=f"데이터베이스 설정 실패: {str(db_error)}")
 
                 # 3. 기존 추천 장소 이름 목록 조회 (중복 방지용)
-                existing_place_names = await self.supabase.get_existing_place_names(city_id)
-                logger.info(f"📋 [EXISTING_PLACES] 기존 장소 {len(existing_place_names)}개 발견")
+                try:
+                    existing_place_names = await self.supabase.get_existing_place_names(city_id)
+                    logger.info(f"📋 [EXISTING_PLACES] 기존 장소 {len(existing_place_names)}개 발견: {existing_place_names[:5] if existing_place_names else []}")
+                except Exception as existing_error:
+                    logger.warning(f"⚠️ [EXISTING_PLACES_ERROR] 기존 장소 조회 실패: {existing_error}")
+                    existing_place_names = []
 
                 # 4. AI가 제공한 검색전략에서 primary_query 사용
                 raw_queries = ai_result.get('search_queries') or {}
+                logger.info(f"🔍 [RAW_QUERIES] AI 원본 검색 쿼리: {raw_queries}")
+                
                 search_queries = self._normalize_search_queries(raw_queries)
                 logger.info(f"📋 [SEARCH_STRATEGY] AI 검색 계획 완료(정규화됨): {search_queries}")
                 
                 # 병렬 Google Places API 호출 + 재시도 로직
                 logger.info(f"🚀 [PARALLEL_API_CALLS] 병렬 Google Places API 호출 시작")
-                categorized_places = await self.google_places_service.parallel_search_by_categories(
-                    search_queries=search_queries,
-                    target_count_per_category=10,
-                    city=normalized_city,
-                    country=normalized_country,
-                    language_code=(getattr(request, 'language_code', None) or 'ko')
-                )
-                logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료")
+                try:
+                    categorized_places = await self.google_places_service.parallel_search_by_categories(
+                        search_queries=search_queries,
+                        target_count_per_category=10,
+                        city=normalized_city,
+                        country=normalized_country,
+                        language_code=(getattr(request, 'language_code', None) or 'ko')
+                    )
+                    logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료: {[(k, len(v)) for k, v in categorized_places.items()]}")
+                except Exception as api_error:
+                    logger.error(f"💥 [API_ERROR] Google Places API 호출 실패: {api_error}")
+                    raise HTTPException(status_code=500, detail=f"Google Places API 호출 실패: {str(api_error)}")
                 
                 # 결과 데이터 후처리: 카테고리 라벨을 요청 언어로 변환
                 recommendations = self._convert_categories_by_language(
@@ -171,16 +193,21 @@ class PlaceRecommendationService:
                     logger.warning(f"캐시 보충 중 경고: {fill_err}")
                 
                 # 새로운 장소들을 cached_places에 저장
+                logger.info(f"💾 [CACHE_SAVE] 캐시 저장 시작: {len(recommendations)}개 카테고리")
                 if recommendations:
                     try:
-                        await self._save_new_places(city_id, recommendations)
+                        save_result = await self._save_new_places(city_id, recommendations)
+                        logger.info(f"💾 [CACHE_SAVE] 저장 결과: {save_result}")
                     except Exception as e:
-                        logger.warning(f"캐시 저장 중 경고: {e}")
+                        logger.error(f"💥 [CACHE_SAVE_ERROR] 캐시 저장 실패: {e}")
+                        logger.error(f"💥 [CACHE_SAVE_ERROR] 저장 시도 데이터: city_id={city_id}, categories={list(recommendations.keys())}")
                     logger.info(f"💾 [CACHE_SAVE] 새로운 장소들 캐시 저장 완료")
                 
                 # 응답 생성
                 total_new_places = sum(len(places) for places in recommendations.values())
-                return PlaceRecommendationResponse(
+                logger.info(f"📊 [RESPONSE_PREP] 응답 데이터 준비: {total_new_places}개 신규 장소, {len(existing_place_names)}개 기존 장소")
+                
+                response = PlaceRecommendationResponse(
                     success=True,
                     city_id=city_id,
                     main_theme="AI 고도화 검색",
@@ -188,6 +215,9 @@ class PlaceRecommendationService:
                     previously_recommended_count=len(existing_place_names),
                     newly_recommended_count=total_new_places
                 )
+                
+                logger.info(f"✅ [RESPONSE_READY] 성공 응답 준비 완료")
+                return response
 
             # === 1-C. 그 외: 예외 처리 ===
             raise HTTPException(status_code=500, detail="AI 응답 상태가 올바르지 않습니다")

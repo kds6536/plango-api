@@ -125,30 +125,38 @@ class SupabaseService:
     async def get_or_create_country(self, country_name: str) -> int:
         """국가 조회 또는 생성 (영문 표준명만 입력)"""
         try:
+            logger.info(f"🌍 [COUNTRY_LOOKUP] 국가 조회/생성 시작: '{country_name}'")
+            
             if not self.is_connected():
+                logger.error("🚫 [COUNTRY_LOOKUP] Supabase 연결 실패")
                 raise ValueError("Supabase 연결 실패. 국가 정보를 처리할 수 없습니다.")
             
             country_name = (country_name or '').strip()
+            logger.info(f"🌍 [COUNTRY_LOOKUP] 정규화된 국가명: '{country_name}'")
 
             # 기존 국가 조회
             response = self.client.table('countries').select('id').eq('name', country_name).execute()
+            logger.info(f"🔍 [COUNTRY_LOOKUP] 조회 결과: {len(response.data) if response.data else 0}개 발견")
             
             if response.data:
                 country_id = response.data[0]['id']
-                logger.info(f"기존 국가 조회 성공: {country_name} (ID: {country_id})")
+                logger.info(f"✅ [COUNTRY_LOOKUP] 기존 국가 조회 성공: {country_name} (ID: {country_id})")
                 return country_id
             else:
                 # 새로운 국가 생성
+                logger.info(f"🆕 [COUNTRY_CREATE] 새로운 국가 생성 시도: {country_name}")
                 insert_response = self.client.table('countries').insert({'name': country_name}).execute()
+                
                 if insert_response.data:
                     country_id = insert_response.data[0]['id']
-                    logger.info(f"새로운 국가 생성 완료: {country_name} (ID: {country_id})")
+                    logger.info(f"✅ [COUNTRY_CREATE] 새로운 국가 생성 완료: {country_name} (ID: {country_id})")
                     return country_id
                 else:
+                    logger.error(f"💥 [COUNTRY_CREATE] 국가 생성 실패: 응답 데이터 없음")
                     raise ValueError(f"국가 생성 실패: {country_name}")
                     
         except Exception as e:
-            logger.error(f"국가 조회/생성 실패: {e}")
+            logger.error(f"💥 [COUNTRY_ERROR] 국가 조회/생성 실패: {e}")
             raise ValueError(f"국가 {country_name} 처리 중 오류 발생: {str(e)}")
     
     async def get_or_create_region(self, country_id: int, region_name: str) -> int:
