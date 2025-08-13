@@ -84,6 +84,7 @@ class PlaceRecommendationRequest(BaseModel):
     """장소 추천 요청"""
     country: str = Field(..., description="국가명")
     city: str = Field(..., description="도시명")
+    region: Optional[str] = Field(None, description="지역/주/도/광역시 (선택)")
     total_duration: int = Field(..., description="총 여행 기간 (일)")
     travelers_count: int = Field(..., description="여행자 수")
     budget_range: str = Field(..., description="예산 범위")
