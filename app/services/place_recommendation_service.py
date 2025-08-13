@@ -94,10 +94,30 @@ class PlaceRecommendationService:
             # === 1-B. SUCCESS: 표준화된 위치 → ID 확정 → 검색전략 실행 ===
             if status == 'SUCCESS':
                 std = ai_result.get('standardized_location') or {}
-                # 표준화: 영어 우선. 없으면 요청값 사용. 모두 없으면 빈 문자열
-                normalized_country = (std.get('country_en') or std.get('country') or '').strip() or (getattr(request, 'country', '')).strip()
-                normalized_region = (std.get('region_en') or std.get('region') or '').strip()
-                normalized_city = (std.get('city_en') or std.get('city') or '').strip() or (getattr(request, 'city', '')).strip()
+                # 표준화: AI가 제공한 영어명을 우선 사용. 없으면 한국어명, 최후엔 요청값
+                normalized_country = (
+                    std.get('country_en') or 
+                    std.get('country_english') or 
+                    std.get('country') or 
+                    getattr(request, 'country', '')
+                ).strip()
+                
+                normalized_region = (
+                    std.get('region_en') or 
+                    std.get('region_english') or 
+                    std.get('state_en') or 
+                    std.get('region') or 
+                    std.get('state') or ''
+                ).strip()
+                
+                normalized_city = (
+                    std.get('city_en') or 
+                    std.get('city_english') or 
+                    std.get('city') or 
+                    getattr(request, 'city', '')
+                ).strip()
+                
+                logger.info(f"🌐 [STANDARDIZED] Country: {normalized_country}, Region: {normalized_region}, City: {normalized_city}")
 
                 # 2. 국가/지역/도시 ID 확보 (region_id 기반 도시 생성)
                 country_id = await self.supabase.get_or_create_country(normalized_country)
