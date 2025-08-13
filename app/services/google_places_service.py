@@ -217,7 +217,7 @@ class GooglePlacesService:
         
         for category in categories:
             base_query = search_queries.get(category, f"{category} places")
-            # 도시/국가 접두어 보강
+            # 도시/국가 접두어 보강 (region까지 포함 가능하도록 city에 region+city가 들어왔다면 그대로 사용)
             location_prefix = " ".join([part for part in [city, country] if part])
             final_query = f"{location_prefix} {base_query}".strip() if location_prefix else base_query
             initial_tasks.append(self._search_category_with_fallback(category, final_query, language_code))

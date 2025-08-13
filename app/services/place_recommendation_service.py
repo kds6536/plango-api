@@ -73,17 +73,8 @@ class PlaceRecommendationService:
             status = (ai_result.get('status') or '').upper()
             logger.info(f"🧠 [AI] 상태 판별: {status}")
 
-            # 선택으로 이미 도시/국가가 명확히 전달된 경우, AMBIGUOUS라도 강제 확정 처리
-            force_resolve = bool((request.city or '').strip() and (request.country or '').strip())
-            if status == 'AMBIGUOUS' and force_resolve:
-                logger.info("🔧 [FORCE_RESOLVE] 프론트에서 명확한 도시/국가를 전달하여 AMBIGUOUS를 무시하고 진행합니다.")
-                ai_result['status'] = 'SUCCESS'
-                ai_result['standardized_location'] = ai_result.get('standardized_location') or {
-                    'city': request.city,
-                    'country': request.country,
-                    'region': ''
-                }
-                status = 'SUCCESS'
+            # 선택으로 이미 도시/국가가 명확히 전달된 경우에도, 우선 AMBIGUOUS 안내를 프론트에 전달해 사용자가 선택하도록 함
+            # (프론트의 강제 확정 요청은 제거되었음)
 
             # === 1-A. AMBIGUOUS: 즉시 반환 (강제 확정 조건이 아닐 때만)
             if status == 'AMBIGUOUS':
@@ -103,10 +94,10 @@ class PlaceRecommendationService:
             # === 1-B. SUCCESS: 표준화된 위치 → ID 확정 → 검색전략 실행 ===
             if status == 'SUCCESS':
                 std = ai_result.get('standardized_location') or {}
-                # 프론트에서 명시적으로 보낸 도시/국가가 있다면 이를 최우선으로 사용
-                normalized_country = (getattr(request, 'country', None) or '').strip() or (std.get('country') or '')
-                normalized_region = std.get('region') or ''
-                normalized_city = (getattr(request, 'city', None) or '').strip() or (std.get('city') or '')
+                # 표준화: 영어 우선. 없으면 요청값 사용. 모두 없으면 빈 문자열
+                normalized_country = (std.get('country_en') or std.get('country') or '').strip() or (getattr(request, 'country', '')).strip()
+                normalized_region = (std.get('region_en') or std.get('region') or '').strip()
+                normalized_city = (std.get('city_en') or std.get('city') or '').strip() or (getattr(request, 'city', '')).strip()
 
                 # 2. 국가/지역/도시 ID 확보 (region_id 기반 도시 생성)
                 country_id = await self.supabase.get_or_create_country(normalized_country)
