@@ -24,6 +24,19 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
     - AI + Google Places API 연동으로 검증된 장소 정보 제공
     """
     try:
+        # 요청 데이터 검증
+        if not request.city or not request.city.strip():
+            raise HTTPException(status_code=400, detail="도시명이 필요합니다.")
+        
+        if not request.country or not request.country.strip():
+            raise HTTPException(status_code=400, detail="국가명이 필요합니다.")
+            
+        if request.total_duration <= 0:
+            raise HTTPException(status_code=400, detail="여행 기간은 1일 이상이어야 합니다.")
+            
+        if request.travelers_count <= 0:
+            raise HTTPException(status_code=400, detail="여행자 수는 1명 이상이어야 합니다.")
+
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
 
         # 장소 추천 서비스 호출

@@ -42,12 +42,15 @@ class PlaceRecommendationService:
             logger.info(f"🎯 [ADVANCED_MODE] 고도화된 장소 추천 모드 활성화")
             
             # 1. search_strategy_v1 프롬프트 호출 (도시 모호성 해결 + 검색전략 동시 처리)
-            logger.info("🧠 [AI] search_strategy_v1 호출 시작 (도시 모호성 + 검색전략)")
+            logger.info("🧠 [PLAN_A_START] Plan A 시작: search_strategy_v1 프롬프트 호출")
             try:
                 prompt_template = await self.supabase.get_master_prompt('search_strategy_v1')
+                logger.info("✅ [PLAN_A_PROMPT] search_strategy_v1 프롬프트 로드 성공")
             except Exception as e:
-                logger.error(f"프롬프트 로드 실패: {e}")
-                raise HTTPException(status_code=500, detail="프롬프트 로드 실패")
+                logger.error(f"❌ [PLAN_A_PROMPT_FAIL] search_strategy_v1 프롬프트 로드 실패: {e}")
+                logger.info("🔄 [FALLBACK_TRIGGER] Plan A 실패로 인한 Plan B(폴백) 모드 전환")
+                await self._notify_admin_plan_a_failure("search_strategy_v1 프롬프트 로드 실패", str(e))
+                return await self._fallback_to_legacy_recommendation(request)
 
             template = Template(prompt_template)
             ai_prompt = template.safe_substitute(
@@ -69,25 +72,37 @@ class PlaceRecommendationService:
 
             ai_raw = await self.ai_service.generate_text(ai_prompt, max_tokens=1200)
             logger.info("🤖 [AI] search_strategy_v1 응답 수신")
+            
+            # AI 응답 검증
+            if not ai_raw or not isinstance(ai_raw, str):
+                logger.error("AI가 빈 응답 또는 잘못된 형식을 반환했습니다.")
+                raise HTTPException(status_code=500, detail="AI 응답이 올바르지 않습니다.")
+            
             # 디버깅: AI 원본 응답 전체 기록 (파싱 전)
             try:
-                trimmed = (ai_raw[:1000] + "…") if isinstance(ai_raw, str) and len(ai_raw) > 1000 else ai_raw
+                trimmed = (ai_raw[:1000] + "…") if len(ai_raw) > 1000 else ai_raw
                 logger.info("[AI_RESPONSE_RAW] 원본 응답(요약): %s", trimmed)
                 logger.debug(f"[AI_RESPONSE_RAW] {ai_raw}")
             except Exception:
                 pass
             try:
                 cleaned = self._extract_json_from_response(ai_raw)
+                if not cleaned or not cleaned.strip():
+                    raise ValueError("정제된 응답이 비어있습니다.")
                 ai_result = json.loads(cleaned)
             except Exception as parse_err:
                 # 에러: JSON 파싱 실패 시 원본 응답도 함께 기록
                 try:
-                    logger.error("[AI_RESPONSE_PARSING_ERROR] JSON 파싱 실패: %s", parse_err, exc_info=True)
-                    logger.error("[AI_RESPONSE_PARSING_ERROR] 원본 응답: %s", ai_raw)
-                    logger.error("[AI_RESPONSE_PARSING_ERROR] 정제 시도 문자열: %s", self._extract_json_from_response(ai_raw))
+                    logger.error("❌ [PLAN_A_PARSE_FAIL] search_strategy_v1 JSON 파싱 실패: %s", parse_err, exc_info=True)
+                    logger.error("📝 [PLAN_A_RAW] 원본 AI 응답: %s", ai_raw)
+                    logger.error("🔧 [PLAN_A_CLEANED] 정제 시도 문자열: %s", cleaned)
+                    logger.error("📊 [PLAN_A_STATS] 응답 길이: %d, 정제 후 길이: %d", len(ai_raw) if ai_raw else 0, len(cleaned) if cleaned else 0)
                 except Exception:
-                    logger.error("[AI_RESPONSE_PARSING_ERROR] 추가 로깅 중 오류 발생", exc_info=True)
-                raise HTTPException(status_code=500, detail="AI 응답 파싱 실패")
+                    logger.error("❌ [PLAN_A_LOG_FAIL] Plan A 로깅 중 추가 오류 발생", exc_info=True)
+                
+                logger.info("🔄 [FALLBACK_TRIGGER] Plan A JSON 파싱 실패로 인한 Plan B 전환")
+                await self._notify_admin_plan_a_failure("JSON 파싱 실패", f"파싱 에러: {str(parse_err)}, 원본 응답 길이: {len(ai_raw) if ai_raw else 0}")
+                return await self._fallback_to_legacy_recommendation(request)
 
             status = (ai_result.get('status') or '').upper()
             logger.info(f"🧠 [AI] 상태 판별: {status}")
@@ -186,7 +201,8 @@ class PlaceRecommendationService:
                 logger.info(f"📋 [SEARCH_STRATEGY] AI 검색 계획 완료(정규화됨): {search_queries}")
                 
                 # 병렬 Google Places API 호출 + 재시도 로직
-                logger.info(f"🚀 [PARALLEL_API_CALLS] 병렬 Google Places API 호출 시작")
+                logger.info(f"🚀 [PLAN_A_GOOGLE] Plan A Google Places API 호출 시작")
+                logger.info(f"📋 [PLAN_A_QUERIES] 검색 쿼리: {search_queries}")
                 try:
                     categorized_places = await self.google_places_service.parallel_search_by_categories(
                         search_queries=search_queries,
@@ -195,10 +211,12 @@ class PlaceRecommendationService:
                         country=normalized_country,
                         language_code=(getattr(request, 'language_code', None) or 'ko')
                     )
-                    logger.info(f"✅ [API_CALLS_COMPLETE] 병렬 API 호출 완료: {[(k, len(v)) for k, v in categorized_places.items()]}")
+                    logger.info(f"✅ [PLAN_A_GOOGLE_SUCCESS] Plan A Google API 성공: {[(k, len(v)) for k, v in categorized_places.items()]}")
                 except Exception as api_error:
-                    logger.error(f"💥 [API_ERROR] Google Places API 호출 실패: {api_error}")
-                    raise HTTPException(status_code=500, detail=f"Google Places API 호출 실패: {str(api_error)}")
+                    logger.error(f"❌ [PLAN_A_GOOGLE_FAIL] Plan A Google Places API 실패: {api_error}")
+                    logger.info("🔄 [FALLBACK_TRIGGER] Google API 실패로 인한 Plan B 전환")
+                    await self._notify_admin_plan_a_failure("Google Places API 호출 실패", str(api_error))
+                    return await self._fallback_to_legacy_recommendation(request)
                 
                 # 결과 데이터 후처리: 카테고리 라벨을 요청 언어로 변환
                 recommendations = self._convert_categories_by_language(
@@ -243,13 +261,15 @@ class PlaceRecommendationService:
                 response = PlaceRecommendationResponse(
                     success=True,
                     city_id=city_id,
-                    main_theme="AI 고도화 검색",
+                    main_theme="Plan A 성공 (search_strategy_v1)",
                     recommendations=recommendations,
                     previously_recommended_count=len(existing_place_names),
                     newly_recommended_count=total_new_places
                 )
                 
-                logger.info(f"✅ [RESPONSE_READY] 성공 응답 준비 완료")
+                logger.info(f"✅ [PLAN_A_SUCCESS] Plan A 완전 성공!")
+                logger.info(f"📊 [PLAN_A_RESULT] 도시: {normalized_city}, 신규: {total_new_places}개, 기존: {len(existing_place_names)}개")
+                logger.info(f"📋 [PLAN_A_CATEGORIES] 카테고리별 결과: {[(k, len(v)) for k, v in recommendations.items()]}")
                 return response
 
             # === 1-C. 그 외: 예외 처리 ===
@@ -346,23 +366,33 @@ class PlaceRecommendationService:
             raise ValueError(f"검색 전략 정규화 실패: {e}")
     
     async def _fallback_to_legacy_recommendation(self, request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
-        """기존 방식으로 폴백 (AI 프롬프트 기반)"""
+        """Plan B: place_recommendation_v1 프롬프트 기반 폴백"""
         try:
-            logger.info(f"🔄 [LEGACY_MODE] 기존 방식으로 폴백 실행")
-            # 잘못된 country_name 인자 사용을 수정하고, 올바른 순서로 ID를 확보한다
+            logger.info(f"🔄 [PLAN_B_START] Plan B 폴백 모드 시작 (place_recommendation_v1)")
+            
             # 1) 국가 → 2) 지역(없으면 빈 문자열) → 3) 도시
             country_id = await self.supabase.get_or_create_country(request.country)
             region_id = await self.supabase.get_or_create_region(country_id, "")
             city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=request.city)
             
             existing_place_names = await self.supabase.get_existing_place_names(city_id)
+            logger.info(f"📋 [PLAN_B_EXISTING] 기존 장소 {len(existing_place_names)}개 확인")
             
-            # 기존 방식: 프롬프트 기반 AI 추천
-            dynamic_prompt = await self._create_dynamic_prompt(request, existing_place_names)
+            # Plan B: place_recommendation_v1 프롬프트 사용
+            try:
+                prompt_template = await self.supabase.get_master_prompt('place_recommendation_v1')
+                logger.info("✅ [PLAN_B_PROMPT] place_recommendation_v1 프롬프트 로드 성공")
+            except Exception as e:
+                logger.error(f"❌ [PLAN_B_PROMPT_FAIL] place_recommendation_v1 프롬프트 로드 실패: {e}")
+                # 내장 폴백 프롬프트 사용
+                prompt_template = self._get_fallback_place_recommendation_prompt()
+                logger.info("🔧 [PLAN_B_BUILTIN] 내장 폴백 프롬프트 사용")
+            
+            dynamic_prompt = await self._create_dynamic_prompt_with_template(request, existing_place_names, prompt_template)
             ai_recommendations = await self._get_ai_recommendations(dynamic_prompt)
             
             if not ai_recommendations:
-                raise ValueError("AI 추천 결과가 없습니다.")
+                raise ValueError("Plan B AI 추천 결과가 없습니다.")
             
             # Google Places API로 장소 정보 강화
             enriched_places = await self._enrich_place_data(ai_recommendations, request.city)
@@ -370,17 +400,20 @@ class PlaceRecommendationService:
             if enriched_places:
                 await self._save_new_places(city_id, enriched_places)
             
+            logger.info(f"✅ [PLAN_B_SUCCESS] Plan B 폴백 성공: {sum(len(places) for places in enriched_places.values())}개 장소")
+            
             return PlaceRecommendationResponse(
                 success=True,
                 city_id=city_id,
-                main_theme="기존 방식 폴백",
+                main_theme="Plan B 폴백 (place_recommendation_v1)",
                 recommendations=enriched_places,
                 previously_recommended_count=len(existing_place_names),
                 newly_recommended_count=sum(len(places) for places in enriched_places.values())
             )
             
         except Exception as e:
-            logger.error(f"❌ [LEGACY_FALLBACK_ERROR] 폴백 실행도 실패: {e}")
+            logger.error(f"❌ [PLAN_B_FAIL] Plan B 폴백도 실패: {e}")
+            await self._notify_admin_plan_b_failure("Plan B 폴백 실행 실패", str(e))
             raise ValueError(f"모든 추천 방식 실패: {str(e)}")
 
     async def _create_dynamic_prompt(
@@ -388,11 +421,54 @@ class PlaceRecommendationService:
         request: PlaceRecommendationRequest, 
         existing_places: List[str]
     ) -> str:
-        """프롬프트 동적 생성 (고정 프롬프트: search_strategy_v1 사용 금지, 본 메서드는 레거시 제거 예정)"""
+        """프롬프트 동적 생성 - 폴백용 기본 프롬프트 생성"""
         try:
-            # 장소 추천의 프롬프트는 더 이상 사용하지 않음. 규칙에 따라 검색 전략은 search_strategy_v1로 처리함.
-            # 여기서는 명시적으로 예외를 던져 호출 경로를 재검토하도록 한다.
-            raise ValueError("_create_dynamic_prompt는 사용되지 않습니다. 검색 전략은 search_strategy_v1을 사용하세요.")
+            logger.warning("⚠️ [DEPRECATED] _create_dynamic_prompt는 더 이상 사용되지 않습니다. _create_dynamic_prompt_with_template을 사용하세요.")
+            # 폴백용 기본 프롬프트 생성
+            base_prompt = self._get_fallback_place_recommendation_prompt()
+            return await self._create_dynamic_prompt_with_template(request, existing_places, base_prompt)
+        except Exception as e:
+            logger.error(f"동적 프롬프트 생성 실패: {e}")
+            raise ValueError(f"프롬프트 생성 중 오류 발생: {str(e)}")
+
+    async def _create_dynamic_prompt_with_template(
+        self, 
+        request: PlaceRecommendationRequest, 
+        existing_places: List[str],
+        prompt_template: str
+    ) -> str:
+        """템플릿 기반 동적 프롬프트 생성"""
+        try:
+            logger.info(f"📝 [PROMPT_GEN] 템플릿 기반 프롬프트 생성 시작")
+            
+            # 기존 추천 장소 목록을 문자열로 변환
+            if existing_places:
+                previously_recommended_text = f"""
+이미 추천된 장소들 (중복 금지):
+{', '.join(existing_places)}
+
+위 장소들과 중복되지 않는 새로운 장소만 추천해주세요."""
+            else:
+                previously_recommended_text = "첫 번째 추천이므로 제약 없이 최고의 장소들을 추천해주세요."
+            
+            # Template.safe_substitute를 사용하여 안전하게 변수 치환
+            from string import Template
+            template = Template(prompt_template)
+            dynamic_prompt = template.safe_substitute(
+                city=request.city,
+                country=request.country,
+                total_duration=request.total_duration,
+                travelers_count=request.travelers_count,
+                budget_range=request.budget_range,
+                travel_style=", ".join(request.travel_style) if request.travel_style else "없음",
+                special_requests=request.special_requests or "없음",
+                previously_recommended_places=previously_recommended_text,
+                daily_start_time=getattr(request, 'daily_start_time', '09:00'),
+                daily_end_time=getattr(request, 'daily_end_time', '21:00')
+            )
+            
+            logger.info(f"✅ [PROMPT_GEN] 프롬프트 생성 완료 (기존 장소 {len(existing_places)}개 제외)")
+            return dynamic_prompt
             
             # 기존 추천 장소 목록을 문자열로 변환
             if existing_places:
@@ -608,49 +684,138 @@ $previously_recommended_places
 
 ⚠️ 중요: 반드시 JSON 형식으로만 답변해주세요. 다른 설명이나 마크다운 문법은 포함하지 마세요."""
 
-    def _notify_admin_fallback_mode(self, error_details: str):
-        """관리자에게 폴백 모드 사용을 알림"""
-        import logging
-        admin_logger = logging.getLogger("admin_notifications")
-        
-        notification_message = f"""
-🚨 [ADMIN ALERT] Plango 시스템이 폴백 모드로 전환되었습니다!
+    async def _notify_admin_plan_a_failure(self, failure_type: str, error_details: str):
+        """Plan A 실패 시 관리자에게 메일 알림"""
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            import os
+            
+            # Railway 환경변수에서 메일 설정 가져오기
+            mail_server = os.getenv('MAIL_SERVER')
+            mail_port = int(os.getenv('MAIL_PORT', '587'))
+            mail_username = os.getenv('MAIL_USERNAME')
+            mail_password = os.getenv('MAIL_PASSWORD')
+            mail_from = os.getenv('MAIL_FROM')
+            
+            if not all([mail_server, mail_username, mail_password, mail_from]):
+                logger.warning("⚠️ [MAIL_CONFIG] 메일 설정이 불완전하여 알림을 보낼 수 없습니다.")
+                return
+            
+            # 메일 내용 구성
+            subject = f"🚨 [Plango Alert] Plan A 실패 - {failure_type}"
+            body = f"""
+🚨 Plango 시스템 Plan A 실패 알림
 
-📅 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+📅 발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (KST)
 🌐 환경: Railway Production
-🔧 문제 유형: Supabase prompts 테이블 접근 실패
+🔧 실패 유형: {failure_type}
 ❌ 오류 상세: {error_details}
 
-📊 현재 상태:
+📊 시스템 상태:
+- Plan A (search_strategy_v1): 실패 ❌
+- Plan B (place_recommendation_v1): 자동 전환됨 🔄
 - Supabase 연결: {'정상' if self.supabase.is_connected() else '실패'}
 - AI 서비스: {'정상' if self.ai_service else '실패'}
-- 폴백 시스템: 활성화됨
 
 💡 권장 조치사항:
-1. Supabase prompts 테이블 존재 여부 확인
-2. Railway 환경변수 SUPABASE_URL, SUPABASE_KEY 확인
-3. Supabase 프로젝트 권한 설정 확인
-4. 필요시 prompts 테이블 재생성
+1. Supabase prompts 테이블에서 search_strategy_v1 프롬프트 확인
+2. Railway 환경변수 SUPABASE_URL, SUPABASE_KEY 점검
+3. AI 서비스 (OpenAI/Gemini) API 키 상태 확인
+4. 네트워크 연결 상태 점검
 
 🔗 확인 링크:
 - Railway 대시보드: https://railway.com/dashboard
 - Supabase 대시보드: https://supabase.com/dashboard
 
 ⚠️ 이 알림은 시스템 안정성을 위해 자동으로 생성되었습니다.
-        """
-        
-        # 로그에 기록
-        admin_logger.warning(notification_message)
-        
-        # 콘솔에 출력 (개발/디버깅용)
-        print("=" * 80)
-        print("🚨 ADMIN ALERT: FALLBACK MODE ACTIVATED")
-        print("=" * 80)
-        print(notification_message)
-        print("=" * 80)
-        
-        # 추후 Slack, Discord, Email 등으로 확장 가능
-        # await self._send_admin_notification(notification_message)
+현재 Plan B로 정상 서비스 중이지만, Plan A 복구가 필요합니다.
+            """
+            
+            # 메일 발송
+            msg = MIMEMultipart()
+            msg['From'] = mail_from
+            msg['To'] = mail_username  # 관리자 본인에게 발송
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            
+            server = smtplib.SMTP(mail_server, mail_port)
+            server.starttls()
+            server.login(mail_username, mail_password)
+            server.send_message(msg)
+            server.quit()
+            
+            logger.info("📧 [ADMIN_MAIL] Plan A 실패 알림 메일 발송 완료")
+            
+        except Exception as e:
+            logger.error(f"❌ [MAIL_FAIL] 관리자 알림 메일 발송 실패: {e}")
+
+    async def _notify_admin_plan_b_failure(self, failure_type: str, error_details: str):
+        """Plan B도 실패 시 긴급 관리자 알림"""
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            import os
+            
+            # Railway 환경변수에서 메일 설정 가져오기
+            mail_server = os.getenv('MAIL_SERVER')
+            mail_port = int(os.getenv('MAIL_PORT', '587'))
+            mail_username = os.getenv('MAIL_USERNAME')
+            mail_password = os.getenv('MAIL_PASSWORD')
+            mail_from = os.getenv('MAIL_FROM')
+            
+            if not all([mail_server, mail_username, mail_password, mail_from]):
+                logger.error("❌ [MAIL_CONFIG] 메일 설정이 불완전하여 긴급 알림을 보낼 수 없습니다!")
+                return
+            
+            # 긴급 메일 내용 구성
+            subject = f"🚨🚨 [Plango CRITICAL] Plan A & B 모두 실패 - 긴급 조치 필요"
+            body = f"""
+🚨🚨 Plango 시스템 전체 실패 - 긴급 상황 🚨🚨
+
+📅 발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (KST)
+🌐 환경: Railway Production
+🔧 최종 실패 유형: {failure_type}
+❌ 오류 상세: {error_details}
+
+📊 시스템 상태:
+- Plan A (search_strategy_v1): 실패 ❌
+- Plan B (place_recommendation_v1): 실패 ❌
+- 서비스 상태: 중단됨 🛑
+
+⚠️ 긴급 조치 필요:
+1. 즉시 Railway 로그 확인
+2. Supabase 연결 상태 점검
+3. AI API 키 상태 확인
+4. 필요시 서비스 재시작
+
+🔗 긴급 확인 링크:
+- Railway 대시보드: https://railway.com/dashboard
+- Supabase 대시보드: https://supabase.com/dashboard
+
+🚨 현재 사용자에게 서비스를 제공할 수 없는 상태입니다.
+즉시 조치가 필요합니다!
+            """
+            
+            # 긴급 메일 발송
+            msg = MIMEMultipart()
+            msg['From'] = mail_from
+            msg['To'] = mail_username
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            
+            server = smtplib.SMTP(mail_server, mail_port)
+            server.starttls()
+            server.login(mail_username, mail_password)
+            server.send_message(msg)
+            server.quit()
+            
+            logger.error("📧 [CRITICAL_MAIL] Plan B 실패 긴급 알림 메일 발송 완료")
+            
+        except Exception as e:
+            logger.error(f"❌ [CRITICAL_MAIL_FAIL] 긴급 알림 메일 발송 실패: {e}")
 
 
 # 전역 인스턴스
