@@ -74,6 +74,10 @@ class ItineraryRequest(BaseModel):
     special_requests: Optional[str] = Field(default="", description="특별 요청사항")
     language_code: Optional[str] = Field(default="ko", description="언어 코드")
     
+    # 일일 활동 시간 설정
+    daily_start_time: Optional[str] = Field(default="09:00", description="일일 활동 시작 시간 (HH:MM)")
+    daily_end_time: Optional[str] = Field(default="21:00", description="일일 활동 종료 시간 (HH:MM)")
+    
     @model_validator(mode='before')
     @classmethod
     def validate_destinations(cls, data: Any) -> Any:
@@ -144,6 +148,10 @@ class GenerateRequest(BaseModel):
     budget_amount: Optional[int] = Field(None, exclude=True)
 
     travelers_count: Optional[int] = Field(default=2, description="여행자 수")
+    
+    # 일일 활동 시간 설정
+    daily_start_time: Optional[str] = Field(default="09:00", description="일일 활동 시작 시간 (HH:MM)")
+    daily_end_time: Optional[str] = Field(default="21:00", description="일일 활동 종료 시간 (HH:MM)")
 
     @model_validator(mode='before')
     @classmethod
@@ -215,6 +223,14 @@ class OptimizeRequest(BaseModel):
     selected_places: List[PlaceData] = Field(..., description="선택된 장소들")
     duration: int = Field(..., ge=1, le=30, description="여행 기간")
     start_location: Optional[str] = Field(None, description="시작 지점")
+    
+    # 일일 활동 시간 설정
+    daily_start_time: Optional[str] = Field(default="09:00", description="일일 활동 시작 시간 (HH:MM)")
+    daily_end_time: Optional[str] = Field(default="21:00", description="일일 활동 종료 시간 (HH:MM)")
+    
+    # 추가 필드들 (프론트엔드에서 전달하는 데이터)
+    places: Optional[List[PlaceData]] = Field(None, description="선택된 장소들 (대체 필드명)")
+    language_code: Optional[str] = Field(default="ko", description="언어 코드")
 
 
 class OptimizeResponse(BaseModel):

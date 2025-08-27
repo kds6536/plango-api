@@ -178,7 +178,9 @@ class AdvancedItineraryService:
                 budget_range=request.budget_range,
                 travel_style=", ".join(request.travel_style) if request.travel_style else "없음",
                 special_requests=request.special_requests or "없음",
-                multi_destination_context=context
+                multi_destination_context=context,
+                daily_start_time=getattr(request, 'daily_start_time', '09:00'),
+                daily_end_time=getattr(request, 'daily_end_time', '21:00')
             )
             
             logger.info(f"AI 호출 시작: {city}")

@@ -28,7 +28,19 @@ class OpenAIHandler(AIModelHandler):
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
-        return response.choices[0].message.content
+        result = response.choices[0].message.content
+        
+        # === Markdown 코드 블록 제거 로직 ===
+        clean_result = result
+        if clean_result.startswith("```json"):
+            clean_result = clean_result[7:]  # "```json" 제거
+        if clean_result.startswith("```"):
+            clean_result = clean_result[3:]  # "```" 제거
+        if clean_result.endswith("```"):
+            clean_result = clean_result[:-3]  # 맨 끝 "```" 제거
+        clean_result = clean_result.strip()  # 앞뒤 공백 최종 제거
+        
+        return clean_result
 
 class GeminiHandler(AIModelHandler):
     async def get_completion(self, prompt: str) -> str:
@@ -39,20 +51,38 @@ class GeminiHandler(AIModelHandler):
             generate = getattr(model, "generate_content_async", None)
             if callable(generate):
                 response = await model.generate_content_async(prompt)
-                return getattr(response, "text", str(response))
+                result = getattr(response, "text", str(response))
             # genai 모듈이 넘어온 경우
-            if hasattr(model, "GenerativeModel"):
+            elif hasattr(model, "GenerativeModel"):
                 m = model.GenerativeModel(self.model_name)
                 response = await m.generate_content_async(prompt)
-                return getattr(response, "text", str(response))
-            raise AttributeError("Invalid Gemini client provided")
+                result = getattr(response, "text", str(response))
+            else:
+                raise AttributeError("Invalid Gemini client provided")
         except Exception as e:
             # 동기 API만 가능한 환경 대비 폴백
             try:
                 sync_generate = getattr(model, "generate_content", None)
                 if callable(sync_generate):
                     response = model.generate_content(prompt)
-                    return getattr(response, "text", str(response))
+                    result = getattr(response, "text", str(response))
+                elif hasattr(model, "GenerativeModel"):
+                    m = model.GenerativeModel(self.model_name)
+                    response = m.generate_content(prompt)
+                    result = getattr(response, "text", str(response))
+                else:
+                    raise
             except Exception:
-                pass
-            raise
+                raise e
+        
+        # === Markdown 코드 블록 제거 로직 ===
+        clean_result = result
+        if clean_result.startswith("```json"):
+            clean_result = clean_result[7:]  # "```json" 제거
+        if clean_result.startswith("```"):
+            clean_result = clean_result[3:]  # "```" 제거
+        if clean_result.endswith("```"):
+            clean_result = clean_result[:-3]  # 맨 끝 "```" 제거
+        clean_result = clean_result.strip()  # 앞뒤 공백 최종 제거
+        
+        return clean_result

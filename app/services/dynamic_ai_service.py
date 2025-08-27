@@ -136,8 +136,19 @@ class DynamicAIService:
             )
             
             result = response.choices[0].message.content.strip()
-            logger.info(f"OpenAI 응답 생성 완료 ({len(result)} 글자)")
-            return result
+            
+            # === Markdown 코드 블록 제거 로직 ===
+            clean_result = result
+            if clean_result.startswith("```json"):
+                clean_result = clean_result[7:]  # "```json" 제거
+            if clean_result.startswith("```"):
+                clean_result = clean_result[3:]  # "```" 제거
+            if clean_result.endswith("```"):
+                clean_result = clean_result[:-3]  # 맨 끝 "```" 제거
+            clean_result = clean_result.strip()  # 앞뒤 공백 최종 제거
+            
+            logger.info(f"OpenAI 응답 생성 완료 ({len(clean_result)} 글자)")
+            return clean_result
             
         except Exception as e:
             logger.error(f"OpenAI API 호출 실패: {e}")
@@ -166,8 +177,19 @@ class DynamicAIService:
             )
             
             result = response.text.strip()
-            logger.info(f"Gemini 응답 생성 완료 ({len(result)} 글자)")
-            return result
+            
+            # === Markdown 코드 블록 제거 로직 ===
+            clean_result = result
+            if clean_result.startswith("```json"):
+                clean_result = clean_result[7:]  # "```json" 제거
+            if clean_result.startswith("```"):
+                clean_result = clean_result[3:]  # "```" 제거
+            if clean_result.endswith("```"):
+                clean_result = clean_result[:-3]  # 맨 끝 "```" 제거
+            clean_result = clean_result.strip()  # 앞뒤 공백 최종 제거
+            
+            logger.info(f"Gemini 응답 생성 완료 ({len(clean_result)} 글자)")
+            return clean_result
             
         except Exception as e:
             logger.error(f"Gemini API 호출 실패: {e}")

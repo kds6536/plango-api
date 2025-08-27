@@ -61,7 +61,18 @@ class AIService:
             )
             
             content = response.choices[0].message.content
-            return self._parse_ai_response(content, plan_type, concept)
+            
+            # === Markdown 코드 블록 제거 로직 ===
+            clean_content = content
+            if clean_content.startswith("```json"):
+                clean_content = clean_content[7:]  # "```json" 제거
+            if clean_content.startswith("```"):
+                clean_content = clean_content[3:]  # "```" 제거
+            if clean_content.endswith("```"):
+                clean_content = clean_content[:-3]  # 맨 끝 "```" 제거
+            clean_content = clean_content.strip()  # 앞뒤 공백 최종 제거
+            
+            return self._parse_ai_response(clean_content, plan_type, concept)
             
         except Exception as e:
             logger.error(f"OpenAI API 호출 실패: {str(e)}")
@@ -84,6 +95,7 @@ class AIService:
 - 여행 스타일: {travel_styles}
 - 예산 범위: {request.budget_range.value}
 - 계획 컨셉: {concept}
+- 일일 활동 시간: {getattr(request, 'daily_start_time', '09:00')} ~ {getattr(request, 'daily_end_time', '21:00')}
 
 **추가 요구사항:**
 - 숙박 선호: {request.accommodation_preference or '없음'}

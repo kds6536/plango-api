@@ -91,6 +91,10 @@ class PlaceRecommendationRequest(BaseModel):
     travel_style: List[str] = Field(default_factory=list, description="여행 스타일 목록")
     special_requests: Optional[str] = Field(None, description="특별 요청사항")
     language_code: Optional[str] = Field("ko", description="검색/결과 언어 코드 (예: ko, ja, en, zh-CN, id, vi)")
+    
+    # 일일 활동 시간 설정
+    daily_start_time: Optional[str] = Field(default="09:00", description="일일 활동 시작 시간 (HH:MM)")
+    daily_end_time: Optional[str] = Field(default="21:00", description="일일 활동 종료 시간 (HH:MM)")
 
 
 class PlaceRecommendationResponse(BaseModel):
