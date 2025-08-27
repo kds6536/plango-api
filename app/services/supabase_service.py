@@ -39,6 +39,65 @@ class SupabaseService:
         """Supabase 연결 상태 확인"""
         return self.client is not None
     
+    async def find_cities_by_name(self, city_name: str) -> List[Dict[str, Any]]:
+        """동일 이름 도시 검색"""
+        try:
+            if not self.is_connected():
+                return []
+            
+            # 동기 Supabase 호출을 비동기로 래핑
+            import asyncio
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.client.table('cities').select(
+                    'id, name, countries(name), regions(name)'
+                ).ilike('name', f'%{city_name}%').execute()
+            )
+            
+            cities = []
+            for city in response.data:
+                cities.append({
+                    'city_id': city['id'],
+                    'city_name': city['name'],
+                    'country_name': city['countries']['name'] if city['countries'] else 'Unknown',
+                    'region_name': city['regions']['name'] if city['regions'] else ''
+                })
+            
+            return cities
+            
+        except Exception as e:
+            logger.error(f"도시 검색 실패: {e}")
+            return []
+
+    async def get_all_cached_places_by_city(self, city_id: int) -> List[Dict[str, Any]]:
+        """도시별 모든 캐시된 장소 조회"""
+        try:
+            if not self.is_connected():
+                return []
+            
+            response = self.client.table('cached_places').select('*').eq('city_id', city_id).execute()
+            
+            places = []
+            for place in response.data:
+                places.append({
+                    'place_id': place.get('place_id'),
+                    'name': place.get('name'),
+                    'category': place.get('category'),
+                    'address': place.get('address'),
+                    'rating': place.get('rating'),
+                    'coordinates': {
+                        'lat': place.get('latitude', 0.0),
+                        'lng': place.get('longitude', 0.0)
+                    }
+                })
+            
+            return places
+            
+        except Exception as e:
+            logger.error(f"캐시된 장소 조회 실패: {e}")
+            return []
+
     async def get_ai_settings(self) -> Dict[str, Any]:
         """AI 설정 조회 (기존 settings 테이블만 사용)"""
         try:
@@ -98,8 +157,13 @@ class SupabaseService:
                 logger.warning(f"⚠️ Supabase 연결 없음 - {prompt_name} 프롬프트 조회 실패")
                 raise ValueError(f"Supabase 연결 실패. {prompt_name} 프롬프트를 조회할 수 없습니다.")
             
-            # name 컬럼으로 조회
-            response = self.client.table('prompts').select('value').eq('name', prompt_name).execute()
+            # 동기 Supabase 호출을 비동기로 래핑
+            import asyncio
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.client.table('prompts').select('value').eq('name', prompt_name).execute()
+            )
             
             if response.data:
                 logger.info(f"✅ Supabase에서 프롬프트 조회 성공: {prompt_name}")
@@ -134,8 +198,15 @@ class SupabaseService:
             country_name = (country_name or '').strip()
             logger.info(f"🌍 [COUNTRY_LOOKUP] 정규화된 국가명: '{country_name}'")
 
+            # 동기 Supabase 호출을 비동기로 래핑
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
             # 기존 국가 조회
-            response = self.client.table('countries').select('id').eq('name', country_name).execute()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.client.table('countries').select('id').eq('name', country_name).execute()
+            )
             logger.info(f"🔍 [COUNTRY_LOOKUP] 조회 결과: {len(response.data) if response.data else 0}개 발견")
             
             if response.data:
@@ -145,7 +216,10 @@ class SupabaseService:
             else:
                 # 새로운 국가 생성
                 logger.info(f"🆕 [COUNTRY_CREATE] 새로운 국가 생성 시도: {country_name}")
-                insert_response = self.client.table('countries').insert({'name': country_name}).execute()
+                insert_response = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.table('countries').insert({'name': country_name}).execute()
+                )
                 
                 if insert_response.data:
                     country_id = insert_response.data[0]['id']
@@ -169,18 +243,28 @@ class SupabaseService:
                 # 지역명이 없으면 국가 단위 지역을 가상으로 생성/사용
                 region_name = "_DEFAULT_"
 
-            resp = (
-                self.client
-                .table('regions')
-                .select('id')
-                .eq('name', region_name)
-                .eq('country_id', country_id)
-                .execute()
+            # 동기 Supabase 호출을 비동기로 래핑
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            resp = await loop.run_in_executor(
+                None,
+                lambda: (
+                    self.client
+                    .table('regions')
+                    .select('id')
+                    .eq('name', region_name)
+                    .eq('country_id', country_id)
+                    .execute()
+                )
             )
             if resp.data:
                 return resp.data[0]['id']
 
-            ins = self.client.table('regions').insert({'name': region_name, 'country_id': country_id}).execute()
+            ins = await loop.run_in_executor(
+                None,
+                lambda: self.client.table('regions').insert({'name': region_name, 'country_id': country_id}).execute()
+            )
             if ins.data:
                 return ins.data[0]['id']
             raise ValueError("지역 생성 실패")
@@ -196,14 +280,21 @@ class SupabaseService:
             
             city_name = (city_name or '').strip()
             
+            # 동기 Supabase 호출을 비동기로 래핑
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
             # 기존 도시 조회 (이름과 국가 ID로 조회)
-            response = (
-                self.client
-                .table('cities')
-                .select('id')
-                .eq('name', city_name)
-                .eq('region_id', region_id)
-                .execute()
+            response = await loop.run_in_executor(
+                None,
+                lambda: (
+                    self.client
+                    .table('cities')
+                    .select('id')
+                    .eq('name', city_name)
+                    .eq('region_id', region_id)
+                    .execute()
+                )
             )
             
             if response.data:
@@ -216,7 +307,10 @@ class SupabaseService:
                     'name': city_name,
                     'region_id': region_id
                 }
-                insert_response = self.client.table('cities').insert(insert_data).execute()
+                insert_response = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.table('cities').insert(insert_data).execute()
+                )
                 if insert_response.data:
                     city_id = insert_response.data[0]['id']
                     logger.info(f"새로운 도시 생성 완료: {city_name}, region_id={region_id} (ID: {city_id})")
@@ -363,6 +457,59 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"캐시 조회 실패: {e}")
             return []
+
+    async def get_cached_place_by_place_id(self, place_id: str) -> Optional[Dict[str, Any]]:
+        """place_id로 캐시된 장소 조회 (중복 확인용)"""
+        try:
+            if not self.is_connected():
+                return None
+
+            response = (
+                self.client
+                .table('cached_places')
+                .select('*')
+                .eq('place_id', place_id)
+                .execute()
+            )
+            
+            if response.data:
+                return response.data[0]
+            return None
+            
+        except Exception as e:
+            logger.error(f"place_id로 캐시 조회 실패: {e}")
+            return None
+
+    async def save_cached_place(self, place_data: Dict[str, Any]) -> bool:
+        """개별 장소를 캐시에 저장"""
+        try:
+            if not self.is_connected():
+                raise ValueError("Supabase 연결 실패")
+
+            # coordinates 처리
+            coordinates = place_data.get('coordinates', {})
+            
+            insert_data = {
+                'city_id': place_data.get('city_id'),
+                'place_id': place_data.get('place_id'),
+                'name': place_data.get('name'),
+                'category': place_data.get('category'),
+                'address': place_data.get('address', ''),
+                'rating': place_data.get('rating', 0.0),
+                'latitude': coordinates.get('lat', 0.0),
+                'longitude': coordinates.get('lng', 0.0)
+            }
+            
+            response = self.client.table('cached_places').insert(insert_data).execute()
+            return bool(response.data)
+            
+        except Exception as e:
+            # 중복 키 에러는 무시
+            if 'duplicate key' in str(e) or '23505' in str(e):
+                logger.info(f"중복 place_id 무시: {place_data.get('place_id')}")
+                return True
+            logger.error(f"개별 장소 저장 실패: {e}")
+            return False
     
 
     

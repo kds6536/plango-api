@@ -33,23 +33,67 @@ class PlaceRecommendationService:
     ) -> PlaceRecommendationResponse:
         """
         메인 장소 추천 함수
-        새로운 DB 구조를 활용한 중복 방지 및 프롬프트 동적 생성
+        1순위: Supabase 기존 데이터 조회
+        2순위: Plan A (search_strategy_v1)
+        3순위: Plan B (place_recommendation_v1)
         """
         try:
-            logger.info(f"장소 추천 요청: {request.city}, {request.country}")
+            logger.info(f"🚀 [REQUEST_START] 장소 추천 요청: {request.city}, {request.country}")
             
-            # === 고도화된 아키텍처 적용 ===
-            logger.info(f"🎯 [ADVANCED_MODE] 고도화된 장소 추천 모드 활성화")
+            # === 0단계: 도시명 표준화 및 중복 확인 ===
+            logger.info("🔍 [STEP_0] 도시명 표준화 및 중복 확인 시작")
+            standardized_result = await self._standardize_and_check_city(request)
             
-            # 1. search_strategy_v1 프롬프트 호출 (도시 모호성 해결 + 검색전략 동시 처리)
-            logger.info("🧠 [PLAN_A_START] Plan A 시작: search_strategy_v1 프롬프트 호출")
+            if standardized_result.get('status') == 'AMBIGUOUS':
+                logger.info("⚠️ [AMBIGUOUS_CITY] 동일 이름 도시 발견, 사용자 선택 필요")
+                return PlaceRecommendationResponse(
+                    success=True,
+                    city_id=0,
+                    main_theme='AMBIGUOUS',
+                    recommendations={},
+                    previously_recommended_count=0,
+                    newly_recommended_count=0,
+                    status='AMBIGUOUS',
+                    options=standardized_result.get('options', []),
+                    message="동일한 이름의 도시가 여러 개 있습니다. 정확한 도시를 선택해주세요."
+                )
+            
+            # 표준화된 정보 사용
+            normalized_country = standardized_result['country']
+            normalized_city = standardized_result['city']
+            city_id = standardized_result['city_id']
+            
+            logger.info(f"✅ [STANDARDIZED] 표준화 완료: {normalized_country}/{normalized_city} (ID: {city_id})")
+            
+            # === 1단계: Supabase 기존 데이터 우선 조회 ===
+            logger.info("📋 [STEP_1] Supabase 기존 데이터 우선 조회")
+            existing_recommendations = await self._get_existing_recommendations_from_cache(city_id)
+            
+            if existing_recommendations and len(existing_recommendations) >= 20:  # 충분한 데이터가 있으면
+                logger.info(f"✅ [CACHE_HIT] 충분한 기존 데이터 발견: {len(existing_recommendations)}개")
+                categorized_cache = self._categorize_cached_places(existing_recommendations)
+                
+                return PlaceRecommendationResponse(
+                    success=True,
+                    city_id=city_id,
+                    main_theme="기존 데이터 활용",
+                    recommendations=categorized_cache,
+                    previously_recommended_count=len(existing_recommendations),
+                    newly_recommended_count=0
+                )
+            
+            logger.info(f"📊 [CACHE_INSUFFICIENT] 기존 데이터 부족: {len(existing_recommendations) if existing_recommendations else 0}개, 새로운 추천 진행")
+            
+            # === 2단계: Plan A 시도 ===
+            logger.info("🧠 [PLAN_A_START] Plan A 시작: search_strategy_v1")
             try:
-                prompt_template = await self.supabase.get_master_prompt('search_strategy_v1')
-                logger.info("✅ [PLAN_A_PROMPT] search_strategy_v1 프롬프트 로드 성공")
+                return await self._execute_plan_a(request, normalized_country, normalized_city, city_id)
             except Exception as e:
-                logger.error(f"❌ [PLAN_A_PROMPT_FAIL] search_strategy_v1 프롬프트 로드 실패: {e}")
-                logger.info("🔄 [FALLBACK_TRIGGER] Plan A 실패로 인한 Plan B(폴백) 모드 전환")
-                await self._notify_admin_plan_a_failure("search_strategy_v1 프롬프트 로드 실패", str(e))
+                logger.error(f"❌ [PLAN_A_FAIL] Plan A 실패: {e}")
+                await self._notify_admin_plan_a_failure("Plan A 전체 실패", str(e))
+                
+                # === 3단계: Plan B 폴백 ===
+                logger.info("🔄 [PLAN_B_START] Plan A 실패로 인한 Plan B 전환")
                 return await self._fallback_to_legacy_recommendation(request)
 
             template = Template(prompt_template)
@@ -276,10 +320,449 @@ class PlaceRecommendationService:
             raise HTTPException(status_code=500, detail="AI 응답 상태가 올바르지 않습니다")
             
         except Exception as e:
-            logger.error(f"❌ [ADVANCED_ERROR] 고도화 추천 실패: {e}")
-            # 폴백: 기존 방식으로 재시도
-            logger.info(f"🔄 [FALLBACK] 기존 방식으로 폴백 시도")
-            return await self._fallback_to_legacy_recommendation(request)
+            logger.error(f"❌ [SYSTEM_ERROR] 전체 시스템 오류: {e}")
+            await self._notify_admin_plan_b_failure("전체 시스템 오류", str(e))
+            raise HTTPException(status_code=500, detail=f"장소 추천 시스템 오류: {str(e)}")
+
+    async def _standardize_and_check_city(self, request: PlaceRecommendationRequest) -> Dict[str, Any]:
+        """도시명 표준화 및 중복 확인"""
+        try:
+            logger.info(f"🔍 [STANDARDIZE] 도시명 표준화 시작: {request.city}, {request.country}")
+            
+            # 1. 영문 표준화 (Google Geocoding API 활용)
+            standardized_info = await self._get_standardized_location(request.city, request.country)
+            
+            if not standardized_info:
+                logger.warning("⚠️ [STANDARDIZE_FAIL] 표준화 실패, 원본 정보 사용")
+                standardized_info = {
+                    'country': request.country,
+                    'city': request.city
+                }
+            
+            # 2. 동일 이름 도시 확인
+            similar_cities = await self._check_duplicate_cities(standardized_info['city'])
+            
+            if len(similar_cities) > 1:
+                logger.info(f"⚠️ [DUPLICATE_CITIES] 동일 이름 도시 {len(similar_cities)}개 발견")
+                return {
+                    'status': 'AMBIGUOUS',
+                    'options': similar_cities
+                }
+            
+            # 3. 국가/도시 ID 확보 (영문 표준화된 이름으로)
+            country_id = await self.supabase.get_or_create_country(standardized_info['country'])
+            region_id = await self.supabase.get_or_create_region(country_id, "")
+            city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=standardized_info['city'])
+            
+            return {
+                'status': 'SUCCESS',
+                'country': standardized_info['country'],
+                'city': standardized_info['city'],
+                'city_id': city_id
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ [STANDARDIZE_ERROR] 표준화 중 오류: {e}")
+            # 폴백: 원본 정보로 진행
+            country_id = await self.supabase.get_or_create_country(request.country)
+            region_id = await self.supabase.get_or_create_region(country_id, "")
+            city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=request.city)
+            
+            return {
+                'status': 'SUCCESS',
+                'country': request.country,
+                'city': request.city,
+                'city_id': city_id
+            }
+
+    async def _get_standardized_location(self, city: str, country: str) -> Optional[Dict[str, str]]:
+        """Google Geocoding API로 표준화된 영문 지명 획득"""
+        try:
+            # Google Places API의 geocoding 기능 활용
+            geocode_result = await self.google_places_service.geocode_location(f"{city}, {country}")
+            
+            if geocode_result and 'results' in geocode_result and geocode_result['results']:
+                result = geocode_result['results'][0]
+                
+                # 영문 국가명과 도시명 추출
+                country_name = None
+                city_name = None
+                
+                for component in result.get('address_components', []):
+                    types = component.get('types', [])
+                    if 'country' in types:
+                        country_name = component.get('long_name')
+                    elif 'locality' in types or 'administrative_area_level_1' in types:
+                        city_name = component.get('long_name')
+                
+                if country_name and city_name:
+                    logger.info(f"✅ [GEOCODE_SUCCESS] 표준화 성공: {city_name}, {country_name}")
+                    return {
+                        'country': country_name,
+                        'city': city_name
+                    }
+            
+            logger.warning("⚠️ [GEOCODE_NO_RESULT] Geocoding 결과 없음")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ [GEOCODE_ERROR] Geocoding 실패: {e}")
+            return None
+
+    async def _check_duplicate_cities(self, city_name: str) -> List[Dict[str, Any]]:
+        """동일 이름 도시 확인"""
+        try:
+            # Supabase에서 동일 이름 도시 검색
+            duplicate_cities = await self.supabase.find_cities_by_name(city_name)
+            
+            if len(duplicate_cities) > 1:
+                options = []
+                for city_info in duplicate_cities:
+                    options.append({
+                        'display_name': f"{city_info['city_name']}, {city_info['country_name']}",
+                        'request_body': {
+                            'city': city_info['city_name'],
+                            'country': city_info['country_name'],
+                            'region': city_info.get('region_name', '')
+                        }
+                    })
+                return options
+            
+            return duplicate_cities
+            
+        except Exception as e:
+            logger.error(f"❌ [DUPLICATE_CHECK_ERROR] 중복 확인 실패: {e}")
+            return []
+
+    async def _get_existing_recommendations_from_cache(self, city_id: int) -> List[Dict[str, Any]]:
+        """Supabase 캐시에서 기존 추천 데이터 조회"""
+        try:
+            cached_places = await self.supabase.get_all_cached_places_by_city(city_id)
+            logger.info(f"📋 [CACHE_QUERY] 도시 ID {city_id}에서 {len(cached_places) if cached_places else 0}개 캐시 데이터 조회")
+            return cached_places or []
+        except Exception as e:
+            logger.error(f"❌ [CACHE_ERROR] 캐시 조회 실패: {e}")
+            return []
+
+    def _categorize_cached_places(self, cached_places: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+        """캐시된 장소들을 카테고리별로 분류"""
+        categorized = {
+            '볼거리': [],
+            '먹거리': [],
+            '즐길거리': [],
+            '숙소': []
+        }
+        
+        for place in cached_places:
+            category = place.get('category', '기타')
+            if category in categorized:
+                categorized[category].append({
+                    'place_id': place.get('place_id'),
+                    'name': place.get('name'),
+                    'category': category,
+                    'address': place.get('address'),
+                    'rating': place.get('rating'),
+                    'lat': place.get('coordinates', {}).get('lat', 0.0),
+                    'lng': place.get('coordinates', {}).get('lng', 0.0)
+                })
+        
+        # 각 카테고리별로 최대 10개씩 제한
+        for category in categorized:
+            categorized[category] = categorized[category][:10]
+        
+        return categorized
+
+    async def _execute_plan_a(self, request: PlaceRecommendationRequest, country: str, city: str, city_id: int) -> PlaceRecommendationResponse:
+        """Plan A 실행"""
+        try:
+            logger.info("🧠 [PLAN_A_EXECUTE] Plan A 실행 시작")
+            
+            # search_strategy_v1 프롬프트 로드
+            prompt_template = await self.supabase.get_master_prompt('search_strategy_v1')
+            logger.info("✅ [PLAN_A_PROMPT] search_strategy_v1 프롬프트 로드 성공")
+            
+            # 기존 장소 목록 조회
+            existing_place_names = await self.supabase.get_existing_place_names(city_id)
+            
+            # AI 프롬프트 구성 및 호출
+            template = Template(prompt_template)
+            ai_prompt = template.safe_substitute(
+                city=city,
+                country=country,
+                total_duration=request.total_duration,
+                travelers_count=request.travelers_count,
+                budget_range=request.budget_range,
+                travel_style=", ".join(request.travel_style) if request.travel_style else "없음",
+                special_requests=getattr(request, 'special_requests', None) or "없음",
+                existing_places=", ".join(existing_place_names) if existing_place_names else "없음",
+                daily_start_time=getattr(request, 'daily_start_time', '09:00'),
+                daily_end_time=getattr(request, 'daily_end_time', '21:00')
+            )
+            
+            logger.info("🤖 [PLAN_A_AI] AI 호출 시작")
+            ai_raw = await self.ai_service.generate_text(ai_prompt, max_tokens=1200)
+            
+            # AI 응답 검증 강화
+            if not ai_raw or not isinstance(ai_raw, str) or not ai_raw.strip():
+                raise ValueError("AI가 빈 응답을 반환했습니다.")
+            
+            logger.info(f"✅ [PLAN_A_AI_SUCCESS] AI 응답 수신: {len(ai_raw)}자")
+            
+            # JSON 파싱
+            cleaned = self._extract_json_from_response(ai_raw)
+            ai_result = json.loads(cleaned)
+            
+            # AI 응답 상태 확인
+            status = (ai_result.get('status') or '').upper()
+            logger.info(f"🧠 [AI_STATUS] AI 상태 판별: {status}")
+            
+            if status == 'SUCCESS':
+                # 검색 쿼리 정규화
+                raw_queries = ai_result.get('search_queries') or {}
+                search_queries = self._normalize_search_queries(raw_queries)
+                logger.info(f"📋 [SEARCH_QUERIES] 정규화된 검색 쿼리: {search_queries}")
+                
+                # Google Places API 병렬 호출
+                categorized_places = await self.google_places_service.parallel_search_by_categories(
+                    search_queries=search_queries,
+                    target_count_per_category=10,
+                    city=city,
+                    country=country,
+                    language_code=getattr(request, 'language_code', 'ko')
+                )
+                
+                # 카테고리 라벨 언어 변환
+                recommendations = self._convert_categories_by_language(
+                    categorized_places,
+                    getattr(request, 'language_code', 'ko')
+                )
+                
+                # 새로운 장소들을 캐시에 저장
+                if recommendations:
+                    await self._save_new_places(city_id, recommendations)
+                
+                total_new_places = sum(len(places) for places in recommendations.values())
+                
+                logger.info("✅ [PLAN_A_SUCCESS] Plan A 완료")
+                return PlaceRecommendationResponse(
+                    success=True,
+                    city_id=city_id,
+                    main_theme="Plan A 성공 (search_strategy_v1)",
+                    recommendations=recommendations,
+                    previously_recommended_count=len(existing_place_names),
+                    newly_recommended_count=total_new_places
+                )
+            else:
+                raise ValueError(f"AI가 예상치 못한 상태를 반환했습니다: {status}")
+            
+        except Exception as e:
+            logger.error(f"❌ [PLAN_A_ERROR] Plan A 실행 실패: {e}")
+            raise
+
+    def _normalize_search_queries(self, raw_queries: Any) -> Dict[str, str]:
+        """
+        AI(search_strategy_v1) 응답을 카테고리별 텍스트 쿼리 딕셔너리로 정규화
+        """
+        try:
+            if isinstance(raw_queries, dict):
+                normalized: Dict[str, str] = {}
+                for key, value in raw_queries.items():
+                    category = key.lower()
+                    # value가 문자열이면 그대로 사용
+                    if isinstance(value, str):
+                        normalized[category] = value
+                    elif isinstance(value, dict):
+                        # primary_query, query, text 등 자주 쓰는 키 우선
+                        for candidate in ["primary_query", "query", "text", "q"]:
+                            if isinstance(value.get(candidate), str) and value.get(candidate).strip():
+                                normalized[category] = value.get(candidate).strip()
+                                break
+                        else:
+                            # value의 첫 번째 문자열 값을 사용
+                            str_val = next((v for v in value.values() if isinstance(v, str) and v.strip()), None)
+                            if str_val:
+                                normalized[category] = str_val.strip()
+                    # 리스트면 첫 항목 문자열 채택
+                    elif isinstance(value, list) and value:
+                        first = value[0]
+                        if isinstance(first, str):
+                            normalized[category] = first
+                        elif isinstance(first, dict):
+                            str_val = first.get("primary_query") or first.get("query") or first.get("text")
+                            if isinstance(str_val, str):
+                                normalized[category] = str_val
+                
+                # 최소한의 기본 카테고리 보장
+                return {
+                    "tourism": normalized.get("tourism") or normalized.get("attractions") or normalized.get("관광") or "tourist attractions",
+                    "food": normalized.get("food") or normalized.get("foods") or normalized.get("먹거리") or "restaurants",
+                    "activity": normalized.get("activity") or normalized.get("activities") or normalized.get("즐길거리") or "activities",
+                    "accommodation": normalized.get("accommodation") or normalized.get("accommodations") or normalized.get("숙소") or "hotels"
+                }
+            else:
+                # 기본 쿼리 반환
+                return {
+                    "tourism": "tourist attractions",
+                    "food": "restaurants",
+                    "activity": "activities",
+                    "accommodation": "hotels"
+                }
+        except Exception as e:
+            logger.error(f"❌ [NORMALIZE_QUERIES_ERROR] 쿼리 정규화 실패: {e}")
+            return {
+                "tourism": "tourist attractions",
+                "food": "restaurants", 
+                "activity": "activities",
+                "accommodation": "hotels"
+            }
+
+    def _extract_json_from_response(self, response: str) -> str:
+        """AI 응답에서 JSON 부분만 추출"""
+        try:
+            # JSON 블록 찾기
+            start_markers = ['{', '[']
+            end_markers = ['}', ']']
+            
+            for start_marker, end_marker in zip(start_markers, end_markers):
+                start_idx = response.find(start_marker)
+                if start_idx != -1:
+                    # 마지막 매칭되는 end_marker 찾기
+                    end_idx = response.rfind(end_marker)
+                    if end_idx > start_idx:
+                        json_str = response[start_idx:end_idx + 1]
+                        # 간단한 JSON 유효성 검사
+                        json.loads(json_str)  # 파싱 테스트
+                        return json_str
+            
+            # JSON 블록을 찾지 못한 경우 전체 응답 반환
+            return response.strip()
+            
+        except Exception as e:
+            logger.warning(f"⚠️ [JSON_EXTRACT_WARN] JSON 추출 실패, 원본 반환: {e}")
+            return response.strip()
+
+    async def _save_new_places(self, city_id: int, recommendations: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
+        """새로운 장소들을 cached_places 테이블에 저장"""
+        try:
+            save_counts = {}
+            
+            for category, places in recommendations.items():
+                saved_count = 0
+                for place in places:
+                    try:
+                        # 중복 확인
+                        existing = await self.supabase.get_cached_place_by_place_id(place.get('place_id'))
+                        if existing:
+                            continue
+                        
+                        # 새 장소 저장
+                        place_data = {
+                            'city_id': city_id,
+                            'place_id': place.get('place_id'),
+                            'name': place.get('name'),
+                            'category': category,
+                            'address': place.get('address', ''),
+                            'rating': place.get('rating', 0.0),
+                            'coordinates': {
+                                'lat': place.get('lat', 0.0),
+                                'lng': place.get('lng', 0.0)
+                            }
+                        }
+                        
+                        await self.supabase.save_cached_place(place_data)
+                        saved_count += 1
+                        
+                    except Exception as place_error:
+                        logger.warning(f"⚠️ [SAVE_PLACE_WARN] 개별 장소 저장 실패: {place_error}")
+                        continue
+                
+                save_counts[category] = saved_count
+            
+            logger.info(f"💾 [SAVE_SUCCESS] 카테고리별 저장 결과: {save_counts}")
+            return save_counts
+            
+        except Exception as e:
+            logger.error(f"❌ [SAVE_ERROR] 장소 저장 실패: {e}")
+            return {}
+
+    async def _fallback_to_legacy_recommendation(self, request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
+        """Plan B: 기존 place_recommendation_v1 프롬프트 사용"""
+        try:
+            logger.info("🔄 [PLAN_B_START] Plan B 시작: place_recommendation_v1")
+            
+            # place_recommendation_v1 프롬프트 로드
+            prompt_template = await self.supabase.get_master_prompt('place_recommendation_v1')
+            if not prompt_template:
+                raise ValueError("place_recommendation_v1 프롬프트를 찾을 수 없습니다")
+            
+            logger.info("✅ [PLAN_B_PROMPT] place_recommendation_v1 프롬프트 로드 성공")
+            
+            # AI 프롬프트 구성
+            template = Template(prompt_template)
+            ai_prompt = template.safe_substitute(
+                city=request.city,
+                country=request.country,
+                total_duration=request.total_duration,
+                travelers_count=request.travelers_count,
+                budget_range=request.budget_range,
+                travel_style=", ".join(request.travel_style) if request.travel_style else "없음",
+                special_requests=getattr(request, 'special_requests', None) or "없음"
+            )
+            
+            # AI 호출
+            logger.info("🤖 [PLAN_B_AI] AI 호출 시작")
+            ai_raw = await self.ai_service.generate_text(ai_prompt, max_tokens=1500)
+            
+            if not ai_raw or not isinstance(ai_raw, str) or not ai_raw.strip():
+                raise ValueError("AI가 빈 응답을 반환했습니다")
+            
+            logger.info(f"✅ [PLAN_B_AI_SUCCESS] AI 응답 수신: {len(ai_raw)}자")
+            
+            # JSON 파싱
+            cleaned = self._extract_json_from_response(ai_raw)
+            ai_result = json.loads(cleaned)
+            
+            # 기본 응답 구조 생성
+            recommendations = {
+                '볼거리': [],
+                '먹거리': [],
+                '즐길거리': [],
+                '숙소': []
+            }
+            
+            # AI 결과에서 장소 정보 추출
+            places = ai_result.get('places', []) or ai_result.get('recommendations', [])
+            
+            for place in places:
+                category = place.get('category', '기타')
+                if category in recommendations:
+                    recommendations[category].append({
+                        'place_id': f"legacy_{hash(place.get('name', ''))}",
+                        'name': place.get('name', ''),
+                        'category': category,
+                        'address': place.get('address', ''),
+                        'rating': place.get('rating', 0.0),
+                        'lat': 0.0,
+                        'lng': 0.0
+                    })
+            
+            total_places = sum(len(places) for places in recommendations.values())
+            
+            logger.info(f"✅ [PLAN_B_SUCCESS] Plan B 완료: {total_places}개 장소")
+            
+            return PlaceRecommendationResponse(
+                success=True,
+                city_id=0,  # Plan B에서는 임시 ID
+                main_theme="Plan B 성공 (place_recommendation_v1)",
+                recommendations=recommendations,
+                previously_recommended_count=0,
+                newly_recommended_count=total_places
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ [PLAN_B_ERROR] Plan B 실행 실패: {e}")
+            await self._notify_admin_plan_b_failure("Plan B 전체 실패", str(e))
+            raise HTTPException(status_code=500, detail=f"Plan B 실패: {str(e)}")
     
     def _convert_categories_by_language(self, categorized_places: Dict[str, List[Dict[str, Any]]], language_code: str) -> Dict[str, List[Dict[str, Any]]]:
         """영문 카테고리를 요청 언어에 맞는 라벨로 변환하되, 장소 dict를 그대로 유지합니다."""
