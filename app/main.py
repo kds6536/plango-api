@@ -93,8 +93,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.get("/", tags=["기본"])
 async def read_root():
-    """루트 엔드포인트"""
-    return {"message": f"Welcome to {settings.PROJECT_NAME}!"} 
+    """루트 엔드포인트 - 헬스체크 겸용"""
+    return {
+        "message": f"Welcome to {settings.PROJECT_NAME}!",
+        "status": "healthy",
+        "version": settings.PROJECT_VERSION
+    } 
 
 
 if __name__ == "__main__":
