@@ -96,6 +96,7 @@ class SupabaseService:
                     'category': place.get('category'),
                     'address': place.get('address'),
                     'rating': place.get('rating'),
+                    'photo_url': place.get('photo_url', ''),  # 사진 URL 추가
                     'coordinates': {
                         'lat': place.get('latitude', 0.0),
                         'lng': place.get('longitude', 0.0)
@@ -506,6 +507,7 @@ class SupabaseService:
                 'category': place_data.get('category'),
                 'address': place_data.get('address', ''),
                 'rating': place_data.get('rating', 0.0),
+                'photo_url': place_data.get('photo_url', ''),  # 사진 URL 추가
                 'latitude': coordinates.get('lat', 0.0),
                 'longitude': coordinates.get('lng', 0.0)
             }

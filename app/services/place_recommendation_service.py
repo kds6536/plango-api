@@ -462,6 +462,7 @@ class PlaceRecommendationService:
                     'category': category,
                     'address': place.get('address'),
                     'rating': place.get('rating'),
+                    'photo_url': place.get('photo_url', ''),  # 사진 URL 추가
                     'lat': place.get('coordinates', {}).get('lat', 0.0),
                     'lng': place.get('coordinates', {}).get('lng', 0.0)
                 })
@@ -701,6 +702,7 @@ class PlaceRecommendationService:
                             'category': category,
                             'address': place.get('address', ''),
                             'rating': place.get('rating', 0.0),
+                            'photo_url': place.get('photo_url', ''),  # 사진 URL 추가
                             'coordinates': {
                                 'lat': place.get('lat', 0.0),
                                 'lng': place.get('lng', 0.0)

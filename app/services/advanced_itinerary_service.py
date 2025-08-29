@@ -364,47 +364,30 @@ JSON 형식으로 응답해주세요:
                 logger.error("AI 핸들러를 가져올 수 없습니다")
                 return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
-            # 일정 생성 프롬프트 구성
+            # Supabase에서 itinerary_generation 프롬프트 가져오기
+            try:
+                from app.services.supabase_service import supabase_service
+                prompt_template = await supabase_service.get_master_prompt('itinerary_generation')
+                logger.info("✅ Supabase에서 itinerary_generation 프롬프트 로드 성공")
+            except Exception as prompt_error:
+                logger.warning(f"⚠️ Supabase 프롬프트 로드 실패: {prompt_error}, 기본 프롬프트 사용")
+                prompt_template = self._get_default_itinerary_prompt()
+            
+            # 장소 정보 구성
             places_info = []
             for place in places:
                 places_info.append(f"- {place.name} ({place.category}): {place.address}")
             
-            prompt = f"""
-다음 장소들을 {duration}일 일정으로 최적화해서 배치해주세요:
-
-장소 목록:
-{chr(10).join(places_info)}
-
-조건:
-- 일일 활동 시간: {daily_start} ~ {daily_end}
-- 총 {duration}일 일정
-- 지리적 위치와 카테고리를 고려한 효율적인 배치
-- 각 일차별로 3-5개 장소 배치
-
-JSON 형식으로 응답해주세요:
-{{
-    "travel_plan": {{
-        "total_days": {duration},
-        "daily_start_time": "{daily_start}",
-        "daily_end_time": "{daily_end}",
-        "days": [
-            {{
-                "day": 1,
-                "date": "2024-01-01",
-                "activities": [
-                    {{
-                        "time": "09:00",
-                        "place_name": "장소명",
-                        "category": "관광",
-                        "duration_minutes": 120,
-                        "description": "활동 설명"
-                    }}
-                ]
-            }}
-        ]
-    }}
-}}
-"""
+            # 프롬프트 템플릿 변수 치환
+            from string import Template
+            template = Template(prompt_template)
+            prompt = template.safe_substitute(
+                places_list=chr(10).join(places_info),
+                duration=duration,
+                daily_start_time=daily_start,
+                daily_end_time=daily_end,
+                total_places=len(places)
+            )
             
             # AI 호출
             response = await ai_handler.generate_text(prompt, max_tokens=2000)
@@ -523,6 +506,46 @@ JSON 형식으로 응답해주세요:
                     days=[]
                 )
             )
+
+    def _get_default_itinerary_prompt(self) -> str:
+        """기본 일정 생성 프롬프트"""
+        return """
+다음 장소들을 $duration일 일정으로 최적화해서 배치해주세요:
+
+장소 목록:
+$places_list
+
+조건:
+- 일일 활동 시간: $daily_start_time ~ $daily_end_time
+- 총 $duration일 일정
+- 지리적 위치와 카테고리를 고려한 효율적인 배치
+- 각 일차별로 3-5개 장소 배치
+- 총 $total_places개 장소 활용
+
+JSON 형식으로 응답해주세요:
+{
+    "travel_plan": {
+        "total_days": $duration,
+        "daily_start_time": "$daily_start_time",
+        "daily_end_time": "$daily_end_time",
+        "days": [
+            {
+                "day": 1,
+                "date": "2024-01-01",
+                "activities": [
+                    {
+                        "time": "09:00",
+                        "place_name": "장소명",
+                        "category": "관광",
+                        "duration_minutes": 120,
+                        "description": "활동 설명"
+                    }
+                ]
+            }
+        ]
+    }
+}
+"""
             
         except Exception as e:
             logger.error(f"목적지 {destination.city} 추천 생성 실패: {e}", exc_info=True)
