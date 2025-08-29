@@ -35,24 +35,31 @@ class GooglePlacesService:
     def _extract_photo_url(self, place: Dict[str, Any], max_height_px: int = 400) -> str:
         """Places API(New) 사진 리소스 이름으로 미디어 URL을 생성"""
         try:
+            place_name = place.get("displayName", {}).get("text", "Unknown Place") if isinstance(place.get("displayName"), dict) else place.get("name", "Unknown Place")
+            
             if not self.api_key:
-                logger.warning("⚠️ API 키가 없어 사진 URL을 생성할 수 없습니다")
+                logger.warning(f"⚠️ API 키가 없어 사진 URL을 생성할 수 없습니다 - Place: {place_name}")
                 return ""
                 
             photos = place.get("photos") or []
+            logger.info(f"[검증용 로그] Place: {place_name}, Photos 데이터: {photos}")
+            
             if photos and isinstance(photos, list) and len(photos) > 0:
                 photo = photos[0]
                 name = photo.get("name")
+                logger.info(f"[검증용 로그] Place: {place_name}, Photo name: {name}")
+                
                 if name and isinstance(name, str) and name.strip():
                     photo_url = f"https://places.googleapis.com/v1/{name}/media?maxHeightPx={max_height_px}&key={self.api_key}"
-                    logger.debug(f"✅ 사진 URL 생성 성공: {name}")
+                    logger.info(f"[검증용 로그] Place: {place_name}, Generated Image URL: {photo_url}")
                     return photo_url
                 else:
-                    logger.debug("⚠️ 사진 이름이 유효하지 않음")
+                    logger.info(f"[검증용 로그] Place: {place_name}, Generated Image URL: None (사진 이름이 유효하지 않음)")
             else:
-                logger.debug("⚠️ 사진 데이터가 없음")
+                logger.info(f"[검증용 로그] Place: {place_name}, Generated Image URL: None (사진 데이터가 없음)")
         except Exception as e:
-            logger.error(f"❌ 사진 URL 생성 실패: {e}")
+            logger.error(f"❌ 사진 URL 생성 실패 - Place: {place_name}: {e}")
+            logger.info(f"[검증용 로그] Place: {place_name}, Generated Image URL: None (예외 발생)")
         return ""
 
     async def search_places_text(self, text_query: str, fields: List[str], language_code: str = "ko") -> Dict[str, Any]:
