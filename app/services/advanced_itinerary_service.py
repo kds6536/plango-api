@@ -21,11 +21,22 @@ from app.schemas.itinerary import (
     ItineraryRequest, RecommendationResponse
 )
 from app.services.google_places_service import GooglePlacesService
-from app.services.ai_handlers import OpenAIHandler, GeminiHandler
 from app.utils.logger import get_logger
-from app.services.enhanced_ai_service import enhanced_ai_service
 from fastapi import HTTPException
 from string import Template  # string.Template을 사용합니다.
+
+# 조건부 import로 오류 방지
+try:
+    from app.services.ai_handlers import OpenAIHandler, GeminiHandler
+except ImportError as e:
+    print(f"Warning: Could not import AI handlers: {e}")
+    OpenAIHandler = None
+    GeminiHandler = None
+
+try:
+    from app.services.enhanced_ai_service import enhanced_ai_service
+except ImportError:
+    enhanced_ai_service = None
 
 logger = get_logger(__name__)
 
@@ -50,10 +61,13 @@ class AdvancedItineraryService:
     async def _get_ai_handler(self):
         """Enhanced AI Service를 통해 활성화된 AI 핸들러 가져오기"""
         try:
-            return await enhanced_ai_service.get_active_handler()
+            if enhanced_ai_service:
+                return await enhanced_ai_service.get_active_handler()
         except Exception as e:
             logger.error(f"Enhanced AI handler 가져오기 실패: {e}")
-            # 폴백으로 기존 방식 사용
+        
+        # 폴백으로 기존 방식 사용
+        try:
             settings_dict = {
                 "default_provider": "openai",
                 "openai_model_name": "gpt-4",
@@ -62,10 +76,17 @@ class AdvancedItineraryService:
             provider = settings_dict.get("default_provider", "openai").lower()
             openai_model = settings_dict.get("openai_model_name", "gpt-4")
             gemini_model = settings_dict.get("gemini_model_name", "gemini-1.5-flash")
-            if provider == "gemini" and self.gemini_client:
+            
+            if provider == "gemini" and self.gemini_client and GeminiHandler:
                 return GeminiHandler(self.gemini_client, gemini_model)
-            else:
+            elif self.openai_client and OpenAIHandler:
                 return OpenAIHandler(self.openai_client, openai_model)
+            else:
+                logger.error("AI 핸들러를 생성할 수 없습니다")
+                return None
+        except Exception as fallback_error:
+            logger.error(f"폴백 AI 핸들러 생성 실패: {fallback_error}")
+            return None
 
     async def generate_recommendations_with_details(self, request: ItineraryRequest) -> List[PlaceData]:
         """
@@ -215,10 +236,12 @@ class AdvancedItineraryService:
         try:
             logger.info(f"AI 브레인스토밍 시작: {city}, {country}")
             
-            # AI 핸들러 가져오기
-            ai_handler = await self._get_ai_handler()
-            if not ai_handler:
-                logger.error("AI 핸들러를 가져올 수 없습니다")
+            # AI 서비스 사용 (더 간단한 방법)
+            try:
+                from app.services.dynamic_ai_service import DynamicAIService
+                ai_service = DynamicAIService()
+            except Exception as ai_import_error:
+                logger.error(f"AI 서비스 import 실패: {ai_import_error}")
                 return self._get_default_keywords(city, country)
             
             # 브레인스토밍 프롬프트 구성
@@ -248,7 +271,7 @@ JSON 형식으로 응답해주세요:
 """
             
             # AI 호출
-            response = await ai_handler.generate_text(prompt, max_tokens=1000)
+            response = await ai_service.generate_text(prompt, max_tokens=1000)
             
             if response:
                 # JSON 파싱 시도

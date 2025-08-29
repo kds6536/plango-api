@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     
     # API 키
     OPENAI_API_KEY: str = ""
+    openai_api_key: str = ""  # 하위 호환성을 위한 별칭
     GEMINI_API_KEY: str = ""
+    gemini_api_key: str = ""  # 하위 호환성을 위한 별칭
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     
@@ -82,6 +84,14 @@ class Settings(BaseSettings):
         "case_sensitive": False,
         "extra": "allow"
     }
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # 하위 호환성을 위한 속성 매핑
+        if self.OPENAI_API_KEY and not self.openai_api_key:
+            self.openai_api_key = self.OPENAI_API_KEY
+        if self.GEMINI_API_KEY and not self.gemini_api_key:
+            self.gemini_api_key = self.GEMINI_API_KEY
 
 
 # 전역 설정 인스턴스

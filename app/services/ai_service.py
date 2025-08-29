@@ -15,7 +15,10 @@ class AIService:
     """AI 기반 여행 일정 생성 서비스"""
     
     def __init__(self):
-        self.client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+        api_key = getattr(settings, 'openai_api_key', None) or getattr(settings, 'OPENAI_API_KEY', None)
+        if not api_key:
+            logger.warning("OpenAI API key not found in settings")
+        self.client = openai.AsyncOpenAI(api_key=api_key)
     
     async def generate_travel_plans(self, request: ItineraryRequest) -> Dict[str, ItineraryPlan]:
         """여행 계획 A와 B를 생성합니다"""
