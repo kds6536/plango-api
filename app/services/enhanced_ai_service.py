@@ -5,6 +5,7 @@ Supabase에서 AI 설정과 프롬프트를 동적으로 관리하는 AI 서비�
 
 import json
 import logging
+import traceback
 from typing import Dict, Any, Optional
 from app.services.supabase_service import supabase_service
 from app.services.ai_handlers import OpenAIHandler, GeminiHandler
@@ -98,9 +99,14 @@ class EnhancedAIService:
     async def generate_response(self, prompt: str, **kwargs) -> str:
         """AI 응답 생성"""
         try:
+            logger.info("🤖 [GENERATE_START] AI 응답 생성 시작")
+            
             handler = await self.get_active_handler()
             if not handler:
+                logger.error("❌ [HANDLER_ERROR] 사용 가능한 AI 핸들러가 없습니다")
                 raise ValueError("사용 가능한 AI 핸들러가 없습니다.")
+            
+            logger.info(f"🤖 [HANDLER_INFO] 활성 핸들러: {type(handler).__name__}")
             
             # 현재 설정에서 온도와 토큰 수 가져오기
             if not self.current_settings:
@@ -109,52 +115,87 @@ class EnhancedAIService:
             temperature = self.current_settings.get('temperature', 0.7)
             max_tokens = self.current_settings.get('max_tokens', 2000)
             
+            logger.info(f"🤖 [AI_SETTINGS] 온도: {temperature}, 최대 토큰: {max_tokens}")
+            logger.info(f"🤖 [PROMPT_LENGTH] 프롬프트 길이: {len(prompt)}")
+            
             # AI 핸들러의 get_completion 메서드 사용
             if hasattr(handler, 'get_completion'):
-                return await handler.get_completion(prompt)
+                logger.info("🤖 [AI_CALL] AI 핸들러 호출 시작")
+                response = await handler.get_completion(prompt)
+                logger.info(f"🤖 [AI_RESPONSE_RECEIVED] AI 응답 수신 완료 (길이: {len(response) if response else 0})")
+                
+                if not response:
+                    logger.error("❌ [EMPTY_AI_RESPONSE] AI가 빈 응답을 반환했습니다")
+                    raise ValueError("AI가 빈 응답을 반환했습니다")
+                
+                return response
             else:
-                logger.error(f"핸들러 {type(handler).__name__}에 get_completion 메서드가 없습니다.")
+                logger.error(f"❌ [METHOD_ERROR] 핸들러 {type(handler).__name__}에 get_completion 메서드가 없습니다")
                 raise ValueError(f"AI 핸들러 {type(handler).__name__}가 올바르지 않습니다.")
                 
         except Exception as e:
-            logger.error(f"AI 응답 생성 실패: {e}")
+            logger.error(f"❌ [GENERATE_ERROR] AI 응답 생성 실패: {e}")
+            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
             raise
     
     async def generate_itinerary_with_master_prompt(self, user_data: Dict[str, Any]) -> str:
         """마스터 프롬프트를 사용한 일정 생성"""
         try:
+            logger.info("🚀 [ITINERARY_START] 마스터 프롬프트를 사용하여 일정 생성 시작")
+            logger.info(f"📊 [INPUT_DATA] 입력 데이터: {user_data}")
+            
             # Supabase에서 마스터 프롬프트 가져오기
             # 고정 프롬프트: itinerary_generation
+            logger.info("📜 [PROMPT_FETCH] Supabase에서 마스터 프롬프트 가져오기 시작")
             master_prompt = await supabase_service.get_master_prompt('itinerary_generation')
+            logger.info(f"📜 [PROMPT_FETCHED] 마스터 프롬프트 가져오기 완료 (길이: {len(master_prompt)})")
             
             # 입력 데이터를 JSON 문자열로 변환
             input_data_json = json.dumps(user_data, ensure_ascii=False, indent=2)
+            logger.info(f"📊 [JSON_INPUT] 입력 데이터 JSON 변환 완료 (길이: {len(input_data_json)})")
             
             # 프롬프트에 실제 데이터 주입
             final_prompt = master_prompt.replace('{input_data}', input_data_json)
             
-            logger.error("🚀 [ITINERARY_START] 마스터 프롬프트를 사용하여 일정 생성 시작")
-            logger.error(f"📜 [FINAL_PROMPT_STEP_3] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):")
-            logger.error(f"📜 [PROMPT_CONTENT] {final_prompt}")
+            logger.info(f"📜 [FINAL_PROMPT_STEP_3] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):")
+            logger.info(f"📜 [PROMPT_CONTENT] {final_prompt}")
             
             # AI로 응답 생성
-            logger.error("🤖 [AI_CALLING] AI 호출 시작...")
+            logger.info("🤖 [AI_CALLING] AI 호출 시작...")
             response = await self.generate_response(final_prompt)
-            logger.error(f"🤖 [AI_RESPONSE] AI 응답 수신 완료 (길이: {len(response)})")
-            logger.error(f"🤖 [RAW_RESPONSE] AI 원본 응답: {response}")
+            logger.info(f"🤖 [AI_RESPONSE] AI 응답 수신 완료 (길이: {len(response) if response else 0})")
+            logger.info(f"🤖 [RAW_RESPONSE] AI 원본 응답: {response}")
+            
+            if not response or not response.strip():
+                logger.error("❌ [EMPTY_RESPONSE] AI 응답이 비어있습니다")
+                raise ValueError("AI 응답이 비어있습니다")
             
             # JSON 응답 검증 및 정제 - 간단하고 확실한 방법
-            logger.error("🔧 [JSON_PARSING] JSON 파싱 시작")
+            logger.info("🔧 [JSON_PARSING] JSON 파싱 시작")
             
             # 즉시 강력한 정제 적용
             cleaned_response = self._extract_json_only(response)
-            logger.error(f"🔧 [CLEANED_JSON] 정제된 JSON: {cleaned_response}")
+            logger.info(f"🔧 [CLEANED_JSON] 정제된 JSON (길이: {len(cleaned_response)}): {cleaned_response}")
             
             try:
                 # 정제된 응답 파싱 시도
                 parsed_json = json.loads(cleaned_response)
-                logger.error(f"✅ [PARSED_SUCCESS] JSON 파싱 성공: {parsed_json}")
+                logger.info(f"✅ [PARSED_SUCCESS] JSON 파싱 성공")
+                logger.info(f"📊 [PARSED_DATA] 파싱된 데이터 구조: {json.dumps(parsed_json, ensure_ascii=False, indent=2)}")
+                
+                # 필수 구조 검증
+                if 'travel_plan' not in parsed_json:
+                    logger.error("❌ [STRUCTURE_ERROR] travel_plan 키가 없습니다")
+                    raise ValueError("travel_plan 키가 없습니다")
+                
+                travel_plan = parsed_json['travel_plan']
+                if 'days' not in travel_plan:
+                    logger.error("❌ [STRUCTURE_ERROR] days 키가 없습니다")
+                    raise ValueError("days 키가 없습니다")
+                
+                logger.info(f"✅ [STRUCTURE_OK] 구조 검증 완료: {len(travel_plan.get('days', []))}일 일정")
                 return cleaned_response
+                
             except json.JSONDecodeError as e:
                 logger.error(f"❌ [JSON_ERROR] JSON 파싱 최종 실패: {e}")
                 logger.error(f"📝 [CLEANED_RESPONSE] 정제된 응답: {cleaned_response}")
@@ -169,11 +210,12 @@ class EnhancedAIService:
                         "days": []
                     }
                 }
-                logger.error("🔄 [FALLBACK] 폴백 응답 사용")
+                logger.info("🔄 [FALLBACK] 폴백 응답 사용")
                 return json.dumps(fallback_response, ensure_ascii=False)
                 
         except Exception as e:
-            logger.error(f"마스터 프롬프트 일정 생성 실패: {e}")
+            logger.error(f"❌ [ITINERARY_ERROR] 마스터 프롬프트 일정 생성 실패: {e}")
+            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
             raise
     
     def _clean_json_response(self, response: str) -> str:
@@ -305,29 +347,34 @@ class EnhancedAIService:
     def _extract_json_only(self, response: str) -> str:
         """가장 간단하고 확실한 JSON 추출 방법"""
         try:
-            logger.error("🔧 [EXTRACT_START] 간단 JSON 추출 시작")
-            logger.error(f"🔧 [EXTRACT_INPUT] 입력 응답 길이: {len(response)}")
+            logger.info("🔧 [EXTRACT_START] 간단 JSON 추출 시작")
+            logger.info(f"🔧 [EXTRACT_INPUT] 입력 응답 길이: {len(response)}")
+            logger.info(f"🔧 [EXTRACT_PREVIEW] 응답 미리보기 (처음 200자): {response[:200]}...")
             
             # 1. 첫 번째 { 찾기
             start = response.find('{')
-            logger.error(f"🔧 [EXTRACT_START_POS] 시작 위치: {start}")
+            logger.info(f"🔧 [EXTRACT_START_POS] 시작 위치: {start}")
             if start == -1:
+                logger.error("❌ [EXTRACT_ERROR] JSON 시작점 없음")
                 raise ValueError("JSON 시작점 없음")
             
             # 2. 마지막 } 찾기 (가장 간단한 방법)
             end = response.rfind('}')
-            logger.error(f"🔧 [EXTRACT_END_POS] 끝 위치: {end}")
+            logger.info(f"🔧 [EXTRACT_END_POS] 끝 위치: {end}")
             if end == -1 or end <= start:
+                logger.error("❌ [EXTRACT_ERROR] JSON 끝점 없음")
                 raise ValueError("JSON 끝점 없음")
             
             # 3. 추출
             result = response[start:end + 1]
             
-            logger.error(f"✅ [EXTRACT_SUCCESS] 간단 JSON 추출 완료 - 길이: {len(result)}")
+            logger.info(f"✅ [EXTRACT_SUCCESS] 간단 JSON 추출 완료 - 길이: {len(result)}")
+            logger.info(f"🔧 [EXTRACT_RESULT] 추출된 JSON 미리보기 (처음 200자): {result[:200]}...")
             return result
             
         except Exception as e:
             logger.error(f"❌ [EXTRACT_ERROR] 간단 JSON 추출 실패: {e}")
+            logger.error(f"🔧 [EXTRACT_FALLBACK] 원본 응답 반환")
             # 실패 시 원본 반환
             return response
     

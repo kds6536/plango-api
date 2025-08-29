@@ -463,6 +463,7 @@ class PlaceRecommendationService:
                     'address': place.get('address'),
                     'rating': place.get('rating'),
                     'photo_url': place.get('photo_url', ''),  # 사진 URL 추가
+                    'websiteUri': place.get('website_url', ''),  # 웹사이트 URL 추가 (프론트엔드 camelCase 형식)
                     'lat': place.get('coordinates', {}).get('lat', 0.0),
                     'lng': place.get('coordinates', {}).get('lng', 0.0)
                 })

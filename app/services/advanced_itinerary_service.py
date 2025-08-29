@@ -704,6 +704,26 @@ JSON 형식으로 응답해주세요:
             for place in places:
                 place_id = place.get('place_id')
                 if place_id and place_id not in unique_places:
+                    # 평점이 없는 경우 기본값 설정
+                    if not place.get('rating'):
+                        place['rating'] = 3.5
+                    unique_places[place_id] = place
+            
+            # 평점 기준으로 정렬
+            sorted_places = sorted(
+                unique_places.values(),
+                key=lambda x: (x.get('rating', 0), x.get('user_ratings_total', 0)),
+                reverse=True
+            )
+            
+            # 상위 N개 선택
+            filtered_results[category] = sorted_places[:max_items]
+            logger.info(f"카테고리 '{category}' 필터링 완료: {len(filtered_results[category])}개 장소")
+        
+        logger.info(f"결과 처리 및 필터링 완료: {[(k, len(v)) for k, v in filtered_results.items()]}")
+        return filtered_results place in places:
+                place_id = place.get('place_id')
+                if place_id and place_id not in unique_places:
                     unique_places[place_id] = place
             
             logger.info(f"카테고리 '{category}' 중복 제거 후: {len(unique_places)}개 장소")
@@ -1221,7 +1241,8 @@ JSON 형식으로 응답해주세요:
         v6.0: 선택된 장소들을 Supabase 마스터 프롬프트와 AI로 최적화하여 최종 일정을 생성합니다.
         """
         try:
-            logger.info(f"🎯 [OPTIMIZE] 최종 일정 생성 시작: {len(places)}개 장소")
+            logger.info(f"🎯 [OPTIMIZE_START] 최종 일정 생성 시작: {len(places)}개 장소")
+            logger.info(f"📊 [INPUT_PLACES] 입력 장소 목록: {[place.name for place in places]}")
             
             # 기본값/제약 설정
             constraints = constraints or {}
@@ -1229,8 +1250,12 @@ JSON 형식으로 응답해주세요:
             daily_start_time = constraints.get("daily_start_time") or "09:00"
             daily_end_time = constraints.get("daily_end_time") or "22:00"
             
+            logger.info(f"⚙️ [CONSTRAINTS] 제약 조건 - 기간: {duration}일, 시간: {daily_start_time}~{daily_end_time}")
+            
             # v6.0: Enhanced AI Service를 사용한 마스터 프롬프트 기반 일정 생성
             try:
+                logger.info("🤖 [AI_GENERATION_START] Enhanced AI Service로 일정 생성 시작")
+                
                 # 사용자 데이터 구성
                 user_data = {
                     "목적지": f"{places[0].address.split()[0] if places and places[0].address else '여행지'}",
@@ -1248,7 +1273,8 @@ JSON 형식으로 응답해주세요:
                     ]
                 }
                 
-                logger.info("Enhanced AI Service로 일정 생성 시도")
+                logger.info(f"📊 [USER_DATA] 사용자 데이터 구성 완료: {len(user_data['사용자_선택_장소'])}개 장소")
+                
                 # 제약 정보를 AI에 전달하여 시간 규칙을 강화
                 user_data["일일_시간_제약"] = {
                     "시작": daily_start_time,
@@ -1260,16 +1286,28 @@ JSON 형식으로 응답해주세요:
                     },
                     "숙소_규칙": "각 일자의 마지막은 숙소 배치, 다음날 첫 장소와 지리적으로 가까운 숙소 선호"
                 }
+                
+                logger.info("🤖 [AI_CALL] Enhanced AI Service 호출 시작")
                 ai_response = await enhanced_ai_service.generate_itinerary_with_master_prompt(user_data)
+                logger.info(f"🤖 [AI_RESPONSE_RECEIVED] AI 응답 수신 완료 (길이: {len(ai_response) if ai_response else 0})")
+                
+                if not ai_response or not ai_response.strip():
+                    logger.error("❌ [AI_EMPTY_RESPONSE] AI가 빈 응답을 반환했습니다")
+                    raise ValueError("AI가 빈 응답을 반환했습니다")
                 
                 # AI 응답을 TravelPlan으로 변환
+                logger.info("🔄 [CONVERSION_START] AI 응답을 TravelPlan으로 변환 시작")
                 optimized_plan = self._convert_ai_response_to_travel_plan(ai_response, places)
+                logger.info(f"✅ [CONVERSION_SUCCESS] TravelPlan 변환 완료: {len(optimized_plan.daily_plans) if optimized_plan and optimized_plan.daily_plans else 0}일 일정")
                 
             except Exception as ai_error:
-                logger.warning(f"AI 기반 일정 생성 실패, 폴백 사용: {ai_error}")
+                logger.error(f"❌ [AI_ERROR] AI 기반 일정 생성 실패: {ai_error}")
+                logger.error(f"📊 [AI_ERROR_TRACEBACK] {traceback.format_exc()}")
+                logger.info("🔄 [FALLBACK_START] 폴백 일정 생성 시작")
                 # 폴백으로 간단한 일정 생성
                 # 제약을 반영한 폴백 일정 생성
                 optimized_plan = self._create_time_constrained_plan(places, duration, daily_start_time, daily_end_time)
+                logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 일정 생성 완료: {len(optimized_plan.daily_plans) if optimized_plan and optimized_plan.daily_plans else 0}일 일정")
             
             return OptimizeResponse(
                 optimized_plan=self._ensure_schema_compat(optimized_plan),
@@ -1535,46 +1573,110 @@ JSON 형식으로 응답해주세요:
         AI 응답을 TravelPlan 객체로 변환
         """
         try:
+            logger.info("🔄 [CONVERT_START] AI 응답을 TravelPlan으로 변환 시작")
+            logger.info(f"📊 [AI_RESPONSE_LENGTH] AI 응답 길이: {len(ai_response)}")
+            logger.info(f"📊 [AI_RESPONSE_PREVIEW] AI 응답 미리보기 (처음 300자): {ai_response[:300]}...")
+            
             import json
             ai_data = json.loads(ai_response)
+            logger.info(f"✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
+            logger.info(f"📊 [AI_DATA_KEYS] AI 데이터 키: {list(ai_data.keys())}")
             
-            # AI 응답에서 일정 정보 추출
-            title = ai_data.get("여행_제목", "AI 생성 여행 일정")
-            daily_plans = []
-            
-            for day_info in ai_data.get("일정", []):
-                activities = []
+            # travel_plan 구조 확인
+            if 'travel_plan' in ai_data:
+                travel_plan_data = ai_data['travel_plan']
+                logger.info(f"📊 [TRAVEL_PLAN_KEYS] travel_plan 키: {list(travel_plan_data.keys())}")
                 
-                # 시간표를 ActivityItem으로 변환
-                for schedule_item in day_info.get("시간표", []):
-                    activities.append(ActivityItem(
-                        time=schedule_item.get("시작시간", "09:00"),
-                        activity=schedule_item.get("활동", "활동"),
-                        location=schedule_item.get("장소명", "장소"),
-                        description=schedule_item.get("설명", ""),
-                        duration=f"{schedule_item.get('소요시간_분', 60)}분",
-                        cost="개인차이",
-                        tips=schedule_item.get("설명", "")
+                # days 배열 확인
+                days_data = travel_plan_data.get('days', [])
+                logger.info(f"📊 [DAYS_COUNT] 일정 일수: {len(days_data)}")
+                
+                daily_plans = []
+                for i, day_data in enumerate(days_data):
+                    logger.info(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
+                    logger.info(f"📊 [DAY_{i+1}_KEYS] {i+1}일차 키: {list(day_data.keys())}")
+                    
+                    activities = []
+                    activities_data = day_data.get('activities', [])
+                    logger.info(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
+                    
+                    for j, activity_data in enumerate(activities_data):
+                        activity = ActivityItem(
+                            time=activity_data.get("time", "09:00"),
+                            activity=activity_data.get("place_name", "활동"),
+                            location=activity_data.get("place_name", "장소"),
+                            description=activity_data.get("description", ""),
+                            duration=f"{activity_data.get('duration_minutes', 60)}분",
+                            cost="개인차이",
+                            tips=activity_data.get("description", "")
+                        )
+                        activities.append(activity)
+                        logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가: {activity.activity}")
+                    
+                    # DayPlan 생성
+                    day_plan = DayPlan(
+                        day=day_data.get("day", i+1),
+                        theme=f"{i+1}일차 여행",
+                        activities=activities,
+                        meals={"점심": "현지 맛집", "저녁": "추천 레스토랑"},
+                        transportation=["도보", "대중교통"],
+                        estimated_cost="개인차이"
+                    )
+                    daily_plans.append(day_plan)
+                    logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
+                
+                travel_plan = TravelPlan(
+                    title=travel_plan_data.get("title", "AI 생성 여행 일정"),
+                    concept="AI가 최적화한 맞춤형 여행 계획",
+                    daily_plans=daily_plans,
+                    places=places
+                )
+                
+                logger.info(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정, 총 {sum(len(dp.activities) for dp in daily_plans)}개 활동")
+                return travel_plan
+                
+            else:
+                # 기존 형식 처리 (폴백)
+                logger.warning("⚠️ [OLD_FORMAT] 기존 형식으로 처리 시도")
+                title = ai_data.get("여행_제목", "AI 생성 여행 일정")
+                daily_plans = []
+                
+                for day_info in ai_data.get("일정", []):
+                    activities = []
+                    
+                    # 시간표를 ActivityItem으로 변환
+                    for schedule_item in day_info.get("시간표", []):
+                        activities.append(ActivityItem(
+                            time=schedule_item.get("시작시간", "09:00"),
+                            activity=schedule_item.get("활동", "활동"),
+                            location=schedule_item.get("장소명", "장소"),
+                            description=schedule_item.get("설명", ""),
+                            duration=f"{schedule_item.get('소요시간_분', 60)}분",
+                            cost="개인차이",
+                            tips=schedule_item.get("설명", "")
+                        ))
+                    
+                    # DayPlan 생성
+                    daily_plans.append(DayPlan(
+                        day=day_info.get("일차", 1),
+                        theme=day_info.get("일일_테마", "여행"),
+                        activities=activities,
+                        meals={"점심": "현지 맛집", "저녁": "추천 레스토랑"},
+                        transportation=["도보", "대중교통"],
+                        estimated_cost="개인차이"
                     ))
                 
-                # DayPlan 생성
-                daily_plans.append(DayPlan(
-                    day=day_info.get("일차", 1),
-                    theme=day_info.get("일일_테마", "여행"),
-                    activities=activities,
-                    meals={"점심": "현지 맛집", "저녁": "추천 레스토랑"},
-                    transportation=["도보", "대중교통"],
-                    estimated_cost="개인차이"
-                ))
-            
-            return TravelPlan(
-                title=title,
-                concept="AI가 최적화한 맞춤형 여행 계획",
-                daily_plans=daily_plans,
-                places=places
-            )
+                return TravelPlan(
+                    title=title,
+                    concept="AI가 최적화한 맞춤형 여행 계획",
+                    daily_plans=daily_plans,
+                    places=places
+                )
             
         except Exception as e:
-            logger.error(f"AI 응답 변환 실패: {e}")
+            logger.error(f"❌ [CONVERT_ERROR] AI 응답 변환 실패: {e}")
+            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
+            logger.error(f"📊 [RAW_RESPONSE] 원본 응답: {ai_response}")
             # 폴백으로 기본 계획 반환
+            logger.info("🔄 [FALLBACK_CONVERT] 폴백 계획 생성 시작")
             return self._create_optimized_travel_plan(places, len(places) // 3 or 1) 
