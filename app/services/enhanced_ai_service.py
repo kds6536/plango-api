@@ -139,48 +139,100 @@ class EnhancedAIService:
             # AI로 응답 생성
             response = await self.generate_response(final_prompt)
             
-            # JSON 응답 검증
+            # JSON 응답 검증 및 정제
             try:
-                json.loads(response)  # JSON 파싱 테스트
-                logger.info("일정 생성 완료 - 유효한 JSON 응답")
+                # 1차 시도: 원본 그대로 파싱
+                json.loads(response)
+                logger.info("✅ 일정 생성 완료 - 유효한 JSON 응답")
                 return response
             except json.JSONDecodeError as e:
-                logger.error(f"AI가 유효하지 않은 JSON을 반환했습니다: {e}")
-                # 간단한 JSON 정리 시도
-                cleaned_response = self._clean_json_response(response)
-                json.loads(cleaned_response)  # 다시 검증
-                return cleaned_response
+                logger.warning(f"⚠️ 1차 JSON 파싱 실패: {e}")
+                logger.info("🔧 JSON 정제 시도 중...")
+                
+                try:
+                    # 2차 시도: JSON 정제 후 파싱
+                    cleaned_response = self._clean_json_response(response)
+                    json.loads(cleaned_response)  # 정제된 응답 검증
+                    logger.info("✅ JSON 정제 성공 - 유효한 응답 생성")
+                    return cleaned_response
+                except (json.JSONDecodeError, ValueError) as clean_error:
+                    logger.error(f"❌ JSON 정제도 실패: {clean_error}")
+                    logger.error(f"📝 AI 원본 응답 (처음 1000자): {response[:1000]}...")
+                    
+                    # 최후 수단: 기본 응답 구조 반환
+                    fallback_response = {
+                        "travel_plan": {
+                            "total_days": 1,
+                            "daily_start_time": "09:00",
+                            "daily_end_time": "22:00",
+                            "days": []
+                        }
+                    }
+                    logger.info("🔄 폴백 응답 사용")
+                    return json.dumps(fallback_response, ensure_ascii=False)
                 
         except Exception as e:
             logger.error(f"마스터 프롬프트 일정 생성 실패: {e}")
             raise
     
     def _clean_json_response(self, response: str) -> str:
-        """AI 응답에서 JSON 부분만 추출하고 정리"""
+        """AI 응답에서 JSON 부분만 추출하고 정리 - 강화된 버전"""
         try:
-            # Markdown 코드 블록 제거
+            logger.info(f"🔧 JSON 정제 시작 - 원본 길이: {len(response)}")
+            
+            # 1단계: Markdown 코드 블록 제거
             if '```json' in response:
                 start = response.find('```json') + 7
                 end = response.find('```', start)
                 if end != -1:
                     response = response[start:end].strip()
+                    logger.info("✅ Markdown JSON 블록 추출 완료")
             elif '```' in response:
                 start = response.find('```') + 3
                 end = response.find('```', start)
                 if end != -1:
                     response = response[start:end].strip()
+                    logger.info("✅ Markdown 코드 블록 추출 완료")
             
-            # 첫 번째 { 부터 마지막 } 까지 추출
+            # 2단계: 첫 번째 { 부터 마지막 } 까지 추출 (중괄호 균형 맞추기)
             start_brace = response.find('{')
-            end_brace = response.rfind('}')
+            if start_brace == -1:
+                raise ValueError("JSON 시작 중괄호를 찾을 수 없습니다")
+            
+            # 중괄호 균형을 맞춰서 올바른 JSON 끝 지점 찾기
+            brace_count = 0
+            end_brace = start_brace
+            
+            for i in range(start_brace, len(response)):
+                if response[i] == '{':
+                    brace_count += 1
+                elif response[i] == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_brace = i
+                        break
+            
+            if brace_count != 0:
+                # 균형이 맞지 않으면 마지막 } 사용
+                end_brace = response.rfind('}')
+                logger.warning("⚠️ 중괄호 균형이 맞지 않음, 마지막 }를 사용")
             
             if start_brace != -1 and end_brace != -1 and end_brace > start_brace:
-                response = response[start_brace:end_brace + 1]
-            
-            return response.strip()
+                cleaned = response[start_brace:end_brace + 1]
+                logger.info(f"✅ JSON 추출 완료 - 정제된 길이: {len(cleaned)}")
+                
+                # 3단계: 기본적인 JSON 구조 검증
+                if cleaned.count('{') == 0 or cleaned.count('}') == 0:
+                    raise ValueError("유효한 JSON 구조가 아닙니다")
+                
+                return cleaned.strip()
+            else:
+                raise ValueError("유효한 JSON 범위를 찾을 수 없습니다")
             
         except Exception as e:
-            logger.error(f"JSON 정리 실패: {e}")
+            logger.error(f"❌ JSON 정리 실패: {e}")
+            logger.error(f"📝 원본 응답 (처음 500자): {response[:500]}...")
+            # 정제 실패 시 원본 반환 (상위에서 다시 에러 처리)
             return response
     
     async def get_master_prompt(self, prompt_type: str = 'itinerary_generation') -> str:
