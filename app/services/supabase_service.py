@@ -45,23 +45,33 @@ class SupabaseService:
             if not self.is_connected():
                 return []
             
-            # 동기 Supabase 호출을 비동기로 래핑
-            import asyncio
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.client.table('cities').select(
-                    'id, name, countries(name), regions(name)'
-                ).ilike('name', f'%{city_name}%').execute()
-            )
+            # 관계 조인 없이 단순 조회로 변경 (관계 설정 문제 회피)
+            response = self.client.table('cities').select('*').ilike('name', f'%{city_name}%').execute()
             
             cities = []
             for city in response.data:
+                # 별도로 country와 region 정보 조회
+                country_name = "Unknown"
+                region_name = ""
+                
+                try:
+                    if city.get('region_id'):
+                        region_resp = self.client.table('regions').select('name, country_id').eq('id', city['region_id']).execute()
+                        if region_resp.data:
+                            region_name = region_resp.data[0].get('name', '')
+                            country_id = region_resp.data[0].get('country_id')
+                            if country_id:
+                                country_resp = self.client.table('countries').select('name').eq('id', country_id).execute()
+                                if country_resp.data:
+                                    country_name = country_resp.data[0].get('name', 'Unknown')
+                except Exception as join_error:
+                    logger.warning(f"관계 조회 실패: {join_error}")
+                
                 cities.append({
                     'city_id': city['id'],
                     'city_name': city['name'],
-                    'country_name': city['countries']['name'] if city['countries'] else 'Unknown',
-                    'region_name': city['regions']['name'] if city['regions'] else ''
+                    'country_name': country_name,
+                    'region_name': region_name
                 })
             
             return cities

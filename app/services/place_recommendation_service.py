@@ -617,29 +617,67 @@ class PlaceRecommendationService:
             }
 
     def _extract_json_from_response(self, response: str) -> str:
-        """AI 응답에서 JSON 부분만 추출"""
+        """AI 응답에서 JSON 부분만 추출 (개선된 버전)"""
         try:
-            # JSON 블록 찾기
-            start_markers = ['{', '[']
-            end_markers = ['}', ']']
+            if not response or not isinstance(response, str):
+                raise ValueError("빈 응답 또는 잘못된 형식")
             
-            for start_marker, end_marker in zip(start_markers, end_markers):
-                start_idx = response.find(start_marker)
-                if start_idx != -1:
-                    # 마지막 매칭되는 end_marker 찾기
-                    end_idx = response.rfind(end_marker)
-                    if end_idx > start_idx:
-                        json_str = response[start_idx:end_idx + 1]
-                        # 간단한 JSON 유효성 검사
-                        json.loads(json_str)  # 파싱 테스트
+            response = response.strip()
+            
+            # 1. 완전한 JSON 객체 찾기 (중괄호 매칭)
+            brace_count = 0
+            start_idx = -1
+            
+            for i, char in enumerate(response):
+                if char == '{':
+                    if start_idx == -1:
+                        start_idx = i
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0 and start_idx != -1:
+                        # 완전한 JSON 객체 발견
+                        json_str = response[start_idx:i + 1]
+                        try:
+                            # 유효성 검사
+                            json.loads(json_str)
+                            logger.info(f"✅ [JSON_EXTRACT] 완전한 JSON 추출 성공: {len(json_str)}자")
+                            return json_str
+                        except json.JSONDecodeError:
+                            continue
+            
+            # 2. 배열 형태 JSON 찾기
+            if '[' in response and ']' in response:
+                start_idx = response.find('[')
+                end_idx = response.rfind(']')
+                if end_idx > start_idx:
+                    json_str = response[start_idx:end_idx + 1]
+                    try:
+                        json.loads(json_str)
+                        logger.info(f"✅ [JSON_EXTRACT] 배열 JSON 추출 성공: {len(json_str)}자")
                         return json_str
+                    except json.JSONDecodeError:
+                        pass
             
-            # JSON 블록을 찾지 못한 경우 전체 응답 반환
-            return response.strip()
+            # 3. 마지막 시도: 첫 번째 { 부터 마지막 } 까지
+            first_brace = response.find('{')
+            last_brace = response.rfind('}')
+            if first_brace != -1 and last_brace > first_brace:
+                json_str = response[first_brace:last_brace + 1]
+                try:
+                    json.loads(json_str)
+                    logger.info(f"✅ [JSON_EXTRACT] 범위 JSON 추출 성공: {len(json_str)}자")
+                    return json_str
+                except json.JSONDecodeError:
+                    pass
+            
+            # 4. 실패 시 원본 반환
+            logger.warning(f"⚠️ [JSON_EXTRACT] JSON 추출 실패, 원본 반환: {len(response)}자")
+            return response
             
         except Exception as e:
-            logger.warning(f"⚠️ [JSON_EXTRACT_WARN] JSON 추출 실패, 원본 반환: {e}")
-            return response.strip()
+            logger.error(f"❌ [JSON_EXTRACT_ERROR] JSON 추출 중 오류: {e}")
+            return response.strip() if response else "{}"
 
     async def _save_new_places(self, city_id: int, recommendations: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
         """새로운 장소들을 cached_places 테이블에 저장"""

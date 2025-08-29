@@ -251,22 +251,36 @@ class GooglePlacesService:
             await self._retry_insufficient_categories(categorized_results, retry_needed, 
                                                    search_queries, target_count_per_category)
         
-        # 3단계: 카테고리별로 정확히 target_count_per_category 개수로 정규화
-        normalized_results: Dict[str, List[Dict[str, Any]]] = {}
+        # 3단계: 전체 중복 제거 후 카테고리별 정규화
+        # 먼저 전체 장소에서 place_id 기준으로 중복 제거
+        all_unique_places: Dict[str, Dict[str, Any]] = {}
+        
         for category, places in categorized_results.items():
-            # place_id 기준 중복 제거
-            unique: Dict[str, Dict[str, Any]] = {}
-            for p in places:
-                pid = p.get("place_id") or p.get("id")
-                if pid and pid not in unique:
-                    unique[pid] = p
-            deduped = list(unique.values())
-
-            # 평점/리뷰수 기준 정렬 후 상위 N개 슬라이싱
-            deduped.sort(key=lambda x: (x.get("rating", 0), x.get("user_ratings_total", 0)), reverse=True)
-            trimmed = deduped[:target_count_per_category]
-
-            normalized_results[category] = trimmed
+            for place in places:
+                place_id = place.get("place_id") or place.get("id")
+                if place_id and place_id not in all_unique_places:
+                    # 카테고리 정보 보존하되, 첫 번째로 발견된 카테고리 우선
+                    place["category"] = category
+                    all_unique_places[place_id] = place
+        
+        # 카테고리별로 재분류
+        normalized_results: Dict[str, List[Dict[str, Any]]] = {
+            "tourism": [],
+            "food": [],
+            "activity": [],
+            "accommodation": []
+        }
+        
+        for place in all_unique_places.values():
+            category = place.get("category", "tourism")
+            if category in normalized_results:
+                normalized_results[category].append(place)
+        
+        # 각 카테고리별로 평점 기준 정렬 후 상위 N개 선택
+        for category in normalized_results:
+            places = normalized_results[category]
+            places.sort(key=lambda x: (x.get("rating", 0), x.get("user_ratings_total", 0)), reverse=True)
+            normalized_results[category] = places[:target_count_per_category]
 
         # 최종 결과 로깅
         final_counts = {cat: len(places) for cat, places in normalized_results.items()}
