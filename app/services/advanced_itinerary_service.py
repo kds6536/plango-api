@@ -721,23 +721,7 @@ JSON 형식으로 응답해주세요:
             logger.info(f"카테고리 '{category}' 필터링 완료: {len(filtered_results[category])}개 장소")
         
         logger.info(f"결과 처리 및 필터링 완료: {[(k, len(v)) for k, v in filtered_results.items()]}")
-        return filtered_results place in places:
-                place_id = place.get('place_id')
-                if place_id and place_id not in unique_places:
-                    unique_places[place_id] = place
-            
-            logger.info(f"카테고리 '{category}' 중복 제거 후: {len(unique_places)}개 장소")
-            
-            # 평점 기준으로 정렬 (평점이 높은 순)
-            sorted_places = sorted(
-                unique_places.values(),
-                key=lambda x: x.get('rating', 0) or 0,
-                reverse=True
-            )
-            
-            # 상위 N개 선택
-            filtered_results[category] = sorted_places[:max_items]
-            logger.info(f"카테고리 '{category}' 최종 결과: {len(filtered_results[category])}개 장소")
+        return filtered_results
         
         logger.info(f"결과 처리 및 필터링 완료: 카테고리별 결과 {[(k, len(v)) for k, v in filtered_results.items()]}")
         return filtered_results
