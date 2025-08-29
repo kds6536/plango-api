@@ -97,7 +97,7 @@ class SupabaseService:
                     'address': place.get('address'),
                     'rating': place.get('rating'),
                     'photo_url': place.get('photo_url', ''),
-                    'website': place.get('website_uri', ''),  # 🔥 핵심 수정: website_uri 추가
+                    'website': place.get('website_url', ''),  # 🔥 핵심 수정: website_url로 수정
                     'coordinates': {
                         'lat': place.get('latitude', 0.0),
                         'lng': place.get('longitude', 0.0)
@@ -382,7 +382,7 @@ class SupabaseService:
                     'address': place.get('address', ''),
                     'rating': place.get('rating', 0.0),
                     'photo_url': place.get('photo_url', ''),
-                    'website_uri': place.get('website', '') or place.get('websiteUri', ''),  # 🔥 핵심 수정: website_uri 추가
+                    'website_url': place.get('website', '') or place.get('websiteUri', ''),  # 🔥 핵심 수정: website_url로 수정
                     'latitude': place.get('lat', 0.0),
                     'longitude': place.get('lng', 0.0)
                 }
@@ -513,7 +513,8 @@ class SupabaseService:
                 'category': place_data.get('category'),
                 'address': place_data.get('address', ''),
                 'rating': place_data.get('rating', 0.0),
-                'photo_url': place_data.get('photo_url', ''),  # 사진 URL 추가
+                'photo_url': place_data.get('photo_url', ''),
+                'website_url': place_data.get('website', '') or place_data.get('websiteUri', ''),  # 웹사이트 URL 추가
                 'latitude': coordinates.get('lat', 0.0),
                 'longitude': coordinates.get('lng', 0.0)
             }

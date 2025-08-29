@@ -140,46 +140,33 @@ class EnhancedAIService:
             response = await self.generate_response(final_prompt)
             logger.info(f"🤖 [AI_RESPONSE] AI 응답 수신 완료 (길이: {len(response)})")
             
-            # JSON 응답 검증 및 정제
+            # JSON 응답 검증 및 정제 - 간단하고 확실한 방법
+            logger.info("🔧 JSON 파싱 시작")
+            
+            # 즉시 강력한 정제 적용
+            cleaned_response = self._extract_json_only(response)
+            
             try:
-                # 1차 시도: 원본 그대로 파싱
-                json.loads(response)
-                logger.info("✅ 일정 생성 완료 - 유효한 JSON 응답")
-                return response
+                # 정제된 응답 파싱 시도
+                parsed_json = json.loads(cleaned_response)
+                logger.info("✅ JSON 파싱 성공")
+                return cleaned_response
             except json.JSONDecodeError as e:
-                logger.warning(f"⚠️ 1차 JSON 파싱 실패: {e}")
-                logger.info("🔧 JSON 정제 시도 중...")
+                logger.error(f"❌ JSON 파싱 최종 실패: {e}")
+                logger.error(f"📝 정제된 응답 (처음 1000자): {cleaned_response[:1000]}...")
+                logger.error(f"📝 AI 원본 응답 (처음 1000자): {response[:1000]}...")
                 
-                try:
-                    # 2차 시도: 강화된 JSON 정제 후 파싱
-                    cleaned_response = self._clean_json_response(response)
-                    json.loads(cleaned_response)  # 정제된 응답 검증
-                    logger.info("✅ JSON 정제 성공 - 유효한 응답 생성")
-                    return cleaned_response
-                except (json.JSONDecodeError, ValueError) as clean_error:
-                    logger.error(f"❌ JSON 정제도 실패: {clean_error}")
-                    logger.error(f"📝 AI 원본 응답 (처음 2000자): {response[:2000]}...")
-                    
-                    # 3차 시도: 더 강력한 정제
-                    try:
-                        ultra_cleaned = self._ultra_clean_json(response)
-                        json.loads(ultra_cleaned)
-                        logger.info("✅ 강화 정제 성공")
-                        return ultra_cleaned
-                    except Exception as ultra_error:
-                        logger.error(f"❌ 강화 정제도 실패: {ultra_error}")
-                        
-                        # 최후 수단: 기본 응답 구조 반환
-                        fallback_response = {
-                            "travel_plan": {
-                                "total_days": 1,
-                                "daily_start_time": "09:00",
-                                "daily_end_time": "22:00",
-                                "days": []
-                            }
-                        }
-                        logger.info("🔄 폴백 응답 사용")
-                        return json.dumps(fallback_response, ensure_ascii=False)
+                # 최후 수단: 기본 응답 구조 반환
+                fallback_response = {
+                    "travel_plan": {
+                        "total_days": 1,
+                        "daily_start_time": "09:00",
+                        "daily_end_time": "22:00",
+                        "days": []
+                    }
+                }
+                logger.info("🔄 폴백 응답 사용")
+                return json.dumps(fallback_response, ensure_ascii=False)
                 
         except Exception as e:
             logger.error(f"마스터 프롬프트 일정 생성 실패: {e}")
@@ -310,6 +297,32 @@ class EnhancedAIService:
         except Exception as e:
             logger.error(f"❌ 강화 정제 실패: {e}")
             raise
+    
+    def _extract_json_only(self, response: str) -> str:
+        """가장 간단하고 확실한 JSON 추출 방법"""
+        try:
+            logger.info("🔧 간단 JSON 추출 시작")
+            
+            # 1. 첫 번째 { 찾기
+            start = response.find('{')
+            if start == -1:
+                raise ValueError("JSON 시작점 없음")
+            
+            # 2. 마지막 } 찾기 (가장 간단한 방법)
+            end = response.rfind('}')
+            if end == -1 or end <= start:
+                raise ValueError("JSON 끝점 없음")
+            
+            # 3. 추출
+            result = response[start:end + 1]
+            
+            logger.info(f"✅ 간단 JSON 추출 완료 - 길이: {len(result)}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ 간단 JSON 추출 실패: {e}")
+            # 실패 시 원본 반환
+            return response
     
     async def get_master_prompt(self, prompt_type: str = 'itinerary_generation') -> str:
         """마스터 프롬프트 조회: 매핑/폴백 없이 지정 명칭 그대로 사용"""
