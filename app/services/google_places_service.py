@@ -35,13 +35,24 @@ class GooglePlacesService:
     def _extract_photo_url(self, place: Dict[str, Any], max_height_px: int = 400) -> str:
         """Places API(New) 사진 리소스 이름으로 미디어 URL을 생성"""
         try:
+            if not self.api_key:
+                logger.warning("⚠️ API 키가 없어 사진 URL을 생성할 수 없습니다")
+                return ""
+                
             photos = place.get("photos") or []
-            if photos and isinstance(photos, list):
-                name = photos[0].get("name")
-                if name and isinstance(name, str):
-                    return f"https://places.googleapis.com/v1/{name}/media?maxHeightPx={max_height_px}&key={self.api_key}"
-        except Exception:
-            pass
+            if photos and isinstance(photos, list) and len(photos) > 0:
+                photo = photos[0]
+                name = photo.get("name")
+                if name and isinstance(name, str) and name.strip():
+                    photo_url = f"https://places.googleapis.com/v1/{name}/media?maxHeightPx={max_height_px}&key={self.api_key}"
+                    logger.debug(f"✅ 사진 URL 생성 성공: {name}")
+                    return photo_url
+                else:
+                    logger.debug("⚠️ 사진 이름이 유효하지 않음")
+            else:
+                logger.debug("⚠️ 사진 데이터가 없음")
+        except Exception as e:
+            logger.error(f"❌ 사진 URL 생성 실패: {e}")
         return ""
 
     async def search_places_text(self, text_query: str, fields: List[str], language_code: str = "ko") -> Dict[str, Any]:

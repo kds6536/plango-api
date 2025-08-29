@@ -209,6 +209,320 @@ class AdvancedItineraryService:
         except Exception as e:
             logger.error(f"기본 장소 생성 실패: {e}")
             return []
+
+    async def _step2_ai_brainstorming_v6(self, city: str, country: str, request: ItineraryRequest, destination_index: int) -> Dict[str, List[str]]:
+        """AI 브레인스토밍으로 카테고리별 키워드 생성"""
+        try:
+            logger.info(f"AI 브레인스토밍 시작: {city}, {country}")
+            
+            # AI 핸들러 가져오기
+            ai_handler = await self._get_ai_handler()
+            if not ai_handler:
+                logger.error("AI 핸들러를 가져올 수 없습니다")
+                return self._get_default_keywords(city, country)
+            
+            # 브레인스토밍 프롬프트 구성
+            prompt = f"""
+다음 도시에 대한 여행 장소를 카테고리별로 추천해주세요:
+
+도시: {city}, {country}
+여행 기간: {getattr(request, 'total_duration', 3)}일
+여행자 수: {getattr(request, 'travelers_count', 2)}명
+예산: {getattr(request, 'budget_range', 'medium')}
+여행 스타일: {', '.join(getattr(request, 'travel_style', ['문화', '관광']))}
+
+다음 4개 카테고리별로 각각 5-10개의 구체적인 장소명을 추천해주세요:
+
+1. 관광 (tourist attractions, landmarks, museums)
+2. 음식 (restaurants, cafes, local food)
+3. 액티비티 (activities, entertainment, experiences)
+4. 숙박 (hotels, accommodations)
+
+JSON 형식으로 응답해주세요:
+{{
+    "관광": ["장소명1", "장소명2", ...],
+    "음식": ["장소명1", "장소명2", ...],
+    "액티비티": ["장소명1", "장소명2", ...],
+    "숙박": ["장소명1", "장소명2", ...]
+}}
+"""
+            
+            # AI 호출
+            response = await ai_handler.generate_text(prompt, max_tokens=1000)
+            
+            if response:
+                # JSON 파싱 시도
+                try:
+                    import json
+                    # JSON 추출
+                    json_start = response.find('{')
+                    json_end = response.rfind('}') + 1
+                    if json_start != -1 and json_end > json_start:
+                        json_str = response[json_start:json_end]
+                        keywords = json.loads(json_str)
+                        logger.info(f"AI 브레인스토밍 성공: {len(keywords)}개 카테고리")
+                        return keywords
+                except Exception as parse_error:
+                    logger.error(f"AI 응답 파싱 실패: {parse_error}")
+            
+            # 실패 시 기본 키워드 반환
+            return self._get_default_keywords(city, country)
+            
+        except Exception as e:
+            logger.error(f"AI 브레인스토밍 실패: {e}")
+            return self._get_default_keywords(city, country)
+
+    def _get_default_keywords(self, city: str, country: str) -> Dict[str, List[str]]:
+        """기본 키워드 생성"""
+        return {
+            "관광": [f"{city} 관광명소", f"{city} 박물관", f"{city} 랜드마크", f"{city} 문화유산"],
+            "음식": [f"{city} 맛집", f"{city} 현지음식", f"{city} 카페", f"{city} 레스토랑"],
+            "액티비티": [f"{city} 체험", f"{city} 액티비티", f"{city} 엔터테인먼트", f"{city} 쇼핑"],
+            "숙박": [f"{city} 호텔", f"{city} 숙박", f"{city} 게스트하우스", f"{city} 리조트"]
+        }
+
+    async def _step3_enhance_places_v6(self, keywords_by_category: Dict[str, List[str]], city: str, country: str, language_code: str = "ko") -> Dict[str, List[Dict[str, Any]]]:
+        """Google Places API로 장소 정보 강화"""
+        try:
+            logger.info(f"Google Places API 강화 시작: {city}")
+            
+            enhanced_places = {}
+            
+            for category, keywords in keywords_by_category.items():
+                category_places = []
+                
+                for keyword in keywords[:3]:  # 각 카테고리당 상위 3개 키워드만 사용
+                    try:
+                        # Google Places API 검색
+                        places = await self.google_places.search_places(
+                            query=keyword,
+                            location=f"{city}, {country}",
+                            language_code=language_code
+                        )
+                        
+                        # 결과 추가 (중복 제거)
+                        for place in places[:5]:  # 키워드당 최대 5개
+                            if not any(p.get('place_id') == place.get('place_id') for p in category_places):
+                                category_places.append(place)
+                        
+                    except Exception as search_error:
+                        logger.warning(f"키워드 '{keyword}' 검색 실패: {search_error}")
+                        continue
+                
+                enhanced_places[category] = category_places
+                logger.info(f"카테고리 '{category}': {len(category_places)}개 장소 발견")
+            
+            return enhanced_places
+            
+        except Exception as e:
+            logger.error(f"Google Places API 강화 실패: {e}")
+            return {}
+
+    def _step4_process_and_filter_v6(self, enhanced_places: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+        """결과 처리 및 필터링"""
+        try:
+            filtered_places = {}
+            
+            for category, places in enhanced_places.items():
+                # 평점 기준 정렬
+                sorted_places = sorted(
+                    places, 
+                    key=lambda x: (x.get('rating', 0), x.get('user_ratings_total', 0)), 
+                    reverse=True
+                )
+                
+                # 상위 10개 선택
+                filtered_places[category] = sorted_places[:10]
+                
+                logger.info(f"카테고리 '{category}': {len(filtered_places[category])}개 장소 필터링 완료")
+            
+            return filtered_places
+            
+        except Exception as e:
+            logger.error(f"결과 처리 및 필터링 실패: {e}")
+            return enhanced_places  # 실패 시 원본 반환
+
+    async def create_final_itinerary(self, places: List[PlaceData], constraints: Dict[str, Any] = None) -> OptimizeResponse:
+        """최종 일정 생성"""
+        try:
+            logger.info(f"최종 일정 생성 시작: {len(places)}개 장소")
+            
+            if not constraints:
+                constraints = {
+                    "daily_start_time": "09:00",
+                    "daily_end_time": "22:00",
+                    "duration": max(1, len(places) // 3)
+                }
+            
+            duration = constraints.get("duration", 3)
+            daily_start = constraints.get("daily_start_time", "09:00")
+            daily_end = constraints.get("daily_end_time", "22:00")
+            
+            # AI 핸들러 가져오기
+            ai_handler = await self._get_ai_handler()
+            if not ai_handler:
+                logger.error("AI 핸들러를 가져올 수 없습니다")
+                return self._create_simple_itinerary(places, duration, daily_start, daily_end)
+            
+            # 일정 생성 프롬프트 구성
+            places_info = []
+            for place in places:
+                places_info.append(f"- {place.name} ({place.category}): {place.address}")
+            
+            prompt = f"""
+다음 장소들을 {duration}일 일정으로 최적화해서 배치해주세요:
+
+장소 목록:
+{chr(10).join(places_info)}
+
+조건:
+- 일일 활동 시간: {daily_start} ~ {daily_end}
+- 총 {duration}일 일정
+- 지리적 위치와 카테고리를 고려한 효율적인 배치
+- 각 일차별로 3-5개 장소 배치
+
+JSON 형식으로 응답해주세요:
+{{
+    "travel_plan": {{
+        "total_days": {duration},
+        "daily_start_time": "{daily_start}",
+        "daily_end_time": "{daily_end}",
+        "days": [
+            {{
+                "day": 1,
+                "date": "2024-01-01",
+                "activities": [
+                    {{
+                        "time": "09:00",
+                        "place_name": "장소명",
+                        "category": "관광",
+                        "duration_minutes": 120,
+                        "description": "활동 설명"
+                    }}
+                ]
+            }}
+        ]
+    }}
+}}
+"""
+            
+            # AI 호출
+            response = await ai_handler.generate_text(prompt, max_tokens=2000)
+            
+            if response:
+                try:
+                    import json
+                    # JSON 추출
+                    json_start = response.find('{')
+                    json_end = response.rfind('}') + 1
+                    if json_start != -1 and json_end > json_start:
+                        json_str = response[json_start:json_end]
+                        itinerary_data = json.loads(json_str)
+                        
+                        # OptimizeResponse 형식으로 변환
+                        travel_plan = itinerary_data.get("travel_plan", {})
+                        
+                        # DayPlan 객체들 생성
+                        day_plans = []
+                        for day_data in travel_plan.get("days", []):
+                            activities = []
+                            for activity_data in day_data.get("activities", []):
+                                activity = ActivityDetail(
+                                    time=activity_data.get("time", "09:00"),
+                                    place_name=activity_data.get("place_name", ""),
+                                    category=activity_data.get("category", "관광"),
+                                    duration_minutes=activity_data.get("duration_minutes", 120),
+                                    description=activity_data.get("description", "")
+                                )
+                                activities.append(activity)
+                            
+                            day_plan = DayPlan(
+                                day=day_data.get("day", 1),
+                                date=day_data.get("date", "2024-01-01"),
+                                activities=activities
+                            )
+                            day_plans.append(day_plan)
+                        
+                        final_plan = TravelPlan(
+                            total_days=travel_plan.get("total_days", duration),
+                            daily_start_time=travel_plan.get("daily_start_time", daily_start),
+                            daily_end_time=travel_plan.get("daily_end_time", daily_end),
+                            days=day_plans
+                        )
+                        
+                        logger.info(f"AI 일정 생성 성공: {len(day_plans)}일 일정")
+                        return OptimizeResponse(travel_plan=final_plan)
+                        
+                except Exception as parse_error:
+                    logger.error(f"AI 응답 파싱 실패: {parse_error}")
+            
+            # 실패 시 간단한 일정 생성
+            return self._create_simple_itinerary(places, duration, daily_start, daily_end)
+            
+        except Exception as e:
+            logger.error(f"최종 일정 생성 실패: {e}")
+            return self._create_simple_itinerary(places, duration, daily_start, daily_end)
+
+    def _create_simple_itinerary(self, places: List[PlaceData], duration: int, daily_start: str, daily_end: str) -> OptimizeResponse:
+        """간단한 일정 생성 (AI 실패 시 폴백)"""
+        try:
+            logger.info(f"간단한 일정 생성: {len(places)}개 장소, {duration}일")
+            
+            # 장소를 일수로 나누어 배치
+            places_per_day = max(1, len(places) // duration)
+            day_plans = []
+            
+            for day in range(1, duration + 1):
+                start_idx = (day - 1) * places_per_day
+                end_idx = min(start_idx + places_per_day, len(places))
+                day_places = places[start_idx:end_idx]
+                
+                activities = []
+                current_time = daily_start
+                
+                for i, place in enumerate(day_places):
+                    # 시간 계산 (2시간씩 배치)
+                    hour = int(current_time.split(':')[0]) + (i * 2)
+                    if hour >= 22:  # 22시 이후는 다음날로
+                        break
+                    
+                    activity = ActivityDetail(
+                        time=f"{hour:02d}:00",
+                        place_name=place.name,
+                        category=place.category,
+                        duration_minutes=120,
+                        description=f"{place.name}에서의 활동"
+                    )
+                    activities.append(activity)
+                
+                day_plan = DayPlan(
+                    day=day,
+                    date=f"2024-01-{day:02d}",
+                    activities=activities
+                )
+                day_plans.append(day_plan)
+            
+            travel_plan = TravelPlan(
+                total_days=duration,
+                daily_start_time=daily_start,
+                daily_end_time=daily_end,
+                days=day_plans
+            )
+            
+            logger.info(f"간단한 일정 생성 완료: {len(day_plans)}일")
+            return OptimizeResponse(travel_plan=travel_plan)
+            
+        except Exception as e:
+            logger.error(f"간단한 일정 생성 실패: {e}")
+            # 최소한의 응답 반환
+            return OptimizeResponse(
+                travel_plan=TravelPlan(
+                    total_days=1,
+                    daily_start_time="09:00",
+                    daily_end_time="22:00",
+                    days=[]
+                )
+            )
             
         except Exception as e:
             logger.error(f"목적지 {destination.city} 추천 생성 실패: {e}", exc_info=True)
