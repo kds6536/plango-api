@@ -569,10 +569,6 @@ JSON 형식으로 응답해주세요:
     }
 }
 """
-            
-        except Exception as e:
-            logger.error(f"목적지 {destination.city} 추천 생성 실패: {e}", exc_info=True)
-            return []
 
     async def _step2_ai_brainstorming_v6(self, city: str, country: str, request: ItineraryRequest, destination_index: int):
         """
