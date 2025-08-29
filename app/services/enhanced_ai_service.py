@@ -133,28 +133,32 @@ class EnhancedAIService:
             # 프롬프트에 실제 데이터 주입
             final_prompt = master_prompt.replace('{input_data}', input_data_json)
             
-            logger.info("마스터 프롬프트를 사용하여 일정 생성 시작")
-            logger.info(f"📜 [FINAL_PROMPT_STEP_3] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):\n{final_prompt[:1000]}...")
+            logger.error("🚀 [ITINERARY_START] 마스터 프롬프트를 사용하여 일정 생성 시작")
+            logger.error(f"📜 [FINAL_PROMPT_STEP_3] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):")
+            logger.error(f"📜 [PROMPT_CONTENT] {final_prompt}")
             
             # AI로 응답 생성
+            logger.error("🤖 [AI_CALLING] AI 호출 시작...")
             response = await self.generate_response(final_prompt)
-            logger.info(f"🤖 [AI_RESPONSE] AI 응답 수신 완료 (길이: {len(response)})")
+            logger.error(f"🤖 [AI_RESPONSE] AI 응답 수신 완료 (길이: {len(response)})")
+            logger.error(f"🤖 [RAW_RESPONSE] AI 원본 응답: {response}")
             
             # JSON 응답 검증 및 정제 - 간단하고 확실한 방법
-            logger.info("🔧 JSON 파싱 시작")
+            logger.error("🔧 [JSON_PARSING] JSON 파싱 시작")
             
             # 즉시 강력한 정제 적용
             cleaned_response = self._extract_json_only(response)
+            logger.error(f"🔧 [CLEANED_JSON] 정제된 JSON: {cleaned_response}")
             
             try:
                 # 정제된 응답 파싱 시도
                 parsed_json = json.loads(cleaned_response)
-                logger.info("✅ JSON 파싱 성공")
+                logger.error(f"✅ [PARSED_SUCCESS] JSON 파싱 성공: {parsed_json}")
                 return cleaned_response
             except json.JSONDecodeError as e:
-                logger.error(f"❌ JSON 파싱 최종 실패: {e}")
-                logger.error(f"📝 정제된 응답 (처음 1000자): {cleaned_response[:1000]}...")
-                logger.error(f"📝 AI 원본 응답 (처음 1000자): {response[:1000]}...")
+                logger.error(f"❌ [JSON_ERROR] JSON 파싱 최종 실패: {e}")
+                logger.error(f"📝 [CLEANED_RESPONSE] 정제된 응답: {cleaned_response}")
+                logger.error(f"📝 [ORIGINAL_RESPONSE] AI 원본 응답: {response}")
                 
                 # 최후 수단: 기본 응답 구조 반환
                 fallback_response = {
@@ -165,7 +169,7 @@ class EnhancedAIService:
                         "days": []
                     }
                 }
-                logger.info("🔄 폴백 응답 사용")
+                logger.error("🔄 [FALLBACK] 폴백 응답 사용")
                 return json.dumps(fallback_response, ensure_ascii=False)
                 
         except Exception as e:
@@ -301,26 +305,29 @@ class EnhancedAIService:
     def _extract_json_only(self, response: str) -> str:
         """가장 간단하고 확실한 JSON 추출 방법"""
         try:
-            logger.info("🔧 간단 JSON 추출 시작")
+            logger.error("🔧 [EXTRACT_START] 간단 JSON 추출 시작")
+            logger.error(f"🔧 [EXTRACT_INPUT] 입력 응답 길이: {len(response)}")
             
             # 1. 첫 번째 { 찾기
             start = response.find('{')
+            logger.error(f"🔧 [EXTRACT_START_POS] 시작 위치: {start}")
             if start == -1:
                 raise ValueError("JSON 시작점 없음")
             
             # 2. 마지막 } 찾기 (가장 간단한 방법)
             end = response.rfind('}')
+            logger.error(f"🔧 [EXTRACT_END_POS] 끝 위치: {end}")
             if end == -1 or end <= start:
                 raise ValueError("JSON 끝점 없음")
             
             # 3. 추출
             result = response[start:end + 1]
             
-            logger.info(f"✅ 간단 JSON 추출 완료 - 길이: {len(result)}")
+            logger.error(f"✅ [EXTRACT_SUCCESS] 간단 JSON 추출 완료 - 길이: {len(result)}")
             return result
             
         except Exception as e:
-            logger.error(f"❌ 간단 JSON 추출 실패: {e}")
+            logger.error(f"❌ [EXTRACT_ERROR] 간단 JSON 추출 실패: {e}")
             # 실패 시 원본 반환
             return response
     

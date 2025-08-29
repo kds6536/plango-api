@@ -90,7 +90,7 @@ class SupabaseService:
             
             places = []
             for place in response.data:
-                places.append({
+                place_data = {
                     'place_id': place.get('place_id'),
                     'name': place.get('name'),
                     'category': place.get('category'),
@@ -102,7 +102,10 @@ class SupabaseService:
                         'lat': place.get('latitude', 0.0),
                         'lng': place.get('longitude', 0.0)
                     }
-                })
+                }
+                # 캐시 데이터 로깅
+                logger.error(f"🔍 [CACHE_DATA] Place: {place_data['name']}, website: {place_data['website']}, photo_url: {place_data['photo_url']}")
+                places.append(place_data)
             
             return places
             
