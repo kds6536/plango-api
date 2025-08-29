@@ -722,9 +722,6 @@ JSON 형식으로 응답해주세요:
         
         logger.info(f"결과 처리 및 필터링 완료: {[(k, len(v)) for k, v in filtered_results.items()]}")
         return filtered_results
-        
-        logger.info(f"결과 처리 및 필터링 완료: 카테고리별 결과 {[(k, len(v)) for k, v in filtered_results.items()]}")
-        return filtered_results
 
     def _parse_text_to_keywords(self, text: str) -> Dict[str, List[str]]:
         """
