@@ -134,10 +134,11 @@ class EnhancedAIService:
             final_prompt = master_prompt.replace('{input_data}', input_data_json)
             
             logger.info("마스터 프롬프트를 사용하여 일정 생성 시작")
-            logger.debug(f"최종 프롬프트 길이: {len(final_prompt)} 문자")
+            logger.info(f"📜 [FINAL_PROMPT_STEP_3] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):\n{final_prompt[:1000]}...")
             
             # AI로 응답 생성
             response = await self.generate_response(final_prompt)
+            logger.info(f"🤖 [AI_RESPONSE] AI 응답 수신 완료 (길이: {len(response)})")
             
             # JSON 응답 검증 및 정제
             try:
@@ -150,26 +151,35 @@ class EnhancedAIService:
                 logger.info("🔧 JSON 정제 시도 중...")
                 
                 try:
-                    # 2차 시도: JSON 정제 후 파싱
+                    # 2차 시도: 강화된 JSON 정제 후 파싱
                     cleaned_response = self._clean_json_response(response)
                     json.loads(cleaned_response)  # 정제된 응답 검증
                     logger.info("✅ JSON 정제 성공 - 유효한 응답 생성")
                     return cleaned_response
                 except (json.JSONDecodeError, ValueError) as clean_error:
                     logger.error(f"❌ JSON 정제도 실패: {clean_error}")
-                    logger.error(f"📝 AI 원본 응답 (처음 1000자): {response[:1000]}...")
+                    logger.error(f"📝 AI 원본 응답 (처음 2000자): {response[:2000]}...")
                     
-                    # 최후 수단: 기본 응답 구조 반환
-                    fallback_response = {
-                        "travel_plan": {
-                            "total_days": 1,
-                            "daily_start_time": "09:00",
-                            "daily_end_time": "22:00",
-                            "days": []
+                    # 3차 시도: 더 강력한 정제
+                    try:
+                        ultra_cleaned = self._ultra_clean_json(response)
+                        json.loads(ultra_cleaned)
+                        logger.info("✅ 강화 정제 성공")
+                        return ultra_cleaned
+                    except Exception as ultra_error:
+                        logger.error(f"❌ 강화 정제도 실패: {ultra_error}")
+                        
+                        # 최후 수단: 기본 응답 구조 반환
+                        fallback_response = {
+                            "travel_plan": {
+                                "total_days": 1,
+                                "daily_start_time": "09:00",
+                                "daily_end_time": "22:00",
+                                "days": []
+                            }
                         }
-                    }
-                    logger.info("🔄 폴백 응답 사용")
-                    return json.dumps(fallback_response, ensure_ascii=False)
+                        logger.info("🔄 폴백 응답 사용")
+                        return json.dumps(fallback_response, ensure_ascii=False)
                 
         except Exception as e:
             logger.error(f"마스터 프롬프트 일정 생성 실패: {e}")
@@ -234,6 +244,72 @@ class EnhancedAIService:
             logger.error(f"📝 원본 응답 (처음 500자): {response[:500]}...")
             # 정제 실패 시 원본 반환 (상위에서 다시 에러 처리)
             return response
+    
+    def _ultra_clean_json(self, response: str) -> str:
+        """최강 JSON 정제 - 모든 방법 동원"""
+        try:
+            logger.info("🔧 강화 JSON 정제 시작")
+            
+            # 1. 모든 종류의 코드 블록 제거
+            import re
+            
+            # ```json ... ``` 패턴 추출
+            json_block_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+            match = re.search(json_block_pattern, response, re.DOTALL)
+            if match:
+                response = match.group(1)
+                logger.info("✅ 코드 블록에서 JSON 추출")
+            
+            # 2. 첫 번째 { 찾기
+            start = -1
+            for i, char in enumerate(response):
+                if char == '{':
+                    start = i
+                    break
+            
+            if start == -1:
+                raise ValueError("JSON 시작점을 찾을 수 없음")
+            
+            # 3. 균형 맞춘 } 찾기
+            count = 0
+            end = -1
+            in_string = False
+            escape_next = False
+            
+            for i in range(start, len(response)):
+                char = response[i]
+                
+                if escape_next:
+                    escape_next = False
+                    continue
+                    
+                if char == '\\':
+                    escape_next = True
+                    continue
+                    
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+                    
+                if not in_string:
+                    if char == '{':
+                        count += 1
+                    elif char == '}':
+                        count -= 1
+                        if count == 0:
+                            end = i
+                            break
+            
+            if end == -1:
+                raise ValueError("JSON 끝점을 찾을 수 없음")
+            
+            result = response[start:end + 1]
+            logger.info(f"✅ 강화 정제 완료 - 길이: {len(result)}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ 강화 정제 실패: {e}")
+            raise
     
     async def get_master_prompt(self, prompt_type: str = 'itinerary_generation') -> str:
         """마스터 프롬프트 조회: 매핑/폴백 없이 지정 명칭 그대로 사용"""
