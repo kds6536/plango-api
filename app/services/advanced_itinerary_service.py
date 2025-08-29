@@ -657,6 +657,13 @@ JSON 형식으로 응답해주세요:
                     places = []
                     if result and "places" in result:
                         for place in result["places"]:
+                            # Google Places API에서 photo_url 생성
+                            photo_url = ""
+                            if place.get("photos") and len(place["photos"]) > 0:
+                                photo = place["photos"][0]
+                                if photo.get("name"):
+                                    photo_url = f"https://places.googleapis.com/v1/{photo['name']}/media?maxHeightPx=400&key={google_service.api_key}"
+                            
                             place_data = {
                                 "place_id": place.get("id"),
                                 "name": place.get("displayName", {}).get("text"),
@@ -664,6 +671,7 @@ JSON 형식으로 응답해주세요:
                                 "rating": place.get("rating"),
                                 "lat": place.get("location", {}).get("latitude", 0.0),
                                 "lng": place.get("location", {}).get("longitude", 0.0),
+                                "photo_url": photo_url,  # 사진 URL 추가
                                 "description": f"{keyword} 관련 장소"
                             }
                             places.append(place_data)
