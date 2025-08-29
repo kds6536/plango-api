@@ -379,6 +379,10 @@ class SupabaseService:
                     'name': place.get('name', ''),
                     'category': place.get('category', ''),
                     'address': place.get('address', ''),
+                    'rating': place.get('rating', 0.0),
+                    'photo_url': place.get('photo_url', ''),  # 🔥 핵심 수정: photo_url 추가
+                    'latitude': place.get('lat', 0.0),
+                    'longitude': place.get('lng', 0.0)
                 }
                 cached_places.append(cached_place)
 

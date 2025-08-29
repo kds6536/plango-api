@@ -42,24 +42,19 @@ class GooglePlacesService:
                 return ""
                 
             photos = place.get("photos") or []
-            # ERROR 레벨로 변경하여 Railway 로그에서 확실히 보이도록 함
-            logger.error(f"🔍 [이미지URL검증] Place: {place_name}")
-            logger.error(f"🔍 [이미지URL검증] Photos 존재여부: {bool(photos)}")
-            logger.error(f"🔍 [이미지URL검증] Photos 데이터: {photos}")
             
             if photos and isinstance(photos, list) and len(photos) > 0:
                 photo = photos[0]
                 name = photo.get("name")
-                logger.error(f"🔍 [이미지URL검증] Photo name: {name}")
                 
                 if name and isinstance(name, str) and name.strip():
                     photo_url = f"https://places.googleapis.com/v1/{name}/media?maxHeightPx={max_height_px}&key={self.api_key}"
-                    logger.error(f"🔍 [이미지URL검증] ✅ 성공! Generated Image URL: {photo_url}")
+                    logger.info(f"✅ 사진 URL 생성 성공: {place_name}")
                     return photo_url
                 else:
-                    logger.error(f"🔍 [이미지URL검증] ❌ 실패! Photo name이 유효하지 않음: {name}")
+                    logger.debug("⚠️ 사진 이름이 유효하지 않음")
             else:
-                logger.error(f"🔍 [이미지URL검증] ❌ 실패! Photos 데이터가 없음 또는 빈 배열")
+                logger.debug("⚠️ 사진 데이터가 없음")
         except Exception as e:
             logger.error(f"❌ 사진 URL 생성 실패 - Place: {place_name}: {e}")
             logger.info(f"[검증용 로그] Place: {place_name}, Generated Image URL: None (예외 발생)")
@@ -132,10 +127,7 @@ class GooglePlacesService:
             places = result.get("places", [])
             normalized: List[Dict[str, Any]] = []
             for place in places:
-                # 이미지 URL 생성
-                photo_url = self._extract_photo_url(place)
-                
-                place_data = {
+                normalized.append({
                     "place_id": place.get("id"),
                     "name": place.get("displayName", {}).get("text", "Unknown Place"),
                     "address": place.get("formattedAddress"),
@@ -147,12 +139,8 @@ class GooglePlacesService:
                     "website": place.get("websiteUri", ""),
                     "lat": place.get("location", {}).get("latitude"),
                     "lng": place.get("location", {}).get("longitude"),
-                    "photo_url": photo_url,
-                }
-                
-                # 최종 결과 로깅
-                logger.error(f"🔍 [최종결과] Place: {place_data['name']}, photo_url: {photo_url}")
-                normalized.append(place_data)
+                    "photo_url": self._extract_photo_url(place),
+                })
 
             # place_type이 주어지면 1차 필터링(응답의 primaryType 기준)
             if place_type:
@@ -341,9 +329,6 @@ class GooglePlacesService:
             processed_places = []
             for place in places:
                 # API 응답 구조: displayName.text, location.latitude 등
-                # 이미지 URL 생성
-                photo_url = self._extract_photo_url(place)
-                
                 processed_place = {
                     "place_id": place.get("id", f"{category}_{random.randint(1000, 9999)}"),
                     "name": place.get("displayName", {}).get("text", "Unknown Place"),
@@ -356,11 +341,8 @@ class GooglePlacesService:
                     "website": place.get("websiteUri", ""),
                     "lat": place.get("location", {}).get("latitude", 0.0),
                     "lng": place.get("location", {}).get("longitude", 0.0),
-                    "photo_url": photo_url,
+                    "photo_url": self._extract_photo_url(place),
                 }
-                
-                # 병렬 검색 결과 로깅
-                logger.error(f"🔍 [병렬검색결과] Category: {category}, Place: {processed_place['name']}, photo_url: {photo_url}")
                 processed_places.append(processed_place)
             
             return processed_places
