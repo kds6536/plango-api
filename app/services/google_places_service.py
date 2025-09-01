@@ -508,8 +508,9 @@ class GooglePlacesService:
                 
         except Exception as e:
             logger.error(f"❌ [GEOCODE_ERROR] 주소 '{address}' 표준화 실패: {e}")
-            return None    as
-ync def geocode_location(self, address: str) -> Dict[str, Any]:
+            return None
+
+    async def geocode_location(self, address: str) -> Dict[str, Any]:
         """
         Google Geocoding API를 사용하여 주소를 좌표로 변환하고 표준화된 주소 정보 반환
         동명 지역 구분에 사용
