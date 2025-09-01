@@ -1,17 +1,19 @@
 [build]
-builder = "NIXPACKS"
+builder = "DOCKERFILE"
 
 [deploy]
 healthcheckPath = "/api/v1/health"
-healthcheckTimeout = 60
-healthcheckInterval = 30
-healthcheckGracePeriod = 90
+healthcheckTimeout = 30
+healthcheckInterval = 60
+healthcheckGracePeriod = 60
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
-
-[build.env]
-PYTHON_VERSION = "3.11"
+restartPolicyMaxRetries = 5
 
 [deploy.env]
 ENVIRONMENT = "production"
-PORT = "8000" 
+PORT = "8000"
+# 메모리 최적화 설정
+PYTHONUNBUFFERED = "1"
+PYTHONDONTWRITEBYTECODE = "1"
+# uvicorn 메모리 최적화
+WEB_CONCURRENCY = "1" 

@@ -1,40 +1,49 @@
-# Python 3.11 베이스 이미지 사용
-FROM python:3.11-slim
+# ===============================================================
+# 멀티스테이지 빌드로 메모리 사용량 최적화
+# ===============================================================
 
-# 작업 디렉토리 설정
+# ---- 1단계: 빌드 스테이지 ----
+FROM python:3.11-alpine as builder
+
+# 빌드에 필요한 최소한의 패키지만 설치
+RUN apk add --no-cache gcc musl-dev libffi-dev
+
+WORKDIR /app
+
+# requirements 복사 및 설치
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# ---- 2단계: 실행 스테이지 ----
+FROM python:3.11-alpine
+
+# 실행에 필요한 최소한의 패키지만 설치
+RUN apk add --no-cache curl && \
+    addgroup -g 1001 -S appuser && \
+    adduser -S appuser -G appuser
+
+# 빌드 스테이지에서 설치된 패키지 복사
+COPY --from=builder /root/.local /home/appuser/.local
+
+# PATH 설정
+ENV PATH=/home/appuser/.local/bin:$PATH
+
 WORKDIR /code
 
-# 시스템 의존성 설치
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Python 의존성 파일 복사
-COPY requirements.txt .
-
-# Python 패키지 설치
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# 애플리케이션 코드 복사 (app 디렉토리만 복사)
-COPY ./app /code/app
+# 애플리케이션 코드만 복사
+COPY --chown=appuser:appuser ./app /code/app
 
 # 로그 디렉토리 생성
-RUN mkdir -p /code/logs
+RUN mkdir -p /code/logs && chown appuser:appuser /code/logs
 
-# 비루트 사용자 생성 및 권한 설정
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /code
 USER appuser
 
 # 포트 노출
 EXPOSE 8000
 
-# 헬스체크 설정
-HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=5 \
-    CMD curl -f -sS http://localhost:${PORT:-8000}/api/v1/health || exit 1
+# 경량화된 헬스체크
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/api/v1/health || exit 1
 
-# 애플리케이션 실행
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} 
+# 메모리 효율적인 uvicorn 설정
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "asyncio"] 

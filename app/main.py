@@ -35,28 +35,35 @@ if settings.BACKEND_CORS_ORIGINS:
 # 로거 초기화
 logger = get_logger("api")
 
-# --- 비동기 시작 이벤트 핸들러 ---
+# --- 메모리 효율적인 시작 이벤트 핸들러 ---
 @app.on_event("startup")
 async def startup_event():
-    global supabase_client
+    """메모리 사용량을 최소화한 초기화"""
     try:
         url = settings.SUPABASE_URL
         key = settings.SUPABASE_KEY
         if url and key:
+            # 지연 로딩으로 메모리 사용량 최적화
             supabase_client = create_client(url, key)
             logger.info("Supabase 클라이언트 초기화 성공")
-            # 라우터에 Supabase 클라이언트 주입
+            
+            # 라우터에 클라이언트 주입 (전역 변수 사용 최소화)
             admin.supabase = supabase_client
             new_itinerary.supabase = supabase_client
         else:
-            logger.warning("Supabase URL 또는 KEY가 설정되지 않았습니다. 관련 기능이 제한될 수 있습니다.")
+            logger.warning("Supabase 설정 누락 - 관련 기능 제한됨")
             admin.supabase = None
             new_itinerary.supabase = None
             
     except Exception as e:
-        logger.error(f"💥 Supabase 클라이언트 초기화 실패: {e}")
+        logger.error(f"Supabase 초기화 실패: {e}")
         admin.supabase = None
         new_itinerary.supabase = None
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """메모리 정리"""
+    logger.info("애플리케이션 종료 - 메모리 정리 중")
 
 # 라우터 포함
 app.include_router(health.router)

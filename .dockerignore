@@ -1,23 +1,53 @@
+# 버전 관리
 .git
 .gitignore
+
+# IDE 및 에디터
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# Python 캐시 및 컴파일 파일
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.env
 .pytest_cache/
+
+# 환경 설정
+.env
+.env.local
+.env.example
+
+# 테스트 및 개발 파일
 test-results/
 tests/
-predeploy_check.py
+*test*.py
+*test*.js
+test_*.json
+*.test.*
+
+# 문서 및 설정
 README.md
+CHANGELOG*.md
 makefile
-main.py.backup
-simple_itinerary.py
-simple_server.py
-simple_test.py
-test_api.py
-test_data.json
-test_new_api.py
-test-api.js
-docker-compose.yml 
+Makefile
+docker-compose.yml
+*.backup
+
+# 로그 파일
+logs/
+*.log
+
+# 임시 파일
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# 개발 스크립트
+predeploy_check.py
+diagnose_connections.py
+setup_*.py
+setup_*.sql 
