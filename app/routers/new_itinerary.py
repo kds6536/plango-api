@@ -92,6 +92,8 @@ async def optimize_itinerary(
             "daily_start_time": payload.get("daily_start_time") or "09:00",
             "daily_end_time": payload.get("daily_end_time") or "22:00",
             "duration": int(payload.get("duration") or max(1, len(places) // 3)),
+            # 날짜별 시간 제약 조건 추가
+            "time_constraints": payload.get("timeConstraints") or payload.get("time_constraints") or []
         }
 
         logging.info(

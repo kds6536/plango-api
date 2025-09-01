@@ -401,6 +401,18 @@ JSON 형식으로 응답해주세요:
             for place in places:
                 places_info.append(f"- {place.name} ({place.category}): {place.address}")
             
+            # 날짜별 시간 제약 조건 처리
+            time_constraints_info = ""
+            if constraints.get("time_constraints"):
+                time_constraints_info = "\n날짜별 시간 제약 조건:"
+                for tc in constraints["time_constraints"]:
+                    day = tc.get("day", 1)
+                    start = tc.get("startTime", daily_start)
+                    end = tc.get("endTime", daily_end)
+                    time_constraints_info += f"\n- {day}일차: {start} ~ {end}"
+            else:
+                time_constraints_info = f"\n전체 일정 시간: {daily_start} ~ {daily_end}"
+            
             # 프롬프트 템플릿 변수 치환
             from string import Template
             template = Template(prompt_template)
@@ -409,7 +421,8 @@ JSON 형식으로 응답해주세요:
                 duration=duration,
                 daily_start_time=daily_start,
                 daily_end_time=daily_end,
-                total_places=len(places)
+                total_places=len(places),
+                time_constraints_info=time_constraints_info
             )
             
             # AI 호출
@@ -538,12 +551,14 @@ JSON 형식으로 응답해주세요:
 장소 목록:
 $places_list
 
+시간 제약 조건:$time_constraints_info
+
 조건:
-- 일일 활동 시간: $daily_start_time ~ $daily_end_time
 - 총 $duration일 일정
 - 지리적 위치와 카테고리를 고려한 효율적인 배치
 - 각 일차별로 3-5개 장소 배치
 - 총 $total_places개 장소 활용
+- 날짜별 시간 제약을 반드시 준수
 
 JSON 형식으로 응답해주세요:
 {
