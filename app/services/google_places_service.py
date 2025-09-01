@@ -508,4 +508,101 @@ class GooglePlacesService:
                 
         except Exception as e:
             logger.error(f"❌ [GEOCODE_ERROR] 주소 '{address}' 표준화 실패: {e}")
-            return None
+            return None    as
+ync def geocode_location(self, address: str) -> Dict[str, Any]:
+        """
+        Google Geocoding API를 사용하여 주소를 좌표로 변환하고 표준화된 주소 정보 반환
+        동명 지역 구분에 사용
+        """
+        try:
+            url = "https://maps.googleapis.com/maps/api/geocode/json"
+            params = {
+                "address": address,
+                "key": self.api_key,
+                "language": "en"  # 영문 표준화를 위해 영어로 요청
+            }
+            
+            logger.info(f"🌍 [GEOCODING] 주소 표준화 요청: {address}")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get('status') == 'OK' and result.get('results'):
+                    logger.info(f"✅ [GEOCODING] 표준화 성공: {len(result['results'])}개 결과")
+                    return result
+                else:
+                    logger.warning(f"⚠️ [GEOCODING] 결과 없음: {result.get('status')}")
+                    return {"results": []}
+                
+        except Exception as e:
+            logger.error(f"❌ [GEOCODING] 실패: {e}")
+            return {"results": []}
+
+    async def find_duplicate_cities(self, city_name: str) -> List[Dict[str, Any]]:
+        """
+        동일한 이름의 도시들을 찾아서 반환
+        예: "광주" -> [광주광역시, 경기도 광주시]
+        """
+        try:
+            logger.info(f"🔍 [DUPLICATE_SEARCH] 동명 도시 검색: {city_name}")
+            
+            # Geocoding API로 동일 이름 도시들 검색
+            geocode_result = await self.geocode_location(city_name)
+            
+            if not geocode_result.get('results'):
+                return []
+            
+            cities = []
+            seen_locations = set()
+            
+            for result in geocode_result['results']:
+                # 주소 구성 요소에서 도시, 지역, 국가 정보 추출
+                components = result.get('address_components', [])
+                
+                city = None
+                region = None
+                country = None
+                
+                for component in components:
+                    types = component.get('types', [])
+                    
+                    if 'locality' in types:
+                        city = component.get('long_name')
+                    elif 'administrative_area_level_1' in types:
+                        region = component.get('long_name')
+                    elif 'country' in types:
+                        country = component.get('long_name')
+                
+                # 유효한 도시 정보가 있고 중복이 아닌 경우만 추가
+                if city and country:
+                    location_key = f"{city}_{region}_{country}"
+                    if location_key not in seen_locations:
+                        seen_locations.add(location_key)
+                        
+                        display_name = city
+                        if region and region != city:
+                            display_name = f"{city}, {region}"
+                        display_name = f"{display_name}, {country}"
+                        
+                        cities.append({
+                            'display_name': display_name,
+                            'request_body': {
+                                'city': city,
+                                'country': country,
+                                'region': region or ''
+                            }
+                        })
+            
+            # 2개 이상의 서로 다른 지역이 발견된 경우만 반환
+            if len(cities) > 1:
+                logger.info(f"✅ [DUPLICATE_FOUND] 동명 도시 {len(cities)}개 발견: {[c['display_name'] for c in cities]}")
+                return cities
+            else:
+                logger.info(f"ℹ️ [NO_DUPLICATES] 동명 도시 없음: {city_name}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ [DUPLICATE_SEARCH_ERROR] 동명 도시 검색 실패: {e}")
+            return []

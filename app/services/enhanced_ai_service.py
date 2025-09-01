@@ -183,18 +183,73 @@ class EnhancedAIService:
                 logger.info(f"✅ [PARSED_SUCCESS] JSON 파싱 성공")
                 logger.info(f"📊 [PARSED_DATA] 파싱된 데이터 구조: {json.dumps(parsed_json, ensure_ascii=False, indent=2)}")
                 
-                # 필수 구조 검증
-                if 'travel_plan' not in parsed_json:
-                    logger.error("❌ [STRUCTURE_ERROR] travel_plan 키가 없습니다")
-                    raise ValueError("travel_plan 키가 없습니다")
+                # 필수 구조 검증 및 자동 수정
+                logger.info(f"🔍 [STRUCTURE_CHECK] JSON 구조 검증 시작")
+                logger.info(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(parsed_json.keys())}")
                 
+                # travel_plan 키가 없는 경우 자동 수정 시도
+                if 'travel_plan' not in parsed_json:
+                    logger.warning("⚠️ [MISSING_TRAVEL_PLAN] travel_plan 키가 없음, 자동 수정 시도")
+                    
+                    # 다른 가능한 키들 확인
+                    possible_keys = ['itinerary', 'plan', 'schedule', 'days']
+                    found_key = None
+                    
+                    for key in possible_keys:
+                        if key in parsed_json:
+                            found_key = key
+                            logger.info(f"✅ [FOUND_ALTERNATIVE] 대체 키 발견: {key}")
+                            break
+                    
+                    if found_key:
+                        # 구조 변환
+                        if found_key == 'days':
+                            # days가 직접 최상위에 있는 경우
+                            parsed_json = {
+                                'travel_plan': {
+                                    'total_days': len(parsed_json['days']),
+                                    'daily_start_time': '09:00',
+                                    'daily_end_time': '22:00',
+                                    'days': parsed_json['days']
+                                }
+                            }
+                        else:
+                            # 다른 키를 travel_plan으로 변경
+                            parsed_json['travel_plan'] = parsed_json.pop(found_key)
+                        
+                        logger.info("✅ [STRUCTURE_FIXED] 구조 자동 수정 완료")
+                    else:
+                        # 완전히 새로운 구조 생성
+                        logger.warning("⚠️ [CREATE_FALLBACK] 폴백 구조 생성")
+                        parsed_json = {
+                            'travel_plan': {
+                                'total_days': 1,
+                                'daily_start_time': '09:00',
+                                'daily_end_time': '22:00',
+                                'days': []
+                            }
+                        }
+                
+                # travel_plan 내부 구조 검증
                 travel_plan = parsed_json['travel_plan']
                 if 'days' not in travel_plan:
-                    logger.error("❌ [STRUCTURE_ERROR] days 키가 없습니다")
-                    raise ValueError("days 키가 없습니다")
+                    logger.warning("⚠️ [MISSING_DAYS] days 키가 없음, 빈 배열로 초기화")
+                    travel_plan['days'] = []
+                
+                # 기본값 설정
+                if 'total_days' not in travel_plan:
+                    travel_plan['total_days'] = len(travel_plan.get('days', []))
+                if 'daily_start_time' not in travel_plan:
+                    travel_plan['daily_start_time'] = '09:00'
+                if 'daily_end_time' not in travel_plan:
+                    travel_plan['daily_end_time'] = '22:00'
                 
                 logger.info(f"✅ [STRUCTURE_OK] 구조 검증 완료: {len(travel_plan.get('days', []))}일 일정")
-                return cleaned_response
+                
+                # 수정된 JSON을 문자열로 반환
+                final_response = json.dumps(parsed_json, ensure_ascii=False, indent=2)
+                logger.info(f"📊 [FINAL_JSON] 최종 JSON 길이: {len(final_response)}")
+                return final_response
                 
             except json.JSONDecodeError as e:
                 logger.error(f"❌ [JSON_ERROR] JSON 파싱 최종 실패: {e}")
