@@ -21,6 +21,7 @@ from app.schemas.itinerary import (
     ItineraryRequest, RecommendationResponse
 )
 from app.services.google_places_service import GooglePlacesService
+from app.services.google_directions_service import GoogleDirectionsService
 from app.utils.logger import get_logger
 from fastapi import HTTPException
 from string import Template  # string.Template을 사용합니다.
@@ -55,6 +56,7 @@ class AdvancedItineraryService:
         self.model_name_openai = getattr(settings, "openai_model", "gpt-3.5-turbo")
         self.model_name_gemini = getattr(settings, "gemini_model", "gemini-1.5-flash")
         self.google_places = google_service or GooglePlacesService()
+        self.google_directions = GoogleDirectionsService()  # Google Directions API 서비스 추가
         self.ai_service = ai_service
         logger.info("AdvancedItineraryService 초기화 완료 - AI 핸들러 패턴 적용")
 
@@ -462,6 +464,11 @@ JSON 형식으로 응답해주세요:
                             )
                             day_plans.append(day_plan)
                         
+                        # ===== 🚗 실제 이동 시간 계산 추가 =====
+                        logger.info("🚗 [DIRECTIONS_API] 실제 이동 시간 계산 시작")
+                        day_plans = await self._calculate_real_travel_times(day_plans, places)
+                        logger.info("🚗 [DIRECTIONS_API] 실제 이동 시간 계산 완료")
+                        
                         final_plan = TravelPlan(
                             total_days=travel_plan.get("total_days", duration),
                             daily_start_time=travel_plan.get("daily_start_time", daily_start),
@@ -542,6 +549,96 @@ JSON 형식으로 응답해주세요:
                     days=[]
                 )
             )
+
+    async def _calculate_real_travel_times(self, day_plans: List[DayPlan], places: List[PlaceData]) -> List[DayPlan]:
+        """
+        실제 Google Directions API를 사용하여 장소 간 이동 시간을 계산하고 업데이트
+        """
+        try:
+            logger.info("🚗 [TRAVEL_TIME_CALC] 실제 이동 시간 계산 시작")
+            
+            # 장소명으로 PlaceData 매핑 생성
+            place_map = {place.name: place for place in places}
+            
+            for day_plan in day_plans:
+                logger.info(f"🚗 [DAY_{day_plan.day}] {day_plan.day}일차 이동 시간 계산")
+                activities = day_plan.activities
+                
+                # 하루 일정의 마지막 장소를 제외하고 반복
+                for i in range(len(activities) - 1):
+                    try:
+                        current_activity = activities[i]
+                        next_activity = activities[i + 1]
+                        
+                        # 현재 장소와 다음 장소의 PlaceData 찾기
+                        current_place = place_map.get(current_activity.place_name)
+                        next_place = place_map.get(next_activity.place_name)
+                        
+                        if not current_place or not next_place:
+                            logger.warning(f"⚠️ 장소 정보 없음: {current_activity.place_name} -> {next_activity.place_name}")
+                            # 기본값 15분 유지
+                            if not hasattr(current_activity, 'travel_time_minutes'):
+                                current_activity.travel_time_minutes = 15
+                            continue
+                        
+                        # place_id가 있는 경우 사용, 없으면 좌표 사용
+                        if current_place.place_id and next_place.place_id:
+                            origin = f"place_id:{current_place.place_id}"
+                            destination = f"place_id:{next_place.place_id}"
+                        else:
+                            origin = f"{current_place.lat},{current_place.lng}"
+                            destination = f"{next_place.lat},{next_place.lng}"
+                        
+                        logger.info(f"🚗 [DIRECTIONS] {current_activity.place_name} -> {next_activity.place_name}")
+                        
+                        # Google Directions API 호출
+                        directions_result = await self.google_directions.get_directions(
+                            origin=origin,
+                            destination=destination,
+                            mode="driving",  # 또는 "transit"
+                            language="ko"
+                        )
+                        
+                        if directions_result:
+                            # 이동 시간(초)을 분으로 변환
+                            duration_seconds = directions_result['duration']['value']
+                            duration_minutes = max(1, round(duration_seconds / 60))  # 최소 1분
+                            
+                            # ActivityDetail에 travel_time_minutes 속성 추가
+                            current_activity.travel_time_minutes = duration_minutes
+                            
+                            distance_km = round(directions_result['distance']['value'] / 1000, 1)
+                            logger.info(f"✅ [CALC_SUCCESS] {current_activity.place_name} -> {next_activity.place_name}: {duration_minutes}분 ({distance_km}km)")
+                        else:
+                            logger.warning(f"⚠️ [CALC_FAILED] Directions API 실패: {current_activity.place_name} -> {next_activity.place_name}")
+                            # 실패 시 기본값 15분
+                            current_activity.travel_time_minutes = 15
+                            
+                    except Exception as e:
+                        logger.error(f"💥 [CALC_ERROR] 이동 시간 계산 오류 (인덱스 {i}): {e}")
+                        # 에러 발생 시 기본값 15분
+                        if not hasattr(activities[i], 'travel_time_minutes'):
+                            activities[i].travel_time_minutes = 15
+                
+                # 마지막 활동은 이동 시간이 없음
+                if activities:
+                    activities[-1].travel_time_minutes = 0
+                
+                logger.info(f"✅ [DAY_{day_plan.day}_COMPLETE] {day_plan.day}일차 이동 시간 계산 완료")
+            
+            logger.info("✅ [TRAVEL_TIME_CALC_COMPLETE] 전체 이동 시간 계산 완료")
+            return day_plans
+            
+        except Exception as e:
+            logger.error(f"💥 [TRAVEL_TIME_CALC_ERROR] 이동 시간 계산 전체 실패: {e}")
+            # 실패 시 모든 활동에 기본값 15분 설정
+            for day_plan in day_plans:
+                for i, activity in enumerate(day_plan.activities):
+                    if i < len(day_plan.activities) - 1:  # 마지막이 아닌 경우
+                        activity.travel_time_minutes = 15
+                    else:  # 마지막 활동
+                        activity.travel_time_minutes = 0
+            return day_plans
 
     def _get_default_itinerary_prompt(self) -> str:
         """기본 일정 생성 프롬프트"""

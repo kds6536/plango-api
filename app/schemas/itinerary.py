@@ -43,8 +43,8 @@ class ActivityItem(BaseModel):
     tips: Optional[str] = Field(None, description="팁")
 
 
-class DayPlan(BaseModel):
-    """일별 계획"""
+class LegacyDayPlan(BaseModel):
+    """일별 계획 (레거시)"""
     day: int = Field(..., description="날짜")
     theme: str = Field(..., description="하루 테마")
     activities: List[ActivityItem] = Field(..., description="활동 목록")
@@ -58,7 +58,7 @@ class ItineraryPlan(BaseModel):
     plan_type: str = Field(..., description="계획 타입 (A 또는 B)")
     title: str = Field(..., description="계획 제목")
     concept: str = Field(..., description="계획 컨셉")
-    daily_plans: List[DayPlan] = Field(..., description="일별 계획")
+    daily_plans: List[LegacyDayPlan] = Field(..., description="일별 계획")
     total_estimated_cost: str = Field(..., description="총 예상 비용")
     highlights: List[str] = Field(..., description="하이라이트")
     recommendations: Dict[str, List[str]] = Field(..., description="추천 정보")
@@ -195,19 +195,39 @@ class ActivityDetail(BaseModel):
     """활동 상세 정보"""
     time: str = Field(..., description="시간")
     place_name: str = Field(..., description="장소명")
-    activity_description: str = Field(..., description="활동 설명")
-    transportation_details: str = Field(..., description="교통 정보")
+    category: Optional[str] = Field(default="관광", description="카테고리")
+    duration_minutes: Optional[int] = Field(default=120, description="활동 소요 시간 (분)")
+    description: Optional[str] = Field(default="", description="활동 설명")
+    travel_time_minutes: Optional[int] = Field(default=15, description="다음 장소까지 이동 시간 (분)")
+    activity_description: Optional[str] = Field(default="", description="활동 설명 (호환성)")
+    transportation_details: Optional[str] = Field(default="", description="교통 정보")
     place_id: Optional[str] = Field(None, description="구글 플레이스 ID")
     lat: Optional[float] = Field(None, description="위도")
     lng: Optional[float] = Field(None, description="경도")
 
 
+# 새로운 DayPlan 클래스 (ActivityDetail 사용)
+class DayPlan(BaseModel):
+    """일별 계획 (최적화된 버전)"""
+    day: int = Field(..., description="날짜")
+    date: Optional[str] = Field(None, description="날짜 (YYYY-MM-DD)")
+    activities: List[ActivityDetail] = Field(..., description="활동 목록")
+    theme: Optional[str] = Field(None, description="하루 테마")
+    meals: Optional[Dict[str, str]] = Field(default_factory=dict, description="식사 정보")
+    transportation: Optional[List[str]] = Field(default_factory=list, description="교통수단")
+    estimated_cost: Optional[str] = Field(None, description="예상 비용")
+
+
 class TravelPlan(BaseModel):
     """여행 계획"""
-    title: str = Field(..., description="계획 제목")
-    concept: str = Field(..., description="컨셉")
-    daily_plans: List[DayPlan] = Field(..., description="일일 계획 목록")
-    places: List[PlaceData] = Field(..., description="포함된 장소 목록")
+    total_days: int = Field(..., description="총 일수")
+    daily_start_time: str = Field(default="09:00", description="일일 시작 시간")
+    daily_end_time: str = Field(default="21:00", description="일일 종료 시간")
+    days: List[DayPlan] = Field(..., description="일별 계획 목록")
+    title: Optional[str] = Field(None, description="계획 제목")
+    concept: Optional[str] = Field(None, description="컨셉")
+    daily_plans: Optional[List[DayPlan]] = Field(None, description="일일 계획 목록 (호환성)")
+    places: Optional[List[PlaceData]] = Field(default_factory=list, description="포함된 장소 목록")
 
 
 class GenerateResponse(BaseModel):
@@ -235,7 +255,8 @@ class OptimizeRequest(BaseModel):
 
 class OptimizeResponse(BaseModel):
     """일정 최적화 응답 스키마"""
-    optimized_plan: TravelPlan = Field(..., description="최적화된 계획")
+    travel_plan: TravelPlan = Field(..., description="최적화된 여행 계획")
+    optimized_plan: Optional[TravelPlan] = Field(None, description="최적화된 계획 (호환성)")
     total_distance: Optional[str] = Field(None, description="총 이동 거리")
     total_duration: Optional[str] = Field(None, description="총 이동 시간")
     optimization_details: Optional[Dict[str, Any]] = Field(None, description="최적화 상세 정보") 
