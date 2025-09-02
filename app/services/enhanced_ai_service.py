@@ -164,7 +164,15 @@ class EnhancedAIService:
             logger.info("🤖 [AI_CALLING] AI 호출 시작...")
             response = await self.generate_response(final_prompt)
             logger.info(f"🤖 [AI_RESPONSE] AI 응답 수신 완료 (길이: {len(response) if response else 0})")
-            logger.info(f"🤖 [RAW_RESPONSE] AI 원본 응답: {response}")
+            
+            # ===== 🔍 AI 원본 응답 상세 로깅 (TypeError 디버깅용) =====
+            logger.info("=" * 80)
+            logger.info("🤖 [RAW_RESPONSE_STEP_3] 3단계 AI 원본 응답:")
+            logger.info(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
+            logger.info(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response) if response else 0}")
+            logger.info("📝 [RESPONSE_CONTENT] 응답 내용:")
+            logger.info(response)
+            logger.info("=" * 80)
             
             if not response or not response.strip():
                 logger.error("❌ [EMPTY_RESPONSE] AI 응답이 비어있습니다")
@@ -181,6 +189,25 @@ class EnhancedAIService:
                 # 정제된 응답 파싱 시도
                 parsed_json = json.loads(cleaned_response)
                 logger.info(f"✅ [PARSED_SUCCESS] JSON 파싱 성공")
+                logger.info(f"📊 [PARSED_DATA_TYPE] 파싱된 데이터 타입: {type(parsed_json)}")
+                
+                # ===== 🔍 TypeError 방지: 데이터 타입 검증 =====
+                if isinstance(parsed_json, list):
+                    logger.warning("⚠️ [LIST_DETECTED] AI가 리스트를 반환했습니다. 딕셔너리로 변환합니다.")
+                    # 리스트인 경우 딕셔너리로 감싸기
+                    parsed_json = {
+                        'travel_plan': {
+                            'total_days': len(parsed_json),
+                            'daily_start_time': '09:00',
+                            'daily_end_time': '22:00',
+                            'days': parsed_json
+                        }
+                    }
+                    logger.info("✅ [LIST_TO_DICT] 리스트를 딕셔너리로 변환 완료")
+                elif not isinstance(parsed_json, dict):
+                    logger.error(f"❌ [INVALID_TYPE] 예상치 못한 데이터 타입: {type(parsed_json)}")
+                    raise ValueError(f"AI가 예상치 못한 데이터 타입을 반환했습니다: {type(parsed_json)}")
+                
                 logger.info(f"📊 [PARSED_DATA] 파싱된 데이터 구조: {json.dumps(parsed_json, ensure_ascii=False, indent=2)}")
                 
                 # 필수 구조 검증 및 자동 수정
@@ -205,17 +232,46 @@ class EnhancedAIService:
                         # 구조 변환
                         if found_key == 'days':
                             # days가 직접 최상위에 있는 경우
-                            parsed_json = {
-                                'travel_plan': {
-                                    'total_days': len(parsed_json['days']),
-                                    'daily_start_time': '09:00',
-                                    'daily_end_time': '22:00',
-                                    'days': parsed_json['days']
+                            days_data = parsed_json['days']
+                            if isinstance(days_data, list):
+                                parsed_json = {
+                                    'travel_plan': {
+                                        'total_days': len(days_data),
+                                        'daily_start_time': '09:00',
+                                        'daily_end_time': '22:00',
+                                        'days': days_data
+                                    }
                                 }
-                            }
+                            else:
+                                logger.error(f"❌ [INVALID_DAYS_TYPE] days 키의 값이 리스트가 아닙니다: {type(days_data)}")
+                                parsed_json = {
+                                    'travel_plan': {
+                                        'total_days': 1,
+                                        'daily_start_time': '09:00',
+                                        'daily_end_time': '22:00',
+                                        'days': []
+                                    }
+                                }
                         else:
                             # 다른 키를 travel_plan으로 변경
-                            parsed_json['travel_plan'] = parsed_json.pop(found_key)
+                            alternative_data = parsed_json.pop(found_key)
+                            if isinstance(alternative_data, dict):
+                                parsed_json['travel_plan'] = alternative_data
+                            elif isinstance(alternative_data, list):
+                                parsed_json['travel_plan'] = {
+                                    'total_days': len(alternative_data),
+                                    'daily_start_time': '09:00',
+                                    'daily_end_time': '22:00',
+                                    'days': alternative_data
+                                }
+                            else:
+                                logger.error(f"❌ [INVALID_ALT_TYPE] 대체 키의 값이 예상치 못한 타입입니다: {type(alternative_data)}")
+                                parsed_json['travel_plan'] = {
+                                    'total_days': 1,
+                                    'daily_start_time': '09:00',
+                                    'daily_end_time': '22:00',
+                                    'days': []
+                                }
                         
                         logger.info("✅ [STRUCTURE_FIXED] 구조 자동 수정 완료")
                     else:
@@ -230,10 +286,24 @@ class EnhancedAIService:
                             }
                         }
                 
-                # travel_plan 내부 구조 검증
-                travel_plan = parsed_json['travel_plan']
+                # travel_plan 내부 구조 검증 및 타입 안전성 확보
+                travel_plan = parsed_json.get('travel_plan', {})
+                if not isinstance(travel_plan, dict):
+                    logger.error(f"❌ [INVALID_TRAVEL_PLAN_TYPE] travel_plan이 딕셔너리가 아닙니다: {type(travel_plan)}")
+                    travel_plan = {
+                        'total_days': 1,
+                        'daily_start_time': '09:00',
+                        'daily_end_time': '22:00',
+                        'days': []
+                    }
+                    parsed_json['travel_plan'] = travel_plan
+                
+                # days 키 검증 및 타입 안전성 확보
                 if 'days' not in travel_plan:
                     logger.warning("⚠️ [MISSING_DAYS] days 키가 없음, 빈 배열로 초기화")
+                    travel_plan['days'] = []
+                elif not isinstance(travel_plan['days'], list):
+                    logger.error(f"❌ [INVALID_DAYS_TYPE] days가 리스트가 아닙니다: {type(travel_plan['days'])}")
                     travel_plan['days'] = []
                 
                 # 기본값 설정
@@ -245,6 +315,7 @@ class EnhancedAIService:
                     travel_plan['daily_end_time'] = '22:00'
                 
                 logger.info(f"✅ [STRUCTURE_OK] 구조 검증 완료: {len(travel_plan.get('days', []))}일 일정")
+                logger.info(f"📊 [FINAL_STRUCTURE] 최종 구조 - travel_plan 타입: {type(travel_plan)}, days 타입: {type(travel_plan.get('days', []))}")
                 
                 # 수정된 JSON을 문자열로 반환
                 final_response = json.dumps(parsed_json, ensure_ascii=False, indent=2)
