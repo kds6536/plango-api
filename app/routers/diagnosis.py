@@ -110,8 +110,8 @@ async def check_environment_variables() -> Dict[str, Any]:
             "SUPABASE_KEY": "Set" if settings.SUPABASE_KEY else "Missing",
             "OPENAI_API_KEY": "Set" if settings.OPENAI_API_KEY else "Missing", 
             "GEMINI_API_KEY": "Set" if settings.GEMINI_API_KEY else "Missing",
-            # MAPS_PLATFORM_API_KEY가 우선이며, 없으면 GOOGLE_MAPS_API_KEY 확인
-            "MAPS_PLATFORM_API_KEY": "Set" if (getattr(settings, "MAPS_PLATFORM_API_KEY", None) or getattr(settings, "GOOGLE_MAPS_API_KEY", None)) else "Missing",
+            # MAPS_PLATFORM_API_KEY_BACKEND가 우선이며, 없으면 GOOGLE_MAPS_API_KEY 확인
+            "MAPS_PLATFORM_API_KEY_BACKEND": "Set" if (getattr(settings, "MAPS_PLATFORM_API_KEY_BACKEND", None) or getattr(settings, "GOOGLE_MAPS_API_KEY", None)) else "Missing",
             "ENV": settings.ENV,
             "ENVIRONMENT": settings.ENVIRONMENT
         }

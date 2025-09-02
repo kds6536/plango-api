@@ -19,9 +19,10 @@ class GooglePlacesService:
         GooglePlacesService 초기화
         - settings에서 API 키를 가져와 googlemaps.Client를 초기화합니다.
         """
-        # Railway 변수명은 'MAPS_PLATFORM_API_KEY' 사용. settings에도 동일 키를 노출하고 있으므로 우선 사용.
-        # 하위 호환을 위해 GOOGLE_MAPS_API_KEY가 설정되어 있으면 그것도 사용.
-        self.api_key = api_key or getattr(settings, "MAPS_PLATFORM_API_KEY", None) or getattr(settings, "GOOGLE_MAPS_API_KEY", None)
+        # Backend API Key - Server-side use only, must be kept secret
+        # This key should NOT have HTTP Referer restrictions
+        # Railway 변수명은 'MAPS_PLATFORM_API_KEY_BACKEND' 사용
+        self.api_key = api_key or getattr(settings, "MAPS_PLATFORM_API_KEY_BACKEND", None) or getattr(settings, "GOOGLE_MAPS_API_KEY", None)
         self.gmaps = None
         if self.api_key:
             try:
@@ -30,7 +31,7 @@ class GooglePlacesService:
             except Exception as e:
                 logger.error(f"💥 Google Maps 클라이언트 초기화 실패: {e}")
         else:
-            logger.warning("⚠️ MAPS_PLATFORM_API_KEY가 설정되지 않았습니다.")
+            logger.warning("⚠️ MAPS_PLATFORM_API_KEY_BACKEND가 설정되지 않았습니다.")
 
     def _extract_photo_url(self, place: Dict[str, Any], max_height_px: int = 400) -> str:
         """Places API(New) 사진 리소스 이름으로 미디어 URL을 생성"""

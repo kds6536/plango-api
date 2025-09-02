@@ -76,8 +76,10 @@ class Settings(BaseSettings):
     # 로깅 설정
     LOGGING_LEVEL: str = "INFO"
     
-    # Google Maps Platform API Key
-    MAPS_PLATFORM_API_KEY: str = ""
+    # Google Maps Platform API Key (Backend - Server-side use only)
+    # This key is for server-side use only and must be kept secret.
+    # It should NOT have HTTP Referer restrictions.
+    MAPS_PLATFORM_API_KEY_BACKEND: str = ""
 
     # Config 클래스 완전 제거 (env_file 등은 model_config로 대체)
     model_config = {

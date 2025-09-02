@@ -95,16 +95,16 @@ async def test_google_places_connection() -> Dict[str, Any]:
     
     try:
         # 환경변수 확인 (올바른 환경변수명 사용)
-        google_api_key = settings.MAPS_PLATFORM_API_KEY
+        google_api_key = settings.MAPS_PLATFORM_API_KEY_BACKEND
         
         if not google_api_key:
             return {
                 "success": False,
-                "error": "MAPS_PLATFORM_API_KEY 환경변수가 설정되지 않았습니다.",
+                "error": "MAPS_PLATFORM_API_KEY_BACKEND 환경변수가 설정되지 않았습니다.",
                 "api_key_exists": False
             }
         
-        print(f"   🔑 MAPS_PLATFORM_API_KEY: {google_api_key[:20]}...{google_api_key[-10:]}")
+        print(f"   🔑 MAPS_PLATFORM_API_KEY_BACKEND: {google_api_key[:20]}...{google_api_key[-10:]}")
         
         # Google Places API (New) Text Search 테스트
         url = f"https://places.googleapis.com/v1/places:searchText"
@@ -318,7 +318,7 @@ async def main():
         print("3. Supabase API 키 권한 확인")
     
     if not results["google_places"]["success"]:
-        print("1. Railway 환경변수에서 MAPS_PLATFORM_API_KEY 확인")
+        print("1. Railway 환경변수에서 MAPS_PLATFORM_API_KEY_BACKEND 확인")
         print("2. Google Cloud Console에서 Places API 활성화 확인")
         print("3. API 키 사용량 한도 확인")
     
