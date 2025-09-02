@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # CORS 설정
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005,https://plango-zeta.vercel.app"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005,https://plango-zeta.vercel.app,https://plango.kr,https://www.plango.kr"
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:3000", 
         "http://localhost:3001", 
@@ -50,7 +50,9 @@ class Settings(BaseSettings):
         "http://localhost:3003",
         "http://localhost:3004",
         "http://localhost:3005",
-        "https://plango-zeta.vercel.app"
+        "https://plango-zeta.vercel.app",
+        "https://plango.kr",              # 커스텀 도메인 (루트)
+        "https://www.plango.kr"           # 커스텀 도메인 (www)
     ]
     
     @property

@@ -23,10 +23,22 @@ app = FastAPI(
 )
 
 # CORS 미들웨어 추가
-if settings.BACKEND_CORS_ORIGINS:
+# 환경 변수에서 추가 origins를 가져와서 병합
+additional_origins = os.getenv("ADDITIONAL_CORS_ORIGINS", "").split(",")
+additional_origins = [origin.strip() for origin in additional_origins if origin.strip()]
+
+all_origins = list(settings.BACKEND_CORS_ORIGINS)
+all_origins.extend(additional_origins)
+
+# 중복 제거
+all_origins = list(set(all_origins))
+
+logger.info(f"CORS Origins 설정: {all_origins}")
+
+if all_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=all_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
