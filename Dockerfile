@@ -10,9 +10,12 @@ RUN apk add --no-cache gcc musl-dev libffi-dev
 
 WORKDIR /app
 
-# requirements 복사 및 설치
+# pip 업그레이드 및 설정
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# requirements 복사 및 설치 (재시도 옵션 추가)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --retries 5 --timeout 300 -r requirements.txt
 
 # ---- 2단계: 실행 스테이지 ----
 FROM python:3.11-alpine
@@ -22,10 +25,8 @@ RUN addgroup -g 1001 -S appuser && \
     adduser -S appuser -G appuser
 
 # 빌드 스테이지에서 설치된 패키지 복사
-COPY --from=builder /root/.local /home/appuser/.local
-
-# PATH 설정
-ENV PATH=/home/appuser/.local/bin:$PATH
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 WORKDIR /code
 
