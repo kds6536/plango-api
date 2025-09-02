@@ -22,6 +22,9 @@ app = FastAPI(
     description=settings.PROJECT_VERSION
 )
 
+# 로거 초기화 (CORS 설정보다 먼저 해야 함)
+logger = get_logger("api")
+
 # CORS 미들웨어 추가
 # 환경 변수에서 추가 origins를 가져와서 병합
 additional_origins = os.getenv("ADDITIONAL_CORS_ORIGINS", "").split(",")
@@ -43,9 +46,6 @@ if all_origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-# 로거 초기화
-logger = get_logger("api")
 
 # --- 메모리 효율적인 시작 이벤트 핸들러 ---
 @app.on_event("startup")
