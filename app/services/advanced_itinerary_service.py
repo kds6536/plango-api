@@ -1428,9 +1428,25 @@ JSON 형식으로 응답해주세요:
 
     def _ensure_schema_compat(self, plan: TravelPlan) -> TravelPlan:
         """Pydantic 스키마 적합성 보정: 문자열/누락 필드 보완"""
-        # daily_plans의 activities는 ActivityItem 목록이어야 하므로, 잘못된 타입을 방지
-        sanitized_daily = []
-        for day in plan.daily_plans:
+        try:
+            logger.info("🔧 [SCHEMA_COMPAT] 스키마 호환성 검사 시작")
+            
+            # [핵심 수정] plan이나 daily_plans가 None인 경우 방어
+            if not plan:
+                logger.error("❌ [SCHEMA_COMPAT] plan 객체가 None입니다")
+                return self._create_empty_travel_plan()
+            
+            # daily_plans 필드 확인 (새로운 스키마에서는 'days' 사용)
+            daily_plans_data = getattr(plan, 'daily_plans', None) or getattr(plan, 'days', None)
+            if not daily_plans_data:
+                logger.warning("⚠️ [SCHEMA_COMPAT] daily_plans/days가 비어있습니다")
+                return self._create_empty_travel_plan()
+            
+            logger.info(f"📊 [SCHEMA_COMPAT] 처리할 일정 수: {len(daily_plans_data)}")
+            
+            # daily_plans의 activities는 ActivityDetail 목록이어야 하므로, 잘못된 타입을 방지
+            sanitized_daily = []
+            for day in daily_plans_data:
             # theme 누락/비문자 방어
             theme = day.theme if isinstance(day.theme, str) and day.theme else f"Day {day.day}"
             activities = []
@@ -1475,11 +1491,36 @@ JSON 형식으로 응답해주세요:
                 description=str(p.description) if p.description else None,
             ))
 
+            # 새로운 TravelPlan 스키마에 맞게 생성
+            result_plan = TravelPlan(
+                total_days=len(sanitized_daily),
+                daily_start_time=getattr(plan, 'daily_start_time', '09:00'),
+                daily_end_time=getattr(plan, 'daily_end_time', '21:00'),
+                days=sanitized_daily,
+                title=getattr(plan, 'title', '여행 일정'),
+                concept=getattr(plan, 'concept', 'AI 생성 일정'),
+                places=sanitized_places or []
+            )
+            
+            logger.info(f"✅ [SCHEMA_COMPAT] 스키마 호환성 검사 완료: {len(sanitized_daily)}일 일정")
+            return result_plan
+            
+        except Exception as e:
+            logger.error(f"❌ [SCHEMA_COMPAT_ERROR] 스키마 호환성 검사 실패: {e}")
+            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
+            return self._create_empty_travel_plan()
+
+    def _create_empty_travel_plan(self) -> TravelPlan:
+        """빈 TravelPlan 생성 (에러 발생 시 폴백)"""
+        logger.info("🔄 [EMPTY_PLAN] 빈 여행 계획 생성")
         return TravelPlan(
-            title=plan.title or "여행 일정",
-            concept=plan.concept or "AI 생성 일정",
-            daily_plans=sanitized_daily,
-            places=sanitized_places,
+            total_days=1,
+            daily_start_time="09:00",
+            daily_end_time="21:00",
+            days=[],
+            title="기본 여행 일정",
+            concept="기본 여행 계획",
+            places=[]
         )
 
     def _create_optimized_travel_plan(self, places: List[PlaceData], duration: int) -> TravelPlan:
