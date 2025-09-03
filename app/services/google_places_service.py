@@ -488,29 +488,6 @@ class GooglePlacesService:
             logger.error(f"경로 최적화 중 오류 발생: {e}")
             return {}
 
-    async def geocode_location(self, address: str) -> Optional[Dict[str, Any]]:
-        """Google Geocoding API로 주소를 표준화된 지명으로 변환"""
-        try:
-            if not self.gmaps:
-                logger.error("Google Maps 클라이언트가 초기화되지 않았습니다.")
-                return None
-            
-            # 동기 함수를 비동기로 실행 (이벤트 루프 블로킹 방지)
-            import asyncio
-            loop = asyncio.get_event_loop()
-            geocode_result = await loop.run_in_executor(None, self.gmaps.geocode, address)
-            
-            if geocode_result:
-                logger.info(f"✅ [GEOCODE_SUCCESS] 주소 '{address}' 표준화 성공")
-                return {'results': geocode_result}
-            else:
-                logger.warning(f"⚠️ [GEOCODE_NO_RESULT] 주소 '{address}' 표준화 결과 없음")
-                return None
-                
-        except Exception as e:
-            logger.error(f"❌ [GEOCODE_ERROR] 주소 '{address}' 표준화 실패: {e}")
-            return None
-
     async def geocode_location(self, address: str) -> Dict[str, Any]:
         """
         Google Geocoding API를 사용하여 주소를 좌표로 변환하고 표준화된 주소 정보 반환
