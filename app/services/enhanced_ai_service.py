@@ -207,162 +207,83 @@ class EnhancedAIService:
                 logger.info(f"✅ [PARSED_SUCCESS] JSON 파싱 성공")
                 logger.info(f"📊 [PARSED_DATA_TYPE] 파싱된 데이터 타입: {type(parsed_json)}")
                 
-                # ===== 🔍 TypeError 방지: 데이터 타입 검증 =====
-                if isinstance(parsed_json, list):
-                    logger.warning("⚠️ [LIST_DETECTED] AI가 리스트를 반환했습니다. 딕셔너리로 변환합니다.")
-                    # 리스트인 경우 딕셔너리로 감싸기
-                    parsed_json = {
-                        'travel_plan': {
-                            'total_days': len(parsed_json),
-                            'daily_start_time': '09:00',
-                            'daily_end_time': '22:00',
-                            'days': parsed_json
-                        }
-                    }
-                    logger.info("✅ [LIST_TO_DICT] 리스트를 딕셔너리로 변환 완료")
-                elif not isinstance(parsed_json, dict):
-                    logger.error(f"❌ [INVALID_TYPE] 예상치 못한 데이터 타입: {type(parsed_json)}")
-                    raise ValueError(f"AI가 예상치 못한 데이터 타입을 반환했습니다: {type(parsed_json)}")
-                
-                logger.info(f"📊 [PARSED_DATA] 파싱된 데이터 구조: {json.dumps(parsed_json, ensure_ascii=False, indent=2)}")
-                
-                # 필수 구조 검증 및 자동 수정
-                logger.info(f"🔍 [STRUCTURE_CHECK] JSON 구조 검증 시작")
+                # 🚨 [핵심 수정] 복잡한 자동 수정 로직 제거, 직접적인 데이터 추출
+                logger.info(f"🔍 [DIRECT_EXTRACTION] 직접적인 데이터 추출 시작")
                 logger.info(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(parsed_json.keys())}")
                 
-                # travel_plan 키가 없는 경우 자동 수정 시도
-                if 'travel_plan' not in parsed_json:
-                    logger.warning("⚠️ [MISSING_TRAVEL_PLAN] travel_plan 키가 없음, 자동 수정 시도")
-                    
-                    # 다른 가능한 키들 확인
-                    possible_keys = ['itinerary', 'plan', 'schedule', 'days']
-                    found_key = None
-                    
-                    for key in possible_keys:
-                        if key in parsed_json:
-                            found_key = key
-                            logger.info(f"✅ [FOUND_ALTERNATIVE] 대체 키 발견: {key}")
-                            break
-                    
-                    if found_key:
-                        # 구조 변환
-                        if found_key == 'days':
-                            # days가 직접 최상위에 있는 경우
-                            days_data = parsed_json['days']
-                            if isinstance(days_data, list):
-                                parsed_json = {
-                                    'travel_plan': {
-                                        'total_days': len(days_data),
-                                        'daily_start_time': '09:00',
-                                        'daily_end_time': '22:00',
-                                        'days': days_data
-                                    }
-                                }
-                            else:
-                                logger.error(f"❌ [INVALID_DAYS_TYPE] days 키의 값이 리스트가 아닙니다: {type(days_data)}")
-                                parsed_json = {
-                                    'travel_plan': {
-                                        'total_days': 1,
-                                        'daily_start_time': '09:00',
-                                        'daily_end_time': '22:00',
-                                        'days': []
-                                    }
-                                }
-                        else:
-                            # 다른 키를 travel_plan으로 변경
-                            alternative_data = parsed_json.pop(found_key)
-                            if isinstance(alternative_data, dict):
-                                parsed_json['travel_plan'] = alternative_data
-                            elif isinstance(alternative_data, list):
-                                parsed_json['travel_plan'] = {
-                                    'total_days': len(alternative_data),
-                                    'daily_start_time': '09:00',
-                                    'daily_end_time': '22:00',
-                                    'days': alternative_data
-                                }
-                            else:
-                                logger.error(f"❌ [INVALID_ALT_TYPE] 대체 키의 값이 예상치 못한 타입입니다: {type(alternative_data)}")
-                                parsed_json['travel_plan'] = {
-                                    'total_days': 1,
-                                    'daily_start_time': '09:00',
-                                    'daily_end_time': '22:00',
-                                    'days': []
-                                }
-                        
-                        logger.info("✅ [STRUCTURE_FIXED] 구조 자동 수정 완료")
+                # 1. 기본 타입 검증
+                if not isinstance(parsed_json, dict):
+                    logger.error(f"❌ [INVALID_TYPE] AI 응답이 딕셔너리가 아닙니다: {type(parsed_json)}")
+                    raise ValueError(f"AI 응답 형식 오류: {type(parsed_json)}")
+                
+                # 2. 직접적인 데이터 추출 - 가능한 모든 키 패턴 확인
+                travel_plan_data = None
+                
+                # 우선순위 순서로 키 확인
+                possible_keys = [
+                    'travel_plan',      # 표준 키
+                    'optimized_plan',   # AI가 사용할 가능성이 높은 키
+                    'itinerary',        # 대안 키
+                    'plan',             # 대안 키
+                    'schedule',         # 대안 키
+                    'days'              # 직접 배열인 경우
+                ]
+                
+                for key in possible_keys:
+                    if key in parsed_json:
+                        travel_plan_data = parsed_json[key]
+                        logger.info(f"✅ [FOUND_DATA] '{key}' 키에서 데이터 발견")
+                        break
+                
+                # 3. 데이터 유효성 검증
+                if travel_plan_data is None:
+                    logger.error(f"❌ [NO_VALID_DATA] 유효한 여행 계획 데이터를 찾을 수 없습니다. 사용 가능한 키: {list(parsed_json.keys())}")
+                    raise ValueError("AI 응답에서 여행 계획 데이터를 찾을 수 없습니다")
+                
+                # 4. 데이터 구조 정규화
+                if isinstance(travel_plan_data, dict):
+                    # 딕셔너리인 경우 - daily_plans 또는 days 키 확인
+                    if 'daily_plans' in travel_plan_data:
+                        logger.info("✅ [FOUND_DAILY_PLANS] daily_plans 키 발견")
+                        final_data = travel_plan_data
+                    elif 'days' in travel_plan_data:
+                        logger.info("✅ [FOUND_DAYS] days 키 발견, daily_plans로 변환")
+                        final_data = travel_plan_data.copy()
+                        final_data['daily_plans'] = final_data.pop('days')
                     else:
-                        # 🚨 [긴급 수정] 최상위가 배열인지 확인
-                        if isinstance(parsed_json, list):
-                            logger.info("🔍 [ARRAY_RESPONSE] AI가 최상위 배열로 응답했습니다")
-                            parsed_json = {
-                                'travel_plan': {
-                                    'total_days': len(parsed_json),
-                                    'daily_start_time': '09:00',
-                                    'daily_end_time': '22:00',
-                                    'days': parsed_json
-                                }
-                            }
-                        else:
-                            # 🚨 [긴급 수정] 모든 키를 확인하여 배열 데이터 찾기
-                            logger.warning(f"⚠️ [DEEP_SEARCH] 모든 키에서 배열 데이터 검색: {list(parsed_json.keys())}")
-                            days_data = []
-                            
-                            # 모든 값 중에서 배열을 찾기
-                            for key, value in parsed_json.items():
-                                if isinstance(value, list) and len(value) > 0:
-                                    logger.info(f"✅ [FOUND_ARRAY] '{key}' 키에서 배열 발견 (길이: {len(value)})")
-                                    days_data = value
-                                    break
-                                elif isinstance(value, dict) and 'days' in value:
-                                    logger.info(f"✅ [FOUND_NESTED_DAYS] '{key}.days'에서 배열 발견")
-                                    days_data = value['days']
-                                    break
-                            
-                            # 완전히 새로운 구조 생성 (하지만 찾은 데이터 사용)
-                            logger.warning(f"⚠️ [CREATE_FALLBACK] 폴백 구조 생성 (데이터 길이: {len(days_data)})")
-                            parsed_json = {
-                                'travel_plan': {
-                                    'total_days': max(1, len(days_data)),
-                                    'daily_start_time': '09:00',
-                                    'daily_end_time': '22:00',
-                                    'days': days_data
-                                }
-                            }
-                
-                # travel_plan 내부 구조 검증 및 타입 안전성 확보
-                travel_plan = parsed_json.get('travel_plan', {})
-                if not isinstance(travel_plan, dict):
-                    logger.error(f"❌ [INVALID_TRAVEL_PLAN_TYPE] travel_plan이 딕셔너리가 아닙니다: {type(travel_plan)}")
-                    travel_plan = {
-                        'total_days': 1,
-                        'daily_start_time': '09:00',
-                        'daily_end_time': '22:00',
-                        'days': []
+                        logger.warning("⚠️ [NO_DAILY_PLANS] daily_plans나 days 키가 없음, 전체 데이터를 daily_plans로 사용")
+                        final_data = {
+                            'title': '맞춤형 여행 일정',
+                            'concept': 'AI가 생성한 최적화된 여행 계획',
+                            'daily_plans': [travel_plan_data] if travel_plan_data else []
+                        }
+                elif isinstance(travel_plan_data, list):
+                    # 배열인 경우 - 직접 daily_plans로 사용
+                    logger.info("✅ [ARRAY_DATA] 배열 데이터를 daily_plans로 사용")
+                    final_data = {
+                        'title': '맞춤형 여행 일정',
+                        'concept': 'AI가 생성한 최적화된 여행 계획',
+                        'daily_plans': travel_plan_data
                     }
-                    parsed_json['travel_plan'] = travel_plan
+                else:
+                    logger.error(f"❌ [INVALID_DATA_TYPE] 예상치 못한 데이터 타입: {type(travel_plan_data)}")
+                    raise ValueError(f"여행 계획 데이터 타입 오류: {type(travel_plan_data)}")
                 
-                # days 키 검증 및 타입 안전성 확보
-                if 'days' not in travel_plan:
-                    logger.warning("⚠️ [MISSING_DAYS] days 키가 없음, 빈 배열로 초기화")
-                    travel_plan['days'] = []
-                elif not isinstance(travel_plan['days'], list):
-                    logger.error(f"❌ [INVALID_DAYS_TYPE] days가 리스트가 아닙니다: {type(travel_plan['days'])}")
-                    travel_plan['days'] = []
+                # 5. 최종 검증
+                daily_plans = final_data.get('daily_plans', [])
+                if not isinstance(daily_plans, list):
+                    logger.error(f"❌ [INVALID_DAILY_PLANS] daily_plans가 배열이 아닙니다: {type(daily_plans)}")
+                    raise ValueError("daily_plans가 배열 형식이 아닙니다")
                 
-                # 기본값 설정
-                if 'total_days' not in travel_plan:
-                    travel_plan['total_days'] = len(travel_plan.get('days', []))
-                if 'daily_start_time' not in travel_plan:
-                    travel_plan['daily_start_time'] = '09:00'
-                if 'daily_end_time' not in travel_plan:
-                    travel_plan['daily_end_time'] = '22:00'
+                logger.info(f"✅ [EXTRACTION_SUCCESS] 데이터 추출 완료: daily_plans 길이 = {len(daily_plans)}")
                 
-                logger.info(f"✅ [STRUCTURE_OK] 구조 검증 완료: {len(travel_plan.get('days', []))}일 일정")
-                logger.info(f"📊 [FINAL_STRUCTURE] 최종 구조 - travel_plan 타입: {type(travel_plan)}, days 타입: {type(travel_plan.get('days', []))}")
+                # 최종 결과를 parsed_json에 할당 (기존 코드와의 호환성)
+                parsed_json = {'travel_plan': final_data}
                 
-                # 수정된 JSON을 문자열로 반환
+                # 6. 최종 JSON 반환
                 final_response = json.dumps(parsed_json, ensure_ascii=False, indent=2)
                 logger.info(f"📊 [FINAL_JSON] 최종 JSON 길이: {len(final_response)}")
+                logger.info(f"✅ [PROCESSING_COMPLETE] AI 응답 처리 완료")
                 return final_response
                 
             except json.JSONDecodeError as e:
