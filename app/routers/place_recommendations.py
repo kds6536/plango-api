@@ -41,25 +41,41 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
 
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
 
+        # --- [핵심 로그 추가] ---
+        logger.info("📍 [GEOCODING_START] 동명 지역 확인을 위해 Geocoding API 호출을 시작합니다.")
+        
         # 1. 동명 지역 확인 (place_id가 명시적으로 제공되지 않은 경우에만)
         if not hasattr(request, 'place_id') or not request.place_id:
             geocoding_service = GeocodingService()
             location_query = f"{request.city}, {request.country}"
-            geocoding_results = await geocoding_service.get_geocode_results(location_query)
+            logger.info(f"🌍 [GEOCODING_QUERY] 검색 쿼리: '{location_query}'")
             
-            # 2. 동명 지역이 있는 경우 선택지 반환
-            if geocoding_service.is_ambiguous_location(geocoding_results):
-                options = geocoding_service.format_location_options(geocoding_results)
-                logger.info(f"동명 지역 감지: {request.city} - {len(options)}개 선택지")
+            try:
+                geocoding_results = await geocoding_service.get_geocode_results(location_query)
+                logger.info(f"✅ [GEOCODING_SUCCESS] Geocoding 결과 {len(geocoding_results)}개를 찾았습니다.")
                 
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error_code": "AMBIGUOUS_LOCATION",
-                        "message": f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
-                        "options": options
-                    }
-                )
+                # 2. 동명 지역이 있는 경우 선택지 반환
+                if geocoding_service.is_ambiguous_location(geocoding_results):
+                    options = geocoding_service.format_location_options(geocoding_results)
+                    logger.info(f"⚠️ [AMBIGUOUS_LOCATION] 동명 지역이 감지되어 사용자에게 선택지를 반환합니다: {request.city} - {len(options)}개 선택지")
+                    
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "error_code": "AMBIGUOUS_LOCATION",
+                            "message": f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
+                            "options": options
+                        }
+                    )
+                
+                logger.info("✅ [GEOCODING_PASS] 동명 지역 문제가 없어, 정상적인 추천 생성을 계속합니다.")
+                
+            except Exception as geocoding_error:
+                logger.error(f"❌ [GEOCODING_FAIL] Geocoding API 호출 중 에러 발생: {geocoding_error}", exc_info=True)
+                # Geocoding 실패 시에도 추천은 계속 진행 (사용자 경험 우선)
+                logger.warning("⚠️ [GEOCODING_FALLBACK] Geocoding 실패했지만 추천 생성을 계속 진행합니다.")
+        else:
+            logger.info("ℹ️ [GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
 
         # 3. 장소 추천 서비스 호출
         response = await place_recommendation_service.generate_place_recommendations(request)

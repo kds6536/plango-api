@@ -80,12 +80,23 @@ async def optimize_itinerary(
            Google Directions API를 통해 이동 시간을 계산하여 최종 일정을 반환합니다.
     """
     try:
+        # --- [핵심 로그 추가] ---
+        logging.info("🚀 [OPTIMIZE_START] 일정 최적화 API 호출 시작")
+        logging.info(f"📋 [OPTIMIZE_PAYLOAD] 요청 페이로드: {payload}")
+        
         # 호환성 처리: {places:[...]} 또는 {selected_places:[...]} 모두 허용
         raw_places = payload.get("places") or payload.get("selected_places") or []
         if not isinstance(raw_places, list):
+            logging.error("❌ [OPTIMIZE_ERROR] places 배열이 없거나 잘못된 형식입니다.")
             raise HTTPException(status_code=422, detail="요청 본문에 places 배열이 필요합니다.")
 
+        logging.info(f"📍 [OPTIMIZE_PLACES] 받은 장소 개수: {len(raw_places)}")
+        
         places: List[PlaceData] = [PlaceData(**p) if isinstance(p, dict) else p for p in raw_places]
+        
+        # 장소 이름들 로깅
+        place_names = [place.name for place in places]
+        logging.info(f"🏛️ [OPTIMIZE_PLACE_NAMES] 장소 목록: {place_names}")
 
         # 시간 제약 및 기간 기본값
         constraints = {
@@ -97,18 +108,32 @@ async def optimize_itinerary(
         }
 
         logging.info(
-            f"경로 최적화 요청: 장소 {len(places)}개, 기간 {constraints['duration']}일, "
+            f"⏰ [OPTIMIZE_CONSTRAINTS] 경로 최적화 요청: 장소 {len(places)}개, 기간 {constraints['duration']}일, "
             f"시간 {constraints['daily_start_time']}~{constraints['daily_end_time']}"
         )
 
         if len(places) < 2:
+            logging.error(f"❌ [OPTIMIZE_ERROR] 장소 개수 부족: {len(places)}개 (최소 2개 필요)")
             raise HTTPException(status_code=400, detail="최적화를 위해 최소 2곳 이상의 장소가 필요합니다.")
+        
+        logging.info("🔄 [OPTIMIZE_PROCESSING] create_final_itinerary 호출 시작")
         
         # create_final_itinerary는 비동기 함수
         final_itinerary = await service.create_final_itinerary(places, constraints=constraints)
 
         if not final_itinerary:
+            logging.error("❌ [OPTIMIZE_FAIL] final_itinerary가 None입니다.")
             raise HTTPException(status_code=404, detail="최종 일정을 생성하지 못했습니다.")
+        
+        # 성공 로그
+        travel_plan = final_itinerary.travel_plan if hasattr(final_itinerary, 'travel_plan') else None
+        if travel_plan and hasattr(travel_plan, 'day_plans'):
+            day_count = len(travel_plan.day_plans)
+            logging.info(f"✅ [OPTIMIZE_SUCCESS] 최종 일정 생성 완료: {day_count}일 일정")
+        else:
+            logging.warning("⚠️ [OPTIMIZE_WARNING] final_itinerary는 있지만 travel_plan 구조가 예상과 다릅니다.")
+            logging.info(f"🔍 [OPTIMIZE_DEBUG] final_itinerary 타입: {type(final_itinerary)}")
+            logging.info(f"🔍 [OPTIMIZE_DEBUG] final_itinerary 속성: {dir(final_itinerary)}")
 
         return final_itinerary
 
