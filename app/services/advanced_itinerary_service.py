@@ -1256,6 +1256,7 @@ JSON 형식으로 응답해주세요:
             optimized_plan = self._create_optimized_plan(optimized_places, request.duration)
             
             return OptimizeResponse(
+                travel_plan=optimized_plan,
                 optimized_plan=optimized_plan,
                 total_distance=optimization_result.get("total_distance"),
                 total_duration=optimization_result.get("total_duration"),
@@ -1270,6 +1271,7 @@ JSON 형식으로 응답해주세요:
                 request.duration
             )
             return OptimizeResponse(
+                travel_plan=fallback_plan,
                 optimized_plan=fallback_plan,
                 total_distance="계산 불가",
                 total_duration="계산 불가",
@@ -1405,8 +1407,10 @@ JSON 형식으로 응답해주세요:
                 optimized_plan = self._create_time_constrained_plan(places, duration, daily_start_time, daily_end_time)
                 logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 일정 생성 완료: {len(optimized_plan.daily_plans) if optimized_plan and optimized_plan.daily_plans else 0}일 일정")
             
+            final_plan = self._ensure_schema_compat(optimized_plan)
             return OptimizeResponse(
-                optimized_plan=self._ensure_schema_compat(optimized_plan),
+                travel_plan=final_plan,
+                optimized_plan=final_plan,
                 total_distance="약 50km",
                 total_duration="약 2시간",
                 optimization_details={

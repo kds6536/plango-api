@@ -92,6 +92,9 @@ class PlaceRecommendationRequest(BaseModel):
     special_requests: Optional[str] = Field(None, description="특별 요청사항")
     language_code: Optional[str] = Field("ko", description="검색/결과 언어 코드 (예: ko, ja, en, zh-CN, id, vi)")
     
+    # 동명 지역 구분을 위한 필드
+    place_id: Optional[str] = Field(None, description="Google Places API place_id (동명 지역 구분용)")
+    
     # 일일 활동 시간 설정
     daily_start_time: Optional[str] = Field(default="09:00", description="일일 활동 시작 시간 (HH:MM)")
     daily_end_time: Optional[str] = Field(default="21:00", description="일일 활동 종료 시간 (HH:MM)")

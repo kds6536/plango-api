@@ -4,9 +4,11 @@
 """
 
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import JSONResponse
 import logging
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
 from app.services.place_recommendation_service import place_recommendation_service
+from app.services.geocoding_service import GeocodingService
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,27 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
 
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
 
-        # 장소 추천 서비스 호출
+        # 1. 동명 지역 확인 (place_id가 명시적으로 제공되지 않은 경우에만)
+        if not hasattr(request, 'place_id') or not request.place_id:
+            geocoding_service = GeocodingService()
+            location_query = f"{request.city}, {request.country}"
+            geocoding_results = await geocoding_service.get_geocode_results(location_query)
+            
+            # 2. 동명 지역이 있는 경우 선택지 반환
+            if geocoding_service.is_ambiguous_location(geocoding_results):
+                options = geocoding_service.format_location_options(geocoding_results)
+                logger.info(f"동명 지역 감지: {request.city} - {len(options)}개 선택지")
+                
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error_code": "AMBIGUOUS_LOCATION",
+                        "message": f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
+                        "options": options
+                    }
+                )
+
+        # 3. 장소 추천 서비스 호출
         response = await place_recommendation_service.generate_place_recommendations(request)
 
         logger.info(
