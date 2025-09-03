@@ -174,6 +174,22 @@ class EnhancedAIService:
             logger.info(response)
             logger.info("=" * 80)
             
+            # 🚨 [긴급 디버깅] AI 응답의 첫 500자와 마지막 500자 별도 로깅
+            if response and len(response) > 1000:
+                logger.info(f"🔍 [RESPONSE_HEAD] 응답 시작 부분 (500자):\n{response[:500]}")
+                logger.info(f"🔍 [RESPONSE_TAIL] 응답 끝 부분 (500자):\n{response[-500:]}")
+            
+            # 🚨 [긴급 디버깅] JSON 구조 힌트 찾기
+            if response:
+                if '"travel_plan"' in response:
+                    logger.info("✅ [STRUCTURE_HINT] 응답에 'travel_plan' 키 발견")
+                if '"days"' in response:
+                    logger.info("✅ [STRUCTURE_HINT] 응답에 'days' 키 발견")
+                if '"itinerary"' in response:
+                    logger.info("✅ [STRUCTURE_HINT] 응답에 'itinerary' 키 발견")
+                if '"daily_plans"' in response:
+                    logger.info("✅ [STRUCTURE_HINT] 응답에 'daily_plans' 키 발견")
+            
             if not response or not response.strip():
                 logger.error("❌ [EMPTY_RESPONSE] AI 응답이 비어있습니다")
                 raise ValueError("AI 응답이 비어있습니다")
@@ -275,16 +291,43 @@ class EnhancedAIService:
                         
                         logger.info("✅ [STRUCTURE_FIXED] 구조 자동 수정 완료")
                     else:
-                        # 완전히 새로운 구조 생성
-                        logger.warning("⚠️ [CREATE_FALLBACK] 폴백 구조 생성")
-                        parsed_json = {
-                            'travel_plan': {
-                                'total_days': 1,
-                                'daily_start_time': '09:00',
-                                'daily_end_time': '22:00',
-                                'days': []
+                        # 🚨 [긴급 수정] 최상위가 배열인지 확인
+                        if isinstance(parsed_json, list):
+                            logger.info("🔍 [ARRAY_RESPONSE] AI가 최상위 배열로 응답했습니다")
+                            parsed_json = {
+                                'travel_plan': {
+                                    'total_days': len(parsed_json),
+                                    'daily_start_time': '09:00',
+                                    'daily_end_time': '22:00',
+                                    'days': parsed_json
+                                }
                             }
-                        }
+                        else:
+                            # 🚨 [긴급 수정] 모든 키를 확인하여 배열 데이터 찾기
+                            logger.warning(f"⚠️ [DEEP_SEARCH] 모든 키에서 배열 데이터 검색: {list(parsed_json.keys())}")
+                            days_data = []
+                            
+                            # 모든 값 중에서 배열을 찾기
+                            for key, value in parsed_json.items():
+                                if isinstance(value, list) and len(value) > 0:
+                                    logger.info(f"✅ [FOUND_ARRAY] '{key}' 키에서 배열 발견 (길이: {len(value)})")
+                                    days_data = value
+                                    break
+                                elif isinstance(value, dict) and 'days' in value:
+                                    logger.info(f"✅ [FOUND_NESTED_DAYS] '{key}.days'에서 배열 발견")
+                                    days_data = value['days']
+                                    break
+                            
+                            # 완전히 새로운 구조 생성 (하지만 찾은 데이터 사용)
+                            logger.warning(f"⚠️ [CREATE_FALLBACK] 폴백 구조 생성 (데이터 길이: {len(days_data)})")
+                            parsed_json = {
+                                'travel_plan': {
+                                    'total_days': max(1, len(days_data)),
+                                    'daily_start_time': '09:00',
+                                    'daily_end_time': '22:00',
+                                    'days': days_data
+                                }
+                            }
                 
                 # travel_plan 내부 구조 검증 및 타입 안전성 확보
                 travel_plan = parsed_json.get('travel_plan', {})
