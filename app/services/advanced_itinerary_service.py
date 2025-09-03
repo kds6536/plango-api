@@ -1408,6 +1408,12 @@ JSON 형식으로 응답해주세요:
                 logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 일정 생성 완료: {len(optimized_plan.daily_plans) if optimized_plan and optimized_plan.daily_plans else 0}일 일정")
             
             final_plan = self._ensure_schema_compat(optimized_plan)
+            
+            # 안전장치: final_plan이 None인 경우 기본 계획 생성
+            if not final_plan:
+                logger.error("❌ [FINAL_PLAN_NULL] final_plan이 None입니다. 기본 계획 생성")
+                final_plan = self._create_empty_travel_plan()
+            
             return OptimizeResponse(
                 travel_plan=final_plan,
                 optimized_plan=final_plan,
