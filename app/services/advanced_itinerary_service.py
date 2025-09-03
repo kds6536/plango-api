@@ -17,7 +17,7 @@ from collections import defaultdict
 
 from app.schemas.itinerary import (
     GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse,
-    TravelPlan, DayPlan, ActivityDetail, PlaceData, ActivityItem,
+    TravelPlan, DayPlan, ActivityDetail, PlaceData,
     ItineraryRequest, RecommendationResponse
 )
 from app.services.google_places_service import GooglePlacesService
@@ -1191,12 +1191,15 @@ JSON 형식으로 응답해주세요:
         # 여기서는 간단하게 모든 장소를 첫째 날에 넣는 것으로 단순화
         activities = []
         for place in all_places:
-            activities.append(ActivityItem(
+            activities.append(ActivityDetail(
                 time="미정",
-                activity=place.name,
-                location=place.address or place.name,
+                place_name=place.name,
+                category=place.category,
+                duration_minutes=120,
                 description=place.description or f"{place.name} 방문",
-                duration="1-2시간",
+                place_id=place.place_id,
+                lat=place.lat,
+                lng=place.lng
             ))
 
         daily_plan = DayPlan(
@@ -1433,17 +1436,18 @@ JSON 형식으로 응답해주세요:
             activities = []
             for a in day.activities:
                 # a가 dict일 가능성도 방어
-                if isinstance(a, ActivityItem):
+                if isinstance(a, ActivityDetail):
                     activities.append(a)
                 elif isinstance(a, dict):
-                    activities.append(ActivityItem(
+                    activities.append(ActivityDetail(
                         time=str(a.get("time", "09:00")),
-                        activity=str(a.get("activity", a.get("place_name", "활동"))),
-                        location=str(a.get("location", a.get("place_name", "장소"))),
+                        place_name=str(a.get("place_name", a.get("activity", "장소"))),
+                        category=str(a.get("category", "관광")),
+                        duration_minutes=int(a.get("duration_minutes", 60)),
                         description=str(a.get("description", a.get("activity_description", ""))),
-                        duration=str(a.get("duration", "60분")),
-                        cost=str(a.get("cost", "")) if a.get("cost") else None,
-                        tips=str(a.get("tips", "")) if a.get("tips") else None,
+                        place_id=a.get("place_id"),
+                        lat=a.get("lat"),
+                        lng=a.get("lng")
                     ))
                 else:
                     # 알 수 없는 타입은 건너뜀
@@ -1497,14 +1501,15 @@ JSON 형식으로 응답해주세요:
             # 활동 아이템 생성
             activities = []
             for i, place in enumerate(day_places):
-                activities.append(ActivityItem(
+                activities.append(ActivityDetail(
                     time=f"{9 + i * 2}:00",
-                    activity=f"{place.name} 방문",
-                    location=place.address or place.name,
+                    place_name=place.name,
+                    category=place.category,
+                    duration_minutes=120,
                     description=place.description or f"{place.name}에서 즐거운 시간을 보내세요",
-                    duration="2시간",
-                    cost="개인차이",
-                    tips=f"{place.name} 방문 시 추천 포인트"
+                    place_id=place.place_id,
+                    lat=place.lat,
+                    lng=place.lng
                 ))
             
             daily_plans.append(DayPlan(
@@ -1628,19 +1633,24 @@ JSON 형식으로 응답해주세요:
                 pass
 
             # DayPlan 생성 전 활동 리스트가 올바른지 검증/보정
-            sanitized_activities: List[ActivityItem] = []
+            sanitized_activities: List[ActivityDetail] = []
             for a in activities:
                 try:
-                    # 이미 ActivityDetail이므로 ActivityItem과 별개 모델이지만, 스키마 요구에 따라 ActivityItem으로 다운캐스팅
-                    sanitized_activities.append(ActivityItem(
-                        time=str(a.time),
-                        activity=str(a.activity_description or a.place_name),
-                        location=str(a.place_name),
-                        description=str(a.activity_description or ""),
-                        duration="120분",
-                        cost=None,
-                        tips=None
-                    ))
+                    # ActivityDetail 객체 그대로 사용
+                    if isinstance(a, ActivityDetail):
+                        sanitized_activities.append(a)
+                    else:
+                        # dict나 다른 타입인 경우 ActivityDetail로 변환
+                        sanitized_activities.append(ActivityDetail(
+                            time=str(getattr(a, 'time', '09:00')),
+                            place_name=str(getattr(a, 'place_name', getattr(a, 'activity', '장소'))),
+                            category=str(getattr(a, 'category', '관광')),
+                            duration_minutes=getattr(a, 'duration_minutes', 120),
+                            description=str(getattr(a, 'description', getattr(a, 'activity_description', ''))),
+                            place_id=getattr(a, 'place_id', None),
+                            lat=getattr(a, 'lat', None),
+                            lng=getattr(a, 'lng', None)
+                        ))
                 except Exception:
                     continue
 
@@ -1663,17 +1673,16 @@ JSON 형식으로 응답해주세요:
     
     def _convert_ai_response_to_travel_plan(self, ai_response: str, places: List[PlaceData]) -> TravelPlan:
         """
-        AI 응답을 TravelPlan 객체로 변환
+        AI 응답을 TravelPlan 객체로 변환 (새로운 스키마 적용)
         """
         try:
             logger.info("🔄 [CONVERT_START] AI 응답을 TravelPlan으로 변환 시작")
             logger.info(f"📊 [AI_RESPONSE_LENGTH] AI 응답 길이: {len(ai_response)}")
-            logger.info(f"📊 [AI_RESPONSE_PREVIEW] AI 응답 미리보기 (처음 300자): {ai_response[:300]}...")
             
             import json
             ai_data = json.loads(ai_response)
             logger.info(f"✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
-            logger.info(f"📊 [AI_DATA_KEYS] AI 데이터 키: {list(ai_data.keys())}")
+            logger.info(f"🤖 [AI_DATA_STRUCTURE] AI 응답 구조:\n{json.dumps(ai_data, ensure_ascii=False, indent=2)}")
             
             # travel_plan 구조 확인
             if 'travel_plan' in ai_data:
@@ -1684,85 +1693,110 @@ JSON 형식으로 응답해주세요:
                 days_data = travel_plan_data.get('days', [])
                 logger.info(f"📊 [DAYS_COUNT] 일정 일수: {len(days_data)}")
                 
+                # 장소명으로 PlaceData 매핑 생성
+                place_map = {place.name: place for place in places}
+                logger.info(f"📊 [PLACE_MAP] 장소 매핑: {list(place_map.keys())}")
+                
                 daily_plans = []
                 for i, day_data in enumerate(days_data):
                     logger.info(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
-                    logger.info(f"📊 [DAY_{i+1}_KEYS] {i+1}일차 키: {list(day_data.keys())}")
                     
                     activities = []
                     activities_data = day_data.get('activities', [])
                     logger.info(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
                     
                     for j, activity_data in enumerate(activities_data):
-                        activity = ActivityItem(
+                        place_name = activity_data.get("place_name", "장소")
+                        place_data = place_map.get(place_name)
+                        
+                        # ActivityDetail 객체 생성 (새로운 스키마)
+                        activity = ActivityDetail(
                             time=activity_data.get("time", "09:00"),
-                            activity=activity_data.get("place_name", "활동"),
-                            location=activity_data.get("place_name", "장소"),
-                            description=activity_data.get("description", ""),
-                            duration=f"{activity_data.get('duration_minutes', 60)}분",
-                            cost="개인차이",
-                            tips=activity_data.get("description", "")
+                            place_name=place_name,
+                            category=activity_data.get("category", "관광"),
+                            duration_minutes=activity_data.get("duration_minutes", 120),
+                            description=activity_data.get("description", f"{place_name}에서의 활동"),
+                            travel_time_minutes=activity_data.get("travel_time_minutes", 15),
+                            place_id=place_data.place_id if place_data else None,
+                            lat=place_data.lat if place_data else None,
+                            lng=place_data.lng if place_data else None
                         )
                         activities.append(activity)
-                        logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가: {activity.activity}")
+                        logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가: {place_name}")
                     
-                    # DayPlan 생성
+                    # 새로운 DayPlan 생성
                     day_plan = DayPlan(
                         day=day_data.get("day", i+1),
-                        theme=f"{i+1}일차 여행",
+                        date=day_data.get("date", f"2024-01-{i+1:02d}"),
                         activities=activities,
-                        meals={"점심": "현지 맛집", "저녁": "추천 레스토랑"},
-                        transportation=["도보", "대중교통"],
-                        estimated_cost="개인차이"
+                        theme=f"{i+1}일차 여행"
                     )
                     daily_plans.append(day_plan)
                     logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
                 
+                # 새로운 TravelPlan 생성
                 travel_plan = TravelPlan(
+                    total_days=travel_plan_data.get("total_days", len(days_data)),
+                    daily_start_time=travel_plan_data.get("daily_start_time", "09:00"),
+                    daily_end_time=travel_plan_data.get("daily_end_time", "21:00"),
+                    days=daily_plans,
                     title=travel_plan_data.get("title", "AI 생성 여행 일정"),
                     concept="AI가 최적화한 맞춤형 여행 계획",
-                    daily_plans=daily_plans,
                     places=places
                 )
                 
-                logger.info(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정, 총 {sum(len(dp.activities) for dp in daily_plans)}개 활동")
+                logger.info(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정")
                 return travel_plan
                 
             else:
-                # 기존 형식 처리 (폴백)
-                logger.warning("⚠️ [OLD_FORMAT] 기존 형식으로 처리 시도")
-                title = ai_data.get("여행_제목", "AI 생성 여행 일정")
-                daily_plans = []
+                # 기존 형식이나 다른 구조 처리 (폴백)
+                logger.warning("⚠️ [FALLBACK_FORMAT] 예상치 못한 AI 응답 구조, 폴백 처리")
+                logger.info(f"📊 [AVAILABLE_KEYS] 사용 가능한 키: {list(ai_data.keys())}")
                 
-                for day_info in ai_data.get("일정", []):
+                # 가능한 키들 확인
+                days_data = []
+                if 'days' in ai_data:
+                    days_data = ai_data['days']
+                elif 'itinerary' in ai_data:
+                    days_data = ai_data['itinerary']
+                elif isinstance(ai_data, list):
+                    days_data = ai_data
+                
+                if not days_data:
+                    logger.error("❌ [NO_DAYS_DATA] 일정 데이터를 찾을 수 없음")
+                    raise ValueError("AI 응답에서 일정 데이터를 찾을 수 없습니다")
+                
+                # 폴백 처리
+                daily_plans = []
+                for i, day_data in enumerate(days_data):
                     activities = []
+                    activities_data = day_data.get('activities', day_data.get('schedule', []))
                     
-                    # 시간표를 ActivityItem으로 변환
-                    for schedule_item in day_info.get("시간표", []):
-                        activities.append(ActivityItem(
-                            time=schedule_item.get("시작시간", "09:00"),
-                            activity=schedule_item.get("활동", "활동"),
-                            location=schedule_item.get("장소명", "장소"),
-                            description=schedule_item.get("설명", ""),
-                            duration=f"{schedule_item.get('소요시간_분', 60)}분",
-                            cost="개인차이",
-                            tips=schedule_item.get("설명", "")
-                        ))
+                    for activity_data in activities_data:
+                        activity = ActivityDetail(
+                            time=activity_data.get("time", activity_data.get("start_time", "09:00")),
+                            place_name=activity_data.get("place_name", activity_data.get("location", {}).get("name", "장소")),
+                            category=activity_data.get("category", "관광"),
+                            duration_minutes=activity_data.get("duration_minutes", 120),
+                            description=activity_data.get("description", "활동"),
+                            travel_time_minutes=15
+                        )
+                        activities.append(activity)
                     
-                    # DayPlan 생성
-                    daily_plans.append(DayPlan(
-                        day=day_info.get("일차", 1),
-                        theme=day_info.get("일일_테마", "여행"),
-                        activities=activities,
-                        meals={"점심": "현지 맛집", "저녁": "추천 레스토랑"},
-                        transportation=["도보", "대중교통"],
-                        estimated_cost="개인차이"
-                    ))
+                    day_plan = DayPlan(
+                        day=i + 1,
+                        date=f"2024-01-{i+1:02d}",
+                        activities=activities
+                    )
+                    daily_plans.append(day_plan)
                 
                 return TravelPlan(
-                    title=title,
+                    total_days=len(daily_plans),
+                    daily_start_time="09:00",
+                    daily_end_time="21:00",
+                    days=daily_plans,
+                    title="AI 생성 여행 일정",
                     concept="AI가 최적화한 맞춤형 여행 계획",
-                    daily_plans=daily_plans,
                     places=places
                 )
             
@@ -1770,6 +1804,15 @@ JSON 형식으로 응답해주세요:
             logger.error(f"❌ [CONVERT_ERROR] AI 응답 변환 실패: {e}")
             logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
             logger.error(f"📊 [RAW_RESPONSE] 원본 응답: {ai_response}")
-            # 폴백으로 기본 계획 반환
-            logger.info("🔄 [FALLBACK_CONVERT] 폴백 계획 생성 시작")
-            return self._create_optimized_travel_plan(places, len(places) // 3 or 1) 
+            
+            # 최후 폴백: 기본 계획 반환
+            logger.info("🔄 [EMERGENCY_FALLBACK] 긴급 폴백 계획 생성")
+            return TravelPlan(
+                total_days=1,
+                daily_start_time="09:00",
+                daily_end_time="21:00",
+                days=[],
+                title="기본 여행 일정",
+                concept="기본 여행 계획",
+                places=places
+            ) 
