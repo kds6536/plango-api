@@ -1451,23 +1451,23 @@ JSON 형식으로 응답해주세요:
                 theme = day.theme if isinstance(day.theme, str) and day.theme else f"Day {day.day}"
                 activities = []
                 for a in day.activities:
-                # a가 dict일 가능성도 방어
-                if isinstance(a, ActivityDetail):
-                    activities.append(a)
-                elif isinstance(a, dict):
-                    activities.append(ActivityDetail(
-                        time=str(a.get("time", "09:00")),
-                        place_name=str(a.get("place_name", a.get("activity", "장소"))),
-                        category=str(a.get("category", "관광")),
-                        duration_minutes=int(a.get("duration_minutes", 60)),
-                        description=str(a.get("description", a.get("activity_description", ""))),
-                        place_id=a.get("place_id"),
-                        lat=a.get("lat"),
-                        lng=a.get("lng")
-                    ))
-                else:
-                    # 알 수 없는 타입은 건너뜀
-                    continue
+                    # a가 dict일 가능성도 방어
+                    if isinstance(a, ActivityDetail):
+                        activities.append(a)
+                    elif isinstance(a, dict):
+                        activities.append(ActivityDetail(
+                            time=str(a.get("time", "09:00")),
+                            place_name=str(a.get("place_name", a.get("activity", "장소"))),
+                            category=str(a.get("category", "관광")),
+                            duration_minutes=int(a.get("duration_minutes", 60)),
+                            description=str(a.get("description", a.get("activity_description", ""))),
+                            place_id=a.get("place_id"),
+                            lat=a.get("lat"),
+                            lng=a.get("lng")
+                        ))
+                    else:
+                        # 알 수 없는 타입은 건너뜀
+                        continue
                 
                 sanitized_daily.append(DayPlan(
                     day=day.day,
