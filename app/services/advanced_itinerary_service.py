@@ -1447,10 +1447,10 @@ JSON 형식으로 응답해주세요:
             # daily_plans의 activities는 ActivityDetail 목록이어야 하므로, 잘못된 타입을 방지
             sanitized_daily = []
             for day in daily_plans_data:
-            # theme 누락/비문자 방어
-            theme = day.theme if isinstance(day.theme, str) and day.theme else f"Day {day.day}"
-            activities = []
-            for a in day.activities:
+                # theme 누락/비문자 방어
+                theme = day.theme if isinstance(day.theme, str) and day.theme else f"Day {day.day}"
+                activities = []
+                for a in day.activities:
                 # a가 dict일 가능성도 방어
                 if isinstance(a, ActivityDetail):
                     activities.append(a)
@@ -1468,28 +1468,30 @@ JSON 형식으로 응답해주세요:
                 else:
                     # 알 수 없는 타입은 건너뜀
                     continue
-            sanitized_daily.append(DayPlan(
-                day=day.day,
-                theme=theme,
-                activities=activities,
-                meals=day.meals if isinstance(day.meals, dict) else {},
-                transportation=day.transportation if isinstance(day.transportation, list) else [],
-                estimated_cost=str(day.estimated_cost) if day.estimated_cost is not None else "-",
-            ))
+                
+                sanitized_daily.append(DayPlan(
+                    day=day.day,
+                    theme=theme,
+                    activities=activities,
+                    meals=getattr(day, 'meals', {}) if hasattr(day, 'meals') and isinstance(day.meals, dict) else {},
+                    transportation=getattr(day, 'transportation', []) if hasattr(day, 'transportation') and isinstance(day.transportation, list) else [],
+                    estimated_cost=str(getattr(day, 'estimated_cost', '-')) if hasattr(day, 'estimated_cost') and day.estimated_cost is not None else "-",
+                ))
 
-        # places 보정: description/주소 등 문자열화
-        sanitized_places = []
-        for p in plan.places:
-            sanitized_places.append(PlaceData(
-                place_id=str(p.place_id),
-                name=str(p.name),
-                category=str(p.category or "관광"),
-                lat=float(p.lat or 0.0),
-                lng=float(p.lng or 0.0),
-                rating=float(p.rating) if p.rating is not None else None,
-                address=str(p.address) if p.address else None,
-                description=str(p.description) if p.description else None,
-            ))
+            # places 보정: description/주소 등 문자열화
+            sanitized_places = []
+            places_data = getattr(plan, 'places', []) or []
+            for p in places_data:
+                sanitized_places.append(PlaceData(
+                    place_id=str(p.place_id),
+                    name=str(p.name),
+                    category=str(p.category or "관광"),
+                    lat=float(p.lat or 0.0),
+                    lng=float(p.lng or 0.0),
+                    rating=float(p.rating) if p.rating is not None else None,
+                    address=str(p.address) if p.address else None,
+                    description=str(p.description) if p.description else None,
+                ))
 
             # 새로운 TravelPlan 스키마에 맞게 생성
             result_plan = TravelPlan(
