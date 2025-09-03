@@ -168,7 +168,8 @@ class AdvancedItineraryService:
                         lng=place.get('lng', 0.0),
                         rating=place.get('rating'),
                         address=place.get('address'),
-                        description=place.get('description', '')
+                        description=place.get('description', ''),
+                        website=place.get('website', '') or place.get('website_url', '')  # 웹사이트 정보 추가
                     )
                     place_data_list.append(place_data)
             
@@ -1184,7 +1185,8 @@ JSON 형식으로 응답해주세요:
                     lng=place.get("lng", 0.0),
                     rating=place.get("rating"),
                     address=place.get("address"),
-                    description=place.get("description") # 이 필드가 없을 수 있음
+                    description=place.get("description", ""),  # 이 필드가 없을 수 있음
+                    website=place.get('website', '') or place.get('website_url', '')  # 웹사이트 정보 추가
                 ))
 
         # place_pool을 사용하여 DayPlan 생성 (기존 로직 재활용 또는 단순화)
@@ -1323,7 +1325,8 @@ JSON 형식으로 응답해주세요:
                 lng=place.get("lng", 0.0),
                 rating=place.get("rating"),
                 address=place.get("address"),
-                description=place.get("description")
+                description=place.get("description", ""),
+                website=place.get('website', '') or place.get('website_url', '')  # 웹사이트 정보 추가
             )
             place_data_list.append(place_data)
         
@@ -1501,6 +1504,7 @@ JSON 형식으로 응답해주세요:
                     rating=float(p.rating) if p.rating is not None else None,
                     address=str(p.address) if p.address else None,
                     description=str(p.description) if p.description else None,
+                    website=str(p.website) if hasattr(p, 'website') and p.website else ""  # 웹사이트 정보 추가
                 ))
 
             # 새로운 TravelPlan 스키마에 맞게 생성

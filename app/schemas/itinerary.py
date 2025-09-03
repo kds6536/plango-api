@@ -189,6 +189,7 @@ class PlaceData(BaseModel):
     rating: Optional[float] = Field(None, description="평점")
     address: Optional[str] = Field(None, description="주소")
     description: Optional[str] = Field(None, description="설명")
+    website: Optional[str] = Field(None, description="웹사이트 URL")  # 웹사이트 필드 추가
 
 
 class ActivityDetail(BaseModel):
