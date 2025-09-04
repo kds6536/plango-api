@@ -456,17 +456,41 @@ JSON 형식으로 응답해주세요:
             logger.info(f"📍 [INPUT_PLACES] 입력 장소 수: {len(places)}")
             logger.info(f"📋 [INPUT_CONSTRAINTS] 제약 조건: {constraints}")
             
-            # ===== 🚨 [핵심] 입력된 장소들의 상세 정보 로깅 =====
+            # ===== 🚨 [핵심] 입력된 장소들의 상세 정보 로깅 - 안전한 접근 방식 =====
             logger.info("🔍🔍🔍 [DETAILED_PLACES_INFO] 입력된 장소들의 상세 정보:")
             print("🔍🔍🔍 [DETAILED_PLACES_INFO] 입력된 장소들의 상세 정보:")
+            
             for i, place in enumerate(places):
                 try:
-                    place_info = f"[{i+1}] {place.name} - 카테고리: {place.category}, 위도: {place.lat}, 경도: {place.lng}, 주소: {place.address}"
+                    logger.info(f"  🔍 [{i+1}] 장소 타입: {type(place)}")
+                    print(f"  🔍 [{i+1}] 장소 타입: {type(place)}")
+                    
+                    # 딕셔너리인 경우
+                    if isinstance(place, dict):
+                        name = place.get('name', 'Unknown')
+                        category = place.get('category', 'Unknown')
+                        lat = place.get('lat', 0.0)
+                        lng = place.get('lng', 0.0)
+                        address = place.get('address', 'Unknown')
+                        place_info = f"[{i+1}] {name} - 카테고리: {category}, 위도: {lat}, 경도: {lng}, 주소: {address}"
+                    # PlaceData 객체인 경우
+                    elif hasattr(place, 'name'):
+                        place_info = f"[{i+1}] {place.name} - 카테고리: {place.category}, 위도: {place.lat}, 경도: {place.lng}, 주소: {place.address}"
+                    # 문자열인 경우 (이름만)
+                    elif isinstance(place, str):
+                        place_info = f"[{i+1}] {place} - (문자열 데이터, 위도/경도 없음)"
+                    else:
+                        place_info = f"[{i+1}] 알 수 없는 데이터 타입: {type(place)} - {str(place)}"
+                    
                     logger.info(f"  📍 {place_info}")
                     print(f"  📍 {place_info}")
+                    
                 except Exception as e:
                     logger.error(f"  ❌ [{i+1}] 장소 정보 접근 실패: {e}")
+                    logger.error(f"  📊 [{i+1}] 장소 원본 데이터: {place}")
                     print(f"  ❌ [{i+1}] 장소 정보 접근 실패: {e}")
+                    print(f"  📊 [{i+1}] 장소 원본 데이터: {place}")
+            
             logger.info("🔍🔍🔍 [DETAILED_PLACES_INFO_END]")
             print("🔍🔍🔍 [DETAILED_PLACES_INFO_END]")
             

@@ -166,6 +166,20 @@ async def optimize_itinerary_v2(  # 함수명 변경으로 캐시 무효화
         print(f"📊 [INPUT_TO_SERVICE] places 개수: {len(places)}")
         print(f"📊 [INPUT_TO_SERVICE] constraints: {constraints}")
         
+        # ===== 🚨 [핵심] 라우터에서 서비스로 전달하는 places 데이터 상세 로깅 =====
+        print("🔍🔍🔍 [ROUTER_TO_SERVICE] 라우터에서 서비스로 전달하는 places 데이터:")
+        logging.info("🔍🔍🔍 [ROUTER_TO_SERVICE] 라우터에서 서비스로 전달하는 places 데이터:")
+        for i, place in enumerate(places):
+            try:
+                place_info = f"[{i+1}] {place.name} - 카테고리: {place.category}, 위도: {place.lat}, 경도: {place.lng}"
+                print(f"  📍 {place_info}")
+                logging.info(f"  📍 {place_info}")
+            except Exception as e:
+                print(f"  ❌ [{i+1}] 장소 정보 접근 실패: {e}")
+                logging.error(f"  ❌ [{i+1}] 장소 정보 접근 실패: {e}")
+        print("🔍🔍🔍 [ROUTER_TO_SERVICE_END]")
+        logging.info("🔍🔍🔍 [ROUTER_TO_SERVICE_END]")
+        
         final_itinerary = await service.create_final_itinerary(places, constraints=constraints)
         
         print("🚨🚨🚨 create_final_itinerary RETURNED! 🚨🚨🚨")
