@@ -49,19 +49,57 @@ class EnhancedAIService:
     
     async def get_current_ai_settings(self) -> Dict[str, Any]:
         """현재 AI 설정 조회"""
+        logger.info("🔍 [GET_AI_SETTINGS] AI 설정 조회 시작")
+        print("🔍 [GET_AI_SETTINGS] AI 설정 조회 시작")
+        
         try:
+            logger.info("📊 [SUPABASE_CALL] supabase_service.get_ai_settings() 호출 시작")
+            print("📊 [SUPABASE_CALL] supabase_service.get_ai_settings() 호출 시작")
+            
+            # Supabase 서비스 상태 확인
+            logger.info(f"📊 [SUPABASE_STATUS] supabase_service 존재: {supabase_service is not None}")
+            print(f"📊 [SUPABASE_STATUS] supabase_service 존재: {supabase_service is not None}")
+            
+            if hasattr(supabase_service, 'get_ai_settings'):
+                logger.info("✅ [METHOD_EXISTS] get_ai_settings 메서드 존재 확인")
+                print("✅ [METHOD_EXISTS] get_ai_settings 메서드 존재 확인")
+            else:
+                logger.error("❌ [METHOD_MISSING] get_ai_settings 메서드가 존재하지 않습니다")
+                print("❌ [METHOD_MISSING] get_ai_settings 메서드가 존재하지 않습니다")
+                raise AttributeError("get_ai_settings 메서드가 존재하지 않음")
+            
+            logger.info("🚀 [ACTUAL_SUPABASE_CALL] 실제 Supabase 호출 시작")
+            print("🚀 [ACTUAL_SUPABASE_CALL] 실제 Supabase 호출 시작")
+            
             settings_data = await supabase_service.get_ai_settings()
+            
+            logger.info("✅ [SUPABASE_SUCCESS] Supabase AI 설정 조회 성공")
+            logger.info(f"📊 [SETTINGS_DATA] 조회된 설정: {settings_data}")
+            print(f"✅ [SUPABASE_SUCCESS] Supabase AI 설정 조회 성공: {settings_data}")
+            
             self.current_settings = settings_data
             return settings_data
+            
         except Exception as e:
-            logger.error(f"AI 설정 조회 실패: {e}")
-            return {
+            logger.error(f"❌ [AI_SETTINGS_ERROR] AI 설정 조회 실패: {e}")
+            logger.error(f"📊 [ERROR_TYPE] 에러 타입: {type(e).__name__}")
+            logger.error(f"📊 [ERROR_MSG] 에러 메시지: {str(e)}")
+            logger.error(f"📊 [ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+            print(f"❌ [AI_SETTINGS_ERROR] AI 설정 조회 실패: {e}")
+            
+            logger.info("🔄 [DEFAULT_SETTINGS] 기본 설정 반환")
+            print("🔄 [DEFAULT_SETTINGS] 기본 설정 반환")
+            
+            default_settings = {
                 'provider': 'openai',
                 'openai_model': 'gpt-4',
                 'gemini_model': 'gemini-1.5-flash',
                 'temperature': 0.7,
                 'max_tokens': 2000
             }
+            
+            self.current_settings = default_settings
+            return default_settings
     
     async def update_ai_settings(self, new_settings: Dict[str, Any]) -> bool:
         """AI 설정 업데이트"""
@@ -77,24 +115,111 @@ class EnhancedAIService:
     
     async def get_active_handler(self):
         """현재 활성화된 AI 핸들러 반환"""
-        if not self.current_settings:
-            await self.get_current_ai_settings()
+        logger.info("🔍 [GET_ACTIVE_HANDLER] Enhanced AI Service - get_active_handler 시작")
+        print("🔍 [GET_ACTIVE_HANDLER] Enhanced AI Service - get_active_handler 시작")
         
-        provider = self.current_settings.get('provider', 'openai')
-        
-        if provider == 'gemini' and self.gemini_handler:
-            # Gemini 모델 업데이트
-            model_name = self.current_settings.get('gemini_model', 'gemini-1.5-flash')
-            self.gemini_handler.model_name = model_name
-            return self.gemini_handler
-        elif provider == 'openai' and self.openai_handler:
-            # OpenAI 모델 업데이트
-            model_name = self.current_settings.get('openai_model', 'gpt-4')
-            self.openai_handler.model_name = model_name
-            return self.openai_handler
-        else:
-            logger.warning(f"요청된 AI 제공자 '{provider}'를 사용할 수 없습니다. OpenAI로 폴백합니다.")
-            return self.openai_handler
+        try:
+            logger.info(f"📊 [CURRENT_SETTINGS_CHECK] current_settings 상태: {self.current_settings is not None}")
+            print(f"📊 [CURRENT_SETTINGS_CHECK] current_settings 상태: {self.current_settings is not None}")
+            
+            if not self.current_settings:
+                logger.info("🔄 [SETTINGS_FETCH] AI 설정을 가져오는 중...")
+                print("🔄 [SETTINGS_FETCH] AI 설정을 가져오는 중...")
+                
+                try:
+                    await self.get_current_ai_settings()
+                    logger.info("✅ [SETTINGS_FETCH_SUCCESS] AI 설정 가져오기 성공")
+                    print("✅ [SETTINGS_FETCH_SUCCESS] AI 설정 가져오기 성공")
+                except Exception as settings_error:
+                    logger.error(f"❌ [SETTINGS_FETCH_ERROR] AI 설정 가져오기 실패: {settings_error}")
+                    logger.error(f"📊 [SETTINGS_ERROR_TYPE] 에러 타입: {type(settings_error).__name__}")
+                    logger.error(f"📊 [SETTINGS_ERROR_MSG] 에러 메시지: {str(settings_error)}")
+                    print(f"❌ [SETTINGS_FETCH_ERROR] AI 설정 가져오기 실패: {settings_error}")
+                    
+                    # 설정 가져오기 실패 시 기본값 사용
+                    logger.info("🔄 [DEFAULT_SETTINGS] 기본 설정 사용")
+                    print("🔄 [DEFAULT_SETTINGS] 기본 설정 사용")
+                    self.current_settings = {
+                        'provider': 'openai',
+                        'openai_model': 'gpt-4',
+                        'gemini_model': 'gemini-1.5-flash',
+                        'temperature': 0.7,
+                        'max_tokens': 2000
+                    }
+            
+            provider = self.current_settings.get('provider', 'openai')
+            logger.info(f"📊 [PROVIDER_SELECTED] 선택된 AI 제공자: {provider}")
+            print(f"📊 [PROVIDER_SELECTED] 선택된 AI 제공자: {provider}")
+            
+            # 핸들러 상태 확인
+            logger.info(f"📊 [HANDLER_STATUS] OpenAI 핸들러 존재: {self.openai_handler is not None}")
+            logger.info(f"📊 [HANDLER_STATUS] Gemini 핸들러 존재: {self.gemini_handler is not None}")
+            print(f"📊 [HANDLER_STATUS] OpenAI: {self.openai_handler is not None}, Gemini: {self.gemini_handler is not None}")
+            
+            if provider == 'gemini' and self.gemini_handler:
+                logger.info("🔄 [GEMINI_SELECTED] Gemini 핸들러 선택")
+                print("🔄 [GEMINI_SELECTED] Gemini 핸들러 선택")
+                
+                # Gemini 모델 업데이트
+                model_name = self.current_settings.get('gemini_model', 'gemini-1.5-flash')
+                self.gemini_handler.model_name = model_name
+                logger.info(f"📊 [GEMINI_MODEL] 모델명: {model_name}")
+                
+                logger.info("✅ [GEMINI_READY] Gemini 핸들러 준비 완료")
+                print("✅ [GEMINI_READY] Gemini 핸들러 준비 완료")
+                return self.gemini_handler
+                
+            elif provider == 'openai' and self.openai_handler:
+                logger.info("🔄 [OPENAI_SELECTED] OpenAI 핸들러 선택")
+                print("🔄 [OPENAI_SELECTED] OpenAI 핸들러 선택")
+                
+                # OpenAI 모델 업데이트
+                model_name = self.current_settings.get('openai_model', 'gpt-4')
+                self.openai_handler.model_name = model_name
+                logger.info(f"📊 [OPENAI_MODEL] 모델명: {model_name}")
+                
+                logger.info("✅ [OPENAI_READY] OpenAI 핸들러 준비 완료")
+                print("✅ [OPENAI_READY] OpenAI 핸들러 준비 완료")
+                return self.openai_handler
+                
+            else:
+                logger.warning(f"⚠️ [FALLBACK_WARNING] 요청된 AI 제공자 '{provider}'를 사용할 수 없습니다")
+                logger.warning(f"📊 [FALLBACK_REASON] OpenAI 핸들러: {self.openai_handler is not None}, Gemini 핸들러: {self.gemini_handler is not None}")
+                print(f"⚠️ [FALLBACK_WARNING] 요청된 AI 제공자 '{provider}'를 사용할 수 없습니다")
+                
+                if self.openai_handler:
+                    logger.info("🔄 [FALLBACK_OPENAI] OpenAI로 폴백")
+                    print("🔄 [FALLBACK_OPENAI] OpenAI로 폴백")
+                    return self.openai_handler
+                elif self.gemini_handler:
+                    logger.info("🔄 [FALLBACK_GEMINI] Gemini로 폴백")
+                    print("🔄 [FALLBACK_GEMINI] Gemini로 폴백")
+                    return self.gemini_handler
+                else:
+                    logger.error("❌ [NO_HANDLERS] 사용 가능한 AI 핸들러가 없습니다")
+                    print("❌ [NO_HANDLERS] 사용 가능한 AI 핸들러가 없습니다")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"❌ [GET_ACTIVE_HANDLER_ERROR] get_active_handler 실패: {e}")
+            logger.error(f"📊 [ERROR_TYPE] 에러 타입: {type(e).__name__}")
+            logger.error(f"📊 [ERROR_MSG] 에러 메시지: {str(e)}")
+            logger.error(f"📊 [ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+            print(f"❌ [GET_ACTIVE_HANDLER_ERROR] get_active_handler 실패: {e}")
+            
+            # 에러 발생 시 기본 핸들러 반환 시도
+            if self.openai_handler:
+                logger.info("🔄 [ERROR_FALLBACK_OPENAI] 에러 발생으로 OpenAI 핸들러 반환")
+                print("🔄 [ERROR_FALLBACK_OPENAI] 에러 발생으로 OpenAI 핸들러 반환")
+                return self.openai_handler
+            elif self.gemini_handler:
+                logger.info("🔄 [ERROR_FALLBACK_GEMINI] 에러 발생으로 Gemini 핸들러 반환")
+                print("🔄 [ERROR_FALLBACK_GEMINI] 에러 발생으로 Gemini 핸들러 반환")
+                return self.gemini_handler
+            else:
+                logger.error("❌ [TOTAL_FAILURE] 모든 핸들러 사용 불가")
+                print("❌ [TOTAL_FAILURE] 모든 핸들러 사용 불가")
+                return None
     
     async def generate_response(self, prompt: str, **kwargs) -> str:
         """AI 응답 생성"""
