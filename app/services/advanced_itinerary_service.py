@@ -1490,9 +1490,20 @@ JSON 형식으로 응답해주세요:
                     "숙소_규칙": "각 일자의 마지막은 숙소 배치, 다음날 첫 장소와 지리적으로 가까운 숙소 선호"
                 }
                 
-                logger.info("🤖 [AI_CALL] Enhanced AI Service 호출 시작")
+                logger.info("=" * 100)
+                logger.info("🚨🚨🚨 REAL AI CALL PATH: Enhanced AI Service 호출 시작! 🚨🚨🚨")
+                logger.info(f"📊 [USER_DATA_TO_AI] AI에게 전달할 사용자 데이터:")
+                logger.info(f"{user_data}")
+                logger.info("=" * 100)
+                
                 ai_response = await enhanced_ai_service.generate_itinerary_with_master_prompt(user_data)
+                
+                logger.info("=" * 100)
+                logger.info("🚨🚨🚨 AI RESPONSE RECEIVED! 🚨🚨🚨")
                 logger.info(f"🤖 [AI_RESPONSE_RECEIVED] AI 응답 수신 완료 (길이: {len(ai_response) if ai_response else 0})")
+                logger.info(f"📝 [AI_RESPONSE_CONTENT] AI 응답 내용:")
+                logger.info(f"{ai_response}")
+                logger.info("=" * 100)
                 
                 if not ai_response or not ai_response.strip():
                     logger.error("❌ [AI_EMPTY_RESPONSE] AI가 빈 응답을 반환했습니다")
