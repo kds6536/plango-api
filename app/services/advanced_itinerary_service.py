@@ -405,50 +405,94 @@ JSON 형식으로 응답해주세요:
             
             logger.info(f"✅ [AI_HANDLER_SUCCESS] AI 핸들러 준비 완료: {type(ai_handler).__name__}")
             
-            # Supabase에서 itinerary_generation 프롬프트 가져오기
-            logger.info("📜 [PROMPT_FETCH] Supabase에서 프롬프트 가져오기 시작")
+            # ===== 🚨 [핵심 수정] 프롬프트 생성 과정을 별도 try-catch로 감싸기 =====
+            prompt = None
             try:
-                from app.services.supabase_service import supabase_service
-                prompt_template = await supabase_service.get_master_prompt('itinerary_generation')
-                logger.info(f"✅ [PROMPT_FETCH_SUCCESS] Supabase 프롬프트 로드 성공 (길이: {len(prompt_template)})")
-            except Exception as prompt_error:
-                logger.warning(f"⚠️ [PROMPT_FETCH_FAIL] Supabase 프롬프트 로드 실패: {prompt_error}, 기본 프롬프트 사용")
-                prompt_template = self._get_default_itinerary_prompt()
+                logger.info("📜 [PROMPT_CREATION_START] 최종 프롬프트 생성을 시작합니다")
+                
+                # Supabase에서 itinerary_generation 프롬프트 가져오기
+                logger.info("📜 [PROMPT_FETCH] Supabase에서 프롬프트 가져오기 시작")
+                try:
+                    from app.services.supabase_service import supabase_service
+                    prompt_template = await supabase_service.get_master_prompt('itinerary_generation')
+                    logger.info(f"✅ [PROMPT_FETCH_SUCCESS] Supabase 프롬프트 로드 성공 (길이: {len(prompt_template)})")
+                except Exception as prompt_error:
+                    logger.warning(f"⚠️ [PROMPT_FETCH_FAIL] Supabase 프롬프트 로드 실패: {prompt_error}, 기본 프롬프트 사용")
+                    prompt_template = self._get_default_itinerary_prompt()
+                
+                # 장소 정보 구성
+                logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작")
+                places_info = []
+                for place in places:
+                    # PlaceData 객체의 속성에 안전하게 접근
+                    place_name = getattr(place, 'name', 'Unknown Place')
+                    place_category = getattr(place, 'category', 'Unknown Category')
+                    place_address = getattr(place, 'address', 'Unknown Address')
+                    
+                    place_info = f"- {place_name} ({place_category}): {place_address}"
+                    places_info.append(place_info)
+                    logger.info(f"  📍 {place_info}")
+                
+                logger.info(f"✅ [PLACES_INFO_SUCCESS] {len(places_info)}개 장소 정보 구성 완료")
+                
+                # 날짜별 시간 제약 조건 처리
+                logger.info("⏰ [TIME_CONSTRAINTS_PROCESSING] 시간 제약 조건 처리 시작")
+                time_constraints_info = ""
+                if constraints.get("time_constraints"):
+                    time_constraints_info = "\n날짜별 시간 제약 조건:"
+                    for tc in constraints["time_constraints"]:
+                        day = tc.get("day", 1)
+                        start = tc.get("startTime", daily_start)
+                        end = tc.get("endTime", daily_end)
+                        time_constraints_info += f"\n- {day}일차: {start} ~ {end}"
+                    logger.info(f"⏰ [TIME_CONSTRAINTS] 개별 시간 제약: {constraints['time_constraints']}")
+                else:
+                    time_constraints_info = f"\n전체 일정 시간: {daily_start} ~ {daily_end}"
+                    logger.info(f"⏰ [TIME_CONSTRAINTS] 전체 시간 제약: {daily_start} ~ {daily_end}")
+                
+                logger.info("✅ [TIME_CONSTRAINTS_SUCCESS] 시간 제약 조건 처리 완료")
+                
+                # 프롬프트 템플릿 변수 치환
+                logger.info("📜 [PROMPT_BUILD] 최종 프롬프트 구성 시작")
+                from string import Template
+                template = Template(prompt_template)
+                
+                # 변수 치환 전에 각 변수 값 로깅
+                logger.info(f"📊 [TEMPLATE_VARS] places_list 길이: {len(places_info)}")
+                logger.info(f"📊 [TEMPLATE_VARS] duration: {duration}")
+                logger.info(f"📊 [TEMPLATE_VARS] daily_start_time: {daily_start}")
+                logger.info(f"📊 [TEMPLATE_VARS] daily_end_time: {daily_end}")
+                logger.info(f"📊 [TEMPLATE_VARS] total_places: {len(places)}")
+                logger.info(f"📊 [TEMPLATE_VARS] time_constraints_info 길이: {len(time_constraints_info)}")
+                
+                prompt = template.safe_substitute(
+                    places_list=chr(10).join(places_info),
+                    duration=duration,
+                    daily_start_time=daily_start,
+                    daily_end_time=daily_end,
+                    total_places=len(places),
+                    time_constraints_info=time_constraints_info
+                )
+                
+                logger.info("✅ [PROMPT_CREATION_SUCCESS] 최종 프롬프트 생성 완료")
+                logger.info(f"📊 [FINAL_PROMPT_LENGTH] 최종 프롬프트 길이: {len(prompt)} 문자")
+                
+            except Exception as prompt_creation_error:
+                # 프롬프트 생성 과정에서 발생한 정확한 에러를 로깅
+                logger.error("❌ [PROMPT_CREATION_FAIL] 최종 프롬프트 생성 중 심각한 오류 발생")
+                logger.error(f"🚨 [ERROR_TYPE] 에러 타입: {type(prompt_creation_error).__name__}")
+                logger.error(f"📝 [ERROR_MESSAGE] 에러 메시지: {str(prompt_creation_error)}")
+                logger.error(f"📊 [ERROR_TRACEBACK] 전체 트레이스백:", exc_info=True)
+                
+                # 프롬프트 생성 실패 시 폴백으로 간단한 일정 생성
+                logger.info("🔄 [PROMPT_FAIL_FALLBACK] 프롬프트 생성 실패로 인한 폴백")
+                return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
-            # 장소 정보 구성
-            logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작")
-            places_info = []
-            for place in places:
-                place_info = f"- {place.name} ({place.category}): {place.address}"
-                places_info.append(place_info)
-                logger.info(f"  📍 {place_info}")
-            
-            # 날짜별 시간 제약 조건 처리
-            time_constraints_info = ""
-            if constraints.get("time_constraints"):
-                time_constraints_info = "\n날짜별 시간 제약 조건:"
-                for tc in constraints["time_constraints"]:
-                    day = tc.get("day", 1)
-                    start = tc.get("startTime", daily_start)
-                    end = tc.get("endTime", daily_end)
-                    time_constraints_info += f"\n- {day}일차: {start} ~ {end}"
-                logger.info(f"⏰ [TIME_CONSTRAINTS] 개별 시간 제약: {constraints['time_constraints']}")
-            else:
-                time_constraints_info = f"\n전체 일정 시간: {daily_start} ~ {daily_end}"
-                logger.info(f"⏰ [TIME_CONSTRAINTS] 전체 시간 제약: {daily_start} ~ {daily_end}")
-            
-            # 프롬프트 템플릿 변수 치환
-            logger.info("📜 [PROMPT_BUILD] 최종 프롬프트 구성 시작")
-            from string import Template
-            template = Template(prompt_template)
-            prompt = template.safe_substitute(
-                places_list=chr(10).join(places_info),
-                duration=duration,
-                daily_start_time=daily_start,
-                daily_end_time=daily_end,
-                total_places=len(places),
-                time_constraints_info=time_constraints_info
-            )
+            # 프롬프트가 성공적으로 생성되었는지 최종 확인
+            if not prompt or not prompt.strip():
+                logger.error("❌ [EMPTY_PROMPT] 프롬프트가 비어있습니다")
+                logger.info("🔄 [EMPTY_PROMPT_FALLBACK] 빈 프롬프트로 인한 폴백")
+                return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
             # ===== 🚨 [핵심] AI에게 전달되는 최종 프롬프트 완전 로깅 =====
             logger.info("📜📜📜 FINAL PROMPT TO AI - START 📜📜📜")
