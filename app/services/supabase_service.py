@@ -115,27 +115,88 @@ class SupabaseService:
 
     async def get_ai_settings(self) -> Dict[str, Any]:
         """AI 설정 조회 (기존 settings 테이블만 사용)"""
+        logger.info("🔍 [SUPABASE_GET_AI_SETTINGS] AI 설정 조회 시작")
+        print("🔍 [SUPABASE_GET_AI_SETTINGS] AI 설정 조회 시작")
+        
         try:
+            logger.info(f"📊 [CONNECTION_CHECK] Supabase 연결 상태: {self.is_connected()}")
+            print(f"📊 [CONNECTION_CHECK] Supabase 연결 상태: {self.is_connected()}")
+            
             if not self.is_connected():
+                logger.warning("⚠️ [NO_CONNECTION] Supabase 연결 없음, 기본 설정 반환")
+                print("⚠️ [NO_CONNECTION] Supabase 연결 없음, 기본 설정 반환")
                 return self._get_default_ai_settings()
             
+            logger.info("🔍 [TABLE_QUERY] settings 테이블 조회 시작")
+            print("🔍 [TABLE_QUERY] settings 테이블 조회 시작")
+            
             # 기존 settings 테이블 사용
-            response = self.client.table('settings').select('*').execute()
-            if response.data:
-                settings_dict = {item['key']: item['value'] for item in response.data}
-                return {
-                    'provider': settings_dict.get('default_provider', 'openai'),
-                    'openai_model': settings_dict.get('openai_model_name', 'gpt-4'),
-                    'gemini_model': settings_dict.get('gemini_model_name', 'gemini-1.5-flash'),
-                    'temperature': 0.7,
-                    'max_tokens': 2000
-                }
-            else:
-                logger.warning("AI 설정이 없습니다. 기본값을 사용합니다.")
-                return self._get_default_ai_settings()
+            try:
+                logger.info("🚀 [ACTUAL_QUERY] 실제 Supabase 테이블 쿼리 실행")
+                print("🚀 [ACTUAL_QUERY] 실제 Supabase 테이블 쿼리 실행")
+                
+                response = self.client.table('settings').select('*').execute()
+                
+                logger.info("✅ [QUERY_SUCCESS] Supabase 쿼리 실행 성공")
+                logger.info(f"📊 [RESPONSE_DATA] 응답 데이터: {response.data}")
+                logger.info(f"📊 [DATA_COUNT] 조회된 설정 수: {len(response.data) if response.data else 0}")
+                print(f"✅ [QUERY_SUCCESS] Supabase 쿼리 성공, 데이터 수: {len(response.data) if response.data else 0}")
+                
+                if response.data:
+                    logger.info("🔧 [DATA_PROCESSING] 설정 데이터 처리 시작")
+                    print("🔧 [DATA_PROCESSING] 설정 데이터 처리 시작")
+                    
+                    settings_dict = {item['key']: item['value'] for item in response.data}
+                    logger.info(f"📊 [SETTINGS_DICT] 변환된 설정 딕셔너리: {settings_dict}")
+                    
+                    result = {
+                        'provider': settings_dict.get('default_provider', 'openai'),
+                        'openai_model': settings_dict.get('openai_model_name', 'gpt-4'),
+                        'gemini_model': settings_dict.get('gemini_model_name', 'gemini-1.5-flash'),
+                        'temperature': 0.7,
+                        'max_tokens': 2000
+                    }
+                    
+                    logger.info(f"✅ [RESULT_SUCCESS] 최종 AI 설정: {result}")
+                    print(f"✅ [RESULT_SUCCESS] 최종 AI 설정: {result}")
+                    return result
+                else:
+                    logger.warning("⚠️ [EMPTY_DATA] settings 테이블에 데이터가 없습니다")
+                    print("⚠️ [EMPTY_DATA] settings 테이블에 데이터가 없습니다")
+                    
+                    logger.info("🔄 [DEFAULT_FALLBACK] 기본 설정 사용")
+                    print("🔄 [DEFAULT_FALLBACK] 기본 설정 사용")
+                    return self._get_default_ai_settings()
+                    
+            except Exception as query_error:
+                logger.error(f"❌ [QUERY_ERROR] Supabase 쿼리 실행 실패: {query_error}")
+                logger.error(f"📊 [QUERY_ERROR_TYPE] 쿼리 에러 타입: {type(query_error).__name__}")
+                logger.error(f"📊 [QUERY_ERROR_MSG] 쿼리 에러 메시지: {str(query_error)}")
+                print(f"❌ [QUERY_ERROR] Supabase 쿼리 실행 실패: {query_error}")
+                
+                # 특정 에러 타입별 처리
+                error_msg = str(query_error).lower()
+                if 'relation' in error_msg and 'does not exist' in error_msg:
+                    logger.error("💥 [TABLE_NOT_EXISTS] settings 테이블이 존재하지 않습니다")
+                    print("💥 [TABLE_NOT_EXISTS] settings 테이블이 존재하지 않습니다")
+                elif 'permission denied' in error_msg:
+                    logger.error("🚫 [PERMISSION_DENIED] settings 테이블 접근 권한이 없습니다")
+                    print("🚫 [PERMISSION_DENIED] settings 테이블 접근 권한이 없습니다")
+                elif 'connection' in error_msg:
+                    logger.error("🔌 [CONNECTION_ERROR] Supabase 연결 문제")
+                    print("🔌 [CONNECTION_ERROR] Supabase 연결 문제")
+                
+                raise query_error
                 
         except Exception as e:
-            logger.error(f"AI 설정 조회 실패: {e}")
+            logger.error(f"❌ [GET_AI_SETTINGS_ERROR] AI 설정 조회 최종 실패: {e}")
+            logger.error(f"📊 [ERROR_TYPE] 에러 타입: {type(e).__name__}")
+            logger.error(f"📊 [ERROR_MSG] 에러 메시지: {str(e)}")
+            logger.error(f"📊 [ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+            print(f"❌ [GET_AI_SETTINGS_ERROR] AI 설정 조회 최종 실패: {e}")
+            
+            logger.info("🔄 [FINAL_FALLBACK] 최종 폴백으로 기본 설정 반환")
+            print("🔄 [FINAL_FALLBACK] 최종 폴백으로 기본 설정 반환")
             return self._get_default_ai_settings()
     
     async def update_ai_settings(self, settings_data: Dict[str, Any]) -> bool:

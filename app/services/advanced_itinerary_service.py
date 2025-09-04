@@ -630,8 +630,9 @@ JSON 형식으로 응답해주세요:
                 logger.info("🔍 [STEP_2] 장소 정보 구성 시작")
                 print("🔍 [STEP_2] 장소 정보 구성 시작")
                 
-                # ===== 🚨 [핵심 수정] PlaceData 객체 정보 구성 =====
-                logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작")
+                # ===== 🚨 [핵심 수정] PlaceData 객체 정보 구성 - 위도/경도 포함 =====
+                logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작 (위도/경도 포함)")
+                print("📍 [PLACES_INFO] 장소 정보 구성 시작 (위도/경도 포함)")
                 places_info = []
                 for i, place in enumerate(places):
                     try:
@@ -639,19 +640,32 @@ JSON 형식으로 응답해주세요:
                         place_name = place.name
                         place_category = place.category
                         place_address = place.address or 'Unknown Address'
+                        place_lat = place.lat if hasattr(place, 'lat') else 0.0
+                        place_lng = place.lng if hasattr(place, 'lng') else 0.0
                         
-                        place_info = f"- {place_name} ({place_category}): {place_address}"
+                        # ===== 🚨 [핵심] 위도/경도 정보를 포함한 장소 정보 생성 =====
+                        place_info = f"- {place_name} ({place_category}): {place_address} [위도: {place_lat}, 경도: {place_lng}]"
                         places_info.append(place_info)
-                        logger.info(f"  📍 [{i+1}] {place_info}")
+                        
+                        logger.info(f"  📍 [{i+1}] {place_name} - 위도: {place_lat}, 경도: {place_lng}")
+                        print(f"  📍 [{i+1}] {place_name} - 위도: {place_lat}, 경도: {place_lng}")
+                        
+                        # 위도/경도 유효성 검증
+                        if place_lat == 0.0 and place_lng == 0.0:
+                            logger.warning(f"⚠️ [MISSING_COORDS] {place_name}의 위도/경도가 0,0입니다")
+                            print(f"⚠️ [MISSING_COORDS] {place_name}의 위도/경도가 0,0입니다")
                         
                     except Exception as place_info_error:
                         logger.error(f"❌ [PLACE_INFO_ERROR] 장소 {i+1} 정보 구성 실패: {place_info_error}")
                         logger.error(f"📊 [PLACE_INFO_ERROR_TYPE] 에러 타입: {type(place_info_error).__name__}")
                         logger.error(f"📊 [PLACE_INFO_ERROR_MSG] 에러 메시지: {str(place_info_error)}")
+                        print(f"❌ [PLACE_INFO_ERROR] 장소 {i+1} 정보 구성 실패: {place_info_error}")
+                        
                         # 에러 발생 시 기본값 사용
-                        fallback_info = f"- Place_{i+1} (Unknown): Error accessing place data"
+                        fallback_info = f"- Place_{i+1} (Unknown): Error accessing place data [위도: 0.0, 경도: 0.0]"
                         places_info.append(fallback_info)
                         logger.info(f"  📍 [{i+1}] {fallback_info} (fallback)")
+                        print(f"  📍 [{i+1}] {fallback_info} (fallback)")
                 
                 logger.info(f"✅ [PLACES_INFO_SUCCESS] {len(places_info)}개 장소 정보 구성 완료")
                 print(f"✅ [PLACES_INFO_SUCCESS] {len(places_info)}개 장소 정보 구성 완료")
