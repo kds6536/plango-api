@@ -94,7 +94,34 @@ class DynamicAIService:
         logger.info(f"🔧 [AI_PROVIDER] 현재 AI 제공자: {current_provider}")
         logger.info(f"📏 [PROMPT_LENGTH] 프롬프트 길이: {len(prompt)} 글자")
         logger.info(f"🎛️ [MAX_TOKENS] 최대 토큰: {max_tokens}")
-        logger.info(f"📝 [PROMPT_PREVIEW] 프롬프트 미리보기: {prompt[:200]}...")
+        
+        # AI 클라이언트 상태 확인
+        if current_provider == "gemini":
+            logger.info(f"🟢 [GEMINI_STATUS] Gemini 모델 상태: {self.gemini_model is not None}")
+            if self.gemini_model:
+                logger.info(f"🟢 [GEMINI_MODEL] 사용 모델: gemini-1.5-flash")
+        else:
+            logger.info(f"🔵 [OPENAI_STATUS] OpenAI 클라이언트 상태: {self.openai_client is not None}")
+            if self.openai_client:
+                logger.info(f"🔵 [OPENAI_MODEL] 사용 모델: gpt-3.5-turbo")
+        
+        print(f"🤖 [AI_START] AI 텍스트 생성 시작 - 제공자: {current_provider}")
+        print(f"📏 [PROMPT_LENGTH] 프롬프트 길이: {len(prompt)} 글자")
+        
+        # ===== 🚨 [핵심] AI 핸들러에서도 완전한 프롬프트 로깅 =====
+        logger.info("🔍🔍🔍 AI HANDLER PROMPT - START 🔍🔍🔍")
+        logger.info("=" * 100)
+        logger.info("📝 [FULL_PROMPT_TO_AI] AI 핸들러가 받은 완전한 프롬프트:")
+        logger.info(prompt)
+        logger.info("=" * 100)
+        logger.info("🔍🔍🔍 AI HANDLER PROMPT - END 🔍🔍🔍")
+        
+        print("🔍🔍🔍 AI HANDLER PROMPT - START 🔍🔍🔍")
+        print("=" * 100)
+        print("📝 [FULL_PROMPT_TO_AI] AI 핸들러가 받은 완전한 프롬프트:")
+        print(prompt)
+        print("=" * 100)
+        print("🔍🔍🔍 AI HANDLER PROMPT - END 🔍🔍🔍")
         
         try:
             if current_provider == "gemini":
@@ -104,10 +131,22 @@ class DynamicAIService:
                 logger.info(f"🔵 [AI_OPENAI] OpenAI로 텍스트 생성 시작")
                 result = await self._generate_with_openai(prompt, max_tokens)
             
-            # === Railway 로그: AI 호출 성공 ===
-            logger.info(f"✅ [AI_SUCCESS] AI 텍스트 생성 완료")
+            # ===== 🚨 [핵심] AI 핸들러에서도 완전한 응답 로깅 =====
+            logger.info("✅✅✅ AI HANDLER RESPONSE - START ✅✅✅")
+            logger.info("=" * 100)
             logger.info(f"📊 [RESULT_LENGTH] 응답 길이: {len(result)} 글자")
-            logger.info(f"📄 [RESULT_PREVIEW] 응답 미리보기: {result[:200]}...")
+            logger.info("📝 [FULL_RESPONSE_FROM_AI] AI 핸들러가 받은 완전한 응답:")
+            logger.info(result)
+            logger.info("=" * 100)
+            logger.info("✅✅✅ AI HANDLER RESPONSE - END ✅✅✅")
+            
+            print("✅✅✅ AI HANDLER RESPONSE - START ✅✅✅")
+            print("=" * 100)
+            print(f"📊 [RESULT_LENGTH] 응답 길이: {len(result)} 글자")
+            print("📝 [FULL_RESPONSE_FROM_AI] AI 핸들러가 받은 완전한 응답:")
+            print(result)
+            print("=" * 100)
+            print("✅✅✅ AI HANDLER RESPONSE - END ✅✅✅")
             
             return result
             
@@ -146,6 +185,29 @@ class DynamicAIService:
             if clean_result.endswith("```"):
                 clean_result = clean_result[:-3]  # 맨 끝 "```" 제거
             clean_result = clean_result.strip()  # 앞뒤 공백 최종 제거
+            
+            # ===== 🚨 [핵심] OpenAI 원본 응답 로깅 =====
+            logger.info("🔵🔵🔵 OPENAI RAW RESPONSE - START 🔵🔵🔵")
+            logger.info("=" * 100)
+            logger.info(f"📊 [RAW_LENGTH] 원본 응답 길이: {len(result)} 글자")
+            logger.info(f"📊 [CLEAN_LENGTH] 정제된 응답 길이: {len(clean_result)} 글자")
+            logger.info("📝 [RAW_OPENAI_RESPONSE] OpenAI 원본 응답:")
+            logger.info(result)
+            logger.info("📝 [CLEAN_OPENAI_RESPONSE] 정제된 OpenAI 응답:")
+            logger.info(clean_result)
+            logger.info("=" * 100)
+            logger.info("🔵🔵🔵 OPENAI RAW RESPONSE - END 🔵🔵🔵")
+            
+            print("🔵🔵🔵 OPENAI RAW RESPONSE - START 🔵🔵🔵")
+            print("=" * 100)
+            print(f"📊 [RAW_LENGTH] 원본 응답 길이: {len(result)} 글자")
+            print(f"📊 [CLEAN_LENGTH] 정제된 응답 길이: {len(clean_result)} 글자")
+            print("📝 [RAW_OPENAI_RESPONSE] OpenAI 원본 응답:")
+            print(result)
+            print("📝 [CLEAN_OPENAI_RESPONSE] 정제된 OpenAI 응답:")
+            print(clean_result)
+            print("=" * 100)
+            print("🔵🔵🔵 OPENAI RAW RESPONSE - END 🔵🔵🔵")
             
             logger.info(f"OpenAI 응답 생성 완료 ({len(clean_result)} 글자)")
             return clean_result
@@ -187,6 +249,29 @@ class DynamicAIService:
             if clean_result.endswith("```"):
                 clean_result = clean_result[:-3]  # 맨 끝 "```" 제거
             clean_result = clean_result.strip()  # 앞뒤 공백 최종 제거
+            
+            # ===== 🚨 [핵심] Gemini 원본 응답 로깅 =====
+            logger.info("🟢🟢🟢 GEMINI RAW RESPONSE - START 🟢🟢🟢")
+            logger.info("=" * 100)
+            logger.info(f"📊 [RAW_LENGTH] 원본 응답 길이: {len(result)} 글자")
+            logger.info(f"📊 [CLEAN_LENGTH] 정제된 응답 길이: {len(clean_result)} 글자")
+            logger.info("📝 [RAW_GEMINI_RESPONSE] Gemini 원본 응답:")
+            logger.info(result)
+            logger.info("📝 [CLEAN_GEMINI_RESPONSE] 정제된 Gemini 응답:")
+            logger.info(clean_result)
+            logger.info("=" * 100)
+            logger.info("🟢🟢🟢 GEMINI RAW RESPONSE - END 🟢🟢🟢")
+            
+            print("🟢🟢🟢 GEMINI RAW RESPONSE - START 🟢🟢🟢")
+            print("=" * 100)
+            print(f"📊 [RAW_LENGTH] 원본 응답 길이: {len(result)} 글자")
+            print(f"📊 [CLEAN_LENGTH] 정제된 응답 길이: {len(clean_result)} 글자")
+            print("📝 [RAW_GEMINI_RESPONSE] Gemini 원본 응답:")
+            print(result)
+            print("📝 [CLEAN_GEMINI_RESPONSE] 정제된 Gemini 응답:")
+            print(clean_result)
+            print("=" * 100)
+            print("🟢🟢🟢 GEMINI RAW RESPONSE - END 🟢🟢🟢")
             
             logger.info(f"Gemini 응답 생성 완료 ({len(clean_result)} 글자)")
             return clean_result

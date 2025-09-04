@@ -450,16 +450,36 @@ JSON 형식으로 응답해주세요:
                 time_constraints_info=time_constraints_info
             )
             
-            logger.info(f"📜 [FINAL_PROMPT] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(prompt)}):")
-            logger.info("=" * 80)
-            logger.info("📜 [COMPLETE_PROMPT] 최종 프롬프트 전체 내용:")
+            # ===== 🚨 [핵심] AI에게 전달되는 최종 프롬프트 완전 로깅 =====
+            logger.info("📜📜📜 FINAL PROMPT TO AI - START 📜📜📜")
+            logger.info("=" * 100)
+            logger.info(f"📊 [PROMPT_LENGTH] 프롬프트 총 길이: {len(prompt)} 문자")
+            logger.info("📝 [COMPLETE_PROMPT_CONTENT] AI에게 전달되는 최종 프롬프트 전체 내용:")
             logger.info(prompt)
-            logger.info("=" * 80)
+            logger.info("=" * 100)
+            logger.info("📜📜📜 FINAL PROMPT TO AI - END 📜📜📜")
+            
+            # 추가로 print도 사용하여 확실히 출력되도록 함
+            print("📜📜📜 FINAL PROMPT TO AI - START 📜📜📜")
+            print("=" * 100)
+            print(f"📊 [PROMPT_LENGTH] 프롬프트 총 길이: {len(prompt)} 문자")
+            print("📝 [COMPLETE_PROMPT_CONTENT] AI에게 전달되는 최종 프롬프트 전체 내용:")
+            print(prompt)
+            print("=" * 100)
+            print("📜📜📜 FINAL PROMPT TO AI - END 📜📜📜")
             
             # AI 호출
             logger.info("🤖 [AI_CALL_START] AI 호출 시작")
-            response = await ai_handler.generate_text(prompt, max_tokens=2000)
-            logger.info(f"🤖 [AI_CALL_COMPLETE] AI 호출 완료 (응답 길이: {len(response) if response else 0})")
+            print("🤖 [AI_CALL_START] AI 호출 시작")
+            try:
+                response = await ai_handler.generate_text(prompt, max_tokens=2000)
+                logger.info(f"🤖 [AI_CALL_COMPLETE] AI 호출 완료 (응답 길이: {len(response) if response else 0})")
+                print(f"🤖 [AI_CALL_COMPLETE] AI 호출 완료 (응답 길이: {len(response) if response else 0})")
+            except Exception as ai_error:
+                logger.error(f"❌ [AI_CALL_ERROR] AI 호출 실패: {ai_error}")
+                print(f"❌ [AI_CALL_ERROR] AI 호출 실패: {ai_error}")
+                logger.info("🔄 [FALLBACK] 간단한 일정 생성으로 폴백")
+                return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
             # ===== 🚨 [핵심 수정] AI 응답 검증 및 파싱 강화 =====
             if not response or not response.strip():
@@ -467,35 +487,69 @@ JSON 형식으로 응답해주세요:
                 logger.info("🔄 [FALLBACK] 간단한 일정 생성으로 폴백")
                 return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
-            logger.info("🤖 [RAW_AI_RESPONSE] 3단계 AI 원본 응답:")
-            logger.info("=" * 80)
+            # ===== 🚨 [핵심] AI 원본 응답 완전 로깅 =====
+            logger.info("🤖🤖🤖 RAW AI RESPONSE - START 🤖🤖🤖")
+            logger.info("=" * 100)
             logger.info(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
-            logger.info(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response)}")
-            logger.info("📝 [RESPONSE_CONTENT] 응답 내용:")
-            logger.info(response)
-            logger.info("=" * 80)
+            logger.info(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response) if response else 0}")
+            logger.info("📝 [COMPLETE_RESPONSE_CONTENT] AI 원본 응답 전체 내용:")
+            logger.info(response if response else "None 또는 빈 응답")
+            logger.info("=" * 100)
+            logger.info("🤖🤖🤖 RAW AI RESPONSE - END 🤖🤖🤖")
+            
+            # 추가로 print도 사용
+            print("🤖🤖🤖 RAW AI RESPONSE - START 🤖🤖🤖")
+            print("=" * 100)
+            print(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
+            print(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response) if response else 0}")
+            print("📝 [COMPLETE_RESPONSE_CONTENT] AI 원본 응답 전체 내용:")
+            print(response if response else "None 또는 빈 응답")
+            print("=" * 100)
+            print("🤖🤖🤖 RAW AI RESPONSE - END 🤖🤖🤖")
             
             try:
                 import json
                 logger.info("🔧 [JSON_PARSING] JSON 파싱 시작")
                 
-                # JSON 추출
+                # JSON 추출 개선 - 여러 패턴 시도
+                json_str = None
+                
+                # 패턴 1: 일반적인 JSON 블록
                 json_start = response.find('{')
                 json_end = response.rfind('}') + 1
                 
-                logger.info(f"🔧 [JSON_BOUNDS] JSON 범위: {json_start} ~ {json_end}")
+                if json_start != -1 and json_end > json_start:
+                    json_str = response[json_start:json_end]
+                    logger.info(f"🔧 [JSON_PATTERN_1] 일반 JSON 패턴 발견 (길이: {len(json_str)})")
+                else:
+                    # 패턴 2: 코드 블록 내 JSON
+                    import re
+                    json_match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(1)
+                        logger.info(f"🔧 [JSON_PATTERN_2] 코드 블록 JSON 패턴 발견 (길이: {len(json_str)})")
+                    else:
+                        # 패턴 3: 마크다운 없는 JSON
+                        json_match = re.search(r'(\{[^{}]*"travel_plan"[^{}]*\{.*?\}.*?\})', response, re.DOTALL)
+                        if json_match:
+                            json_str = json_match.group(1)
+                            logger.info(f"🔧 [JSON_PATTERN_3] travel_plan 키워드 기반 JSON 발견 (길이: {len(json_str)})")
                 
-                if json_start == -1 or json_end <= json_start:
-                    logger.error("❌ [JSON_BOUNDS_ERROR] 유효한 JSON 범위를 찾을 수 없습니다")
-                    raise ValueError("JSON 범위 오류")
+                if not json_str:
+                    logger.error("❌ [JSON_EXTRACTION_FAIL] 모든 패턴에서 JSON 추출 실패")
+                    raise ValueError("JSON 추출 실패")
                 
-                json_str = response[json_start:json_end]
-                logger.info(f"🔧 [EXTRACTED_JSON] 추출된 JSON (길이: {len(json_str)}):")
-                logger.info(f"📝 [JSON_PREVIEW] JSON 미리보기 (처음 300자): {json_str[:300]}...")
+                logger.info(f"📝 [JSON_PREVIEW] JSON 미리보기 (처음 500자): {json_str[:500]}...")
                 
-                itinerary_data = json.loads(json_str)
-                logger.info("✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
-                logger.info(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(itinerary_data.keys())}")
+                # JSON 파싱 시도
+                try:
+                    itinerary_data = json.loads(json_str)
+                    logger.info("✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
+                    logger.info(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(itinerary_data.keys())}")
+                except json.JSONDecodeError as json_error:
+                    logger.error(f"❌ [JSON_DECODE_ERROR] JSON 디코딩 실패: {json_error}")
+                    logger.error(f"📝 [FAILED_JSON_SAMPLE] 실패한 JSON 샘플: {json_str[:200]}...")
+                    raise ValueError(f"JSON 디코딩 실패: {json_error}")
                 
                 # ===== 🚨 [핵심] AI 응답 구조 검증 =====
                 travel_plan = itinerary_data.get("travel_plan", {})
@@ -588,35 +642,76 @@ JSON 형식으로 응답해주세요:
         try:
             logger.info(f"🔄 [SIMPLE_ITINERARY] 간단한 일정 생성: {len(places)}개 장소, {duration}일")
             
-            # 장소를 일수로 나누어 배치
+            if not places:
+                logger.warning("⚠️ [NO_PLACES] 장소가 없어 기본 일정 생성")
+                return OptimizeResponse(
+                    travel_plan=TravelPlan(
+                        total_days=duration,
+                        daily_start_time=daily_start,
+                        daily_end_time=daily_end,
+                        days=[DayPlan(
+                            day=1,
+                            date="2024-01-01",
+                            activities=[ActivityDetail(
+                                time="10:00",
+                                place_name="여행 계획을 다시 세워보세요",
+                                category="안내",
+                                duration_minutes=60,
+                                description="장소 정보가 부족합니다. 다른 조건으로 다시 시도해주세요."
+                            )]
+                        )]
+                    )
+                )
+            
+            # 장소를 일수로 나누어 배치 (더 균등하게)
             places_per_day = max(1, len(places) // duration)
+            remaining_places = len(places) % duration
             day_plans = []
+            place_idx = 0
             
             for day in range(1, duration + 1):
-                start_idx = (day - 1) * places_per_day
-                end_idx = min(start_idx + places_per_day, len(places))
-                day_places = places[start_idx:end_idx]
+                # 남은 장소를 앞쪽 날짜에 더 배치
+                current_day_places = places_per_day + (1 if day <= remaining_places else 0)
+                day_places = places[place_idx:place_idx + current_day_places]
+                place_idx += current_day_places
                 
                 logger.info(f"🔄 [DAY_{day}] {day}일차: {len(day_places)}개 장소 배치")
                 
                 activities = []
-                current_time = daily_start
+                start_hour = int(daily_start.split(':')[0])
+                end_hour = int(daily_end.split(':')[0])
                 
                 for i, place in enumerate(day_places):
-                    # 시간 계산 (2시간씩 배치)
-                    hour = int(current_time.split(':')[0]) + (i * 2)
-                    if hour >= 22:  # 22시 이후는 다음날로
-                        break
+                    # 시간 계산 (균등 배치)
+                    if len(day_places) > 1:
+                        time_slot = (end_hour - start_hour) // len(day_places)
+                        hour = start_hour + (i * time_slot)
+                    else:
+                        hour = start_hour + 1
+                    
+                    # 시간 범위 체크
+                    if hour >= end_hour:
+                        hour = end_hour - 2
                     
                     activity = ActivityDetail(
                         time=f"{hour:02d}:00",
                         place_name=place.name,
                         category=place.category,
-                        duration_minutes=120,
-                        description=f"{place.name}에서의 활동"
+                        duration_minutes=min(120, (time_slot * 60) if len(day_places) > 1 else 120),
+                        description=f"{place.name}에서의 {place.category} 활동"
                     )
                     activities.append(activity)
                     logger.info(f"  - {hour:02d}:00 {place.name} ({place.category})")
+                
+                # 활동이 없는 날은 기본 활동 추가
+                if not activities:
+                    activities.append(ActivityDetail(
+                        time=f"{start_hour + 1:02d}:00",
+                        place_name="자유 시간",
+                        category="휴식",
+                        duration_minutes=120,
+                        description="개인 시간 또는 추가 탐방"
+                    ))
                 
                 day_plan = DayPlan(
                     day=day,
@@ -643,10 +738,20 @@ JSON 형식으로 응답해주세요:
             logger.info("🔄 [MINIMAL_FALLBACK] 최소한의 응답 반환")
             return OptimizeResponse(
                 travel_plan=TravelPlan(
-                    total_days=1,
-                    daily_start_time="09:00",
-                    daily_end_time="22:00",
-                    days=[]
+                    total_days=max(1, duration),
+                    daily_start_time=daily_start,
+                    daily_end_time=daily_end,
+                    days=[DayPlan(
+                        day=1,
+                        date="2024-01-01",
+                        activities=[ActivityDetail(
+                            time="10:00",
+                            place_name="시스템 오류",
+                            category="안내",
+                            duration_minutes=60,
+                            description="일정 생성 중 오류가 발생했습니다. 다시 시도해주세요."
+                        )]
+                    )]
                 )
             )
 

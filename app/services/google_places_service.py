@@ -79,15 +79,24 @@ class GooglePlacesService:
         # languageCode만 함께 전달한다.
         data = {"textQuery": str(text_query), "languageCode": language_code}
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 response = await client.post(url, headers=headers, json=data)
                 response.raise_for_status()
-                return response.json()
+                result = response.json()
+                logger.info(f"✅ [PLACES_API_SUCCESS] 검색 성공: {len(result.get('places', []))}개 장소 발견")
+                return result
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP 오류 발생: {e.response.status_code} - {e.response.text}")
+                logger.error(f"❌ [PLACES_API_HTTP_ERROR] HTTP 오류: {e.response.status_code}")
+                logger.error(f"📝 [ERROR_RESPONSE] 응답 내용: {e.response.text}")
+                if e.response.status_code == 400:
+                    logger.error("🔑 [API_KEY_CHECK] API 키 또는 요청 형식을 확인하세요")
+                elif e.response.status_code == 403:
+                    logger.error("🚫 [API_QUOTA_CHECK] API 할당량 또는 권한을 확인하세요")
+            except httpx.TimeoutException:
+                logger.error("⏰ [PLACES_API_TIMEOUT] Google Places API 요청 시간 초과")
             except Exception as e:
-                logger.error(f"장소 검색 중 예외 발생: {e}")
+                logger.error(f"❌ [PLACES_API_ERROR] 장소 검색 중 예외 발생: {e}")
         return {}
 
     async def search_places(
@@ -178,11 +187,12 @@ class GooglePlacesService:
         }
         params = {"languageCode": language_code}
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 response = await client.get(url, headers=headers, params=params)
                 response.raise_for_status()
                 data = response.json()
+                logger.info(f"✅ [PLACE_DETAILS_SUCCESS] 장소 상세 정보 조회 성공: {data.get('displayName', {}).get('text', 'Unknown')}")
                 return {
                     "place_id": data.get("id"),
                     "name": data.get("displayName", {}).get("text"),
@@ -197,9 +207,12 @@ class GooglePlacesService:
                     "description": data.get("primaryTypeDisplayName", {}).get("text", ""),
                 }
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP 오류 발생(상세): {e.response.status_code} - {e.response.text}")
+                logger.error(f"❌ [PLACE_DETAILS_HTTP_ERROR] HTTP 오류: {e.response.status_code}")
+                logger.error(f"📝 [ERROR_RESPONSE] 응답 내용: {e.response.text}")
+            except httpx.TimeoutException:
+                logger.error("⏰ [PLACE_DETAILS_TIMEOUT] 장소 상세 조회 시간 초과")
             except Exception as e:
-                logger.error(f"상세 조회 중 예외 발생: {e}")
+                logger.error(f"❌ [PLACE_DETAILS_ERROR] 상세 조회 중 예외 발생: {e}")
         return {}
 
     async def get_nearby_attractions(self, location: str, radius: int = 10000) -> List[Dict[str, Any]]:
