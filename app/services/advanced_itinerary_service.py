@@ -376,11 +376,56 @@ JSON 형식으로 응답해주세요:
             logger.info("🚀 [CREATE_FINAL_START] 최종 일정 생성 시작")
             logger.info(f"📍 [INPUT_PLACES] 입력 장소 수: {len(places)}")
             logger.info(f"📋 [INPUT_CONSTRAINTS] 제약 조건: {constraints}")
+            
+            # ===== 🚨 [핵심] 입력 데이터 타입 검증 =====
+            logger.info("🔍 [DATA_TYPE_CHECK] 입력 데이터 타입 검증 시작")
+            logger.info(f"📊 [PLACES_TYPE] places 타입: {type(places)}")
+            logger.info(f"📊 [PLACES_LENGTH] places 길이: {len(places) if places else 0}")
+            
+            if places and len(places) > 0:
+                logger.info(f"📊 [FIRST_PLACE_TYPE] 첫 번째 장소 타입: {type(places[0])}")
+                logger.info(f"📊 [FIRST_PLACE_CONTENT] 첫 번째 장소 내용: {places[0]}")
+                
+                # 첫 번째 장소의 키들 확인
+                if hasattr(places[0], '__dict__'):
+                    logger.info(f"📊 [FIRST_PLACE_ATTRS] 첫 번째 장소 속성들: {list(places[0].__dict__.keys())}")
+                elif isinstance(places[0], dict):
+                    logger.info(f"📊 [FIRST_PLACE_KEYS] 첫 번째 장소 키들: {list(places[0].keys())}")
+                else:
+                    logger.info(f"📊 [FIRST_PLACE_INFO] 첫 번째 장소는 dict도 객체도 아님: {str(places[0])}")
+            
+            logger.info(f"📊 [CONSTRAINTS_TYPE] constraints 타입: {type(constraints)}")
+            logger.info(f"📊 [CONSTRAINTS_KEYS] constraints 키들: {list(constraints.keys()) if isinstance(constraints, dict) else 'Not a dict'}")
             logger.info("=" * 100)
             
-            # 입력 장소 목록 로깅
-            place_names = [f"{place.name} ({place.category})" for place in places]
-            logger.info(f"🏛️ [PLACE_LIST] 장소 목록: {place_names}")
+            # ===== 🚨 [핵심 수정] 안전한 장소 목록 로깅 =====
+            place_names = []
+            try:
+                for i, place in enumerate(places):
+                    try:
+                        # 객체 속성으로 접근 시도
+                        if hasattr(place, 'name') and hasattr(place, 'category'):
+                            place_name = f"{place.name} ({place.category})"
+                        # 딕셔너리로 접근 시도
+                        elif isinstance(place, dict):
+                            name = place.get('name', f'Place_{i+1}')
+                            category = place.get('category', 'Unknown')
+                            place_name = f"{name} ({category})"
+                        else:
+                            place_name = f"Unknown_Place_{i+1} (type: {type(place).__name__})"
+                        
+                        place_names.append(place_name)
+                        logger.info(f"  📍 [{i+1}] {place_name}")
+                        
+                    except Exception as place_error:
+                        logger.error(f"❌ [PLACE_ACCESS_ERROR] 장소 {i+1} 접근 실패: {place_error}")
+                        place_names.append(f"Error_Place_{i+1}")
+                
+                logger.info(f"🏛️ [PLACE_LIST_SUCCESS] 장소 목록 생성 완료: {len(place_names)}개")
+                
+            except Exception as places_error:
+                logger.error(f"❌ [PLACES_PROCESSING_ERROR] 장소 목록 처리 실패: {places_error}")
+                logger.error(f"📊 [ERROR_TRACEBACK] 전체 트레이스백:", exc_info=True)
             
             if not constraints:
                 constraints = {
@@ -420,18 +465,39 @@ JSON 형식으로 응답해주세요:
                     logger.warning(f"⚠️ [PROMPT_FETCH_FAIL] Supabase 프롬프트 로드 실패: {prompt_error}, 기본 프롬프트 사용")
                     prompt_template = self._get_default_itinerary_prompt()
                 
-                # 장소 정보 구성
+                # ===== 🚨 [핵심 수정] 안전한 장소 정보 구성 =====
                 logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작")
                 places_info = []
-                for place in places:
-                    # PlaceData 객체의 속성에 안전하게 접근
-                    place_name = getattr(place, 'name', 'Unknown Place')
-                    place_category = getattr(place, 'category', 'Unknown Category')
-                    place_address = getattr(place, 'address', 'Unknown Address')
-                    
-                    place_info = f"- {place_name} ({place_category}): {place_address}"
-                    places_info.append(place_info)
-                    logger.info(f"  📍 {place_info}")
+                for i, place in enumerate(places):
+                    try:
+                        # 다양한 데이터 타입에 대응하는 안전한 접근
+                        if hasattr(place, 'name'):
+                            # PlaceData 객체인 경우
+                            place_name = getattr(place, 'name', f'Place_{i+1}')
+                            place_category = getattr(place, 'category', 'Unknown')
+                            place_address = getattr(place, 'address', 'Unknown Address')
+                        elif isinstance(place, dict):
+                            # 딕셔너리인 경우
+                            place_name = place.get('name', f'Place_{i+1}')
+                            place_category = place.get('category', 'Unknown')
+                            place_address = place.get('address', 'Unknown Address')
+                        else:
+                            # 기타 타입인 경우
+                            logger.warning(f"⚠️ [UNKNOWN_PLACE_TYPE] 장소 {i+1} 타입 불명: {type(place)}")
+                            place_name = f'Place_{i+1}'
+                            place_category = 'Unknown'
+                            place_address = 'Unknown Address'
+                        
+                        place_info = f"- {place_name} ({place_category}): {place_address}"
+                        places_info.append(place_info)
+                        logger.info(f"  📍 [{i+1}] {place_info}")
+                        
+                    except Exception as place_info_error:
+                        logger.error(f"❌ [PLACE_INFO_ERROR] 장소 {i+1} 정보 구성 실패: {place_info_error}")
+                        # 에러 발생 시 기본값 사용
+                        fallback_info = f"- Place_{i+1} (Unknown): Error accessing place data"
+                        places_info.append(fallback_info)
+                        logger.info(f"  📍 [{i+1}] {fallback_info} (fallback)")
                 
                 logger.info(f"✅ [PLACES_INFO_SUCCESS] {len(places_info)}개 장소 정보 구성 완료")
                 
