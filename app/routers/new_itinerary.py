@@ -108,14 +108,45 @@ async def optimize_itinerary_v2(  # 함수명 변경으로 캐시 무효화
         place_names = [place.name for place in places]
         logging.info(f"🏛️ [OPTIMIZE_PLACE_NAMES] 장소 목록: {place_names}")
 
-        # 시간 제약 및 기간 기본값
+        # ===== 🚨 [핵심 수정] 시간 제약 조건 처리 개선 =====
+        # 프론트엔드에서 전달된 날짜별 시간 제약 조건 추출
+        time_constraints_raw = payload.get("timeConstraints") or payload.get("time_constraints") or []
+        
+        # 시간 제약 조건 정규화 (프론트엔드 형식 → 백엔드 형식)
+        time_constraints_normalized = []
+        for tc in time_constraints_raw:
+            if isinstance(tc, dict) and "day" in tc:
+                normalized_tc = {
+                    "day": tc.get("day", 1),
+                    "startTime": tc.get("startTime") or tc.get("start_time", "09:00"),
+                    "endTime": tc.get("endTime") or tc.get("end_time", "22:00")
+                }
+                time_constraints_normalized.append(normalized_tc)
+        
+        # 시간 제약 조건이 없으면 기본값으로 생성
+        duration = int(payload.get("duration") or max(1, len(places) // 3))
+        if not time_constraints_normalized and duration > 0:
+            daily_start = payload.get("daily_start_time") or "09:00"
+            daily_end = payload.get("daily_end_time") or "22:00"
+            for day in range(1, duration + 1):
+                time_constraints_normalized.append({
+                    "day": day,
+                    "startTime": daily_start,
+                    "endTime": daily_end
+                })
+        
         constraints = {
             "daily_start_time": payload.get("daily_start_time") or "09:00",
             "daily_end_time": payload.get("daily_end_time") or "22:00",
-            "duration": int(payload.get("duration") or max(1, len(places) // 3)),
-            # 날짜별 시간 제약 조건 추가
-            "time_constraints": payload.get("timeConstraints") or payload.get("time_constraints") or []
+            "duration": duration,
+            "time_constraints": time_constraints_normalized
         }
+        
+        # ===== 🚨 [핵심] 시간 제약 조건 로깅 =====
+        logging.info(f"⏰ [TIME_CONSTRAINTS_RAW] 원본 시간 제약: {time_constraints_raw}")
+        logging.info(f"⏰ [TIME_CONSTRAINTS_NORMALIZED] 정규화된 시간 제약: {time_constraints_normalized}")
+        print(f"⏰ [TIME_CONSTRAINTS_RAW] 원본 시간 제약: {time_constraints_raw}")
+        print(f"⏰ [TIME_CONSTRAINTS_NORMALIZED] 정규화된 시간 제약: {time_constraints_normalized}")
 
         logging.info(
             f"⏰ [OPTIMIZE_CONSTRAINTS] 경로 최적화 요청: 장소 {len(places)}개, 기간 {constraints['duration']}일, "
