@@ -551,15 +551,62 @@ JSON 형식으로 응답해주세요:
                     logger.error(f"📝 [FAILED_JSON_SAMPLE] 실패한 JSON 샘플: {json_str[:200]}...")
                     raise ValueError(f"JSON 디코딩 실패: {json_error}")
                 
-                # ===== 🚨 [핵심] AI 응답 구조 검증 =====
-                travel_plan = itinerary_data.get("travel_plan", {})
-                logger.info(f"🔍 [TRAVEL_PLAN_CHECK] travel_plan 존재: {bool(travel_plan)}")
+                # ===== 🚨 [핵심 수정] AI 응답 구조 유연 처리 =====
+                logger.info(f"🔍 [AI_RESPONSE_KEYS] AI 응답 최상위 키들: {list(itinerary_data.keys())}")
                 
-                if not travel_plan:
-                    logger.error("❌ [NO_TRAVEL_PLAN] AI 응답에 'travel_plan' 키가 없습니다")
-                    raise ValueError("travel_plan 키 없음")
+                # 여러 가능한 키를 순서대로 확인하여 실제 일정 데이터를 찾는다
+                travel_plan = None
+                days_data = []
                 
-                days_data = travel_plan.get("days", [])
+                # 1순위: 'travel_plan' 키 확인
+                if "travel_plan" in itinerary_data:
+                    travel_plan = itinerary_data["travel_plan"]
+                    days_data = travel_plan.get("days", [])
+                    logger.info("✅ [FOUND_TRAVEL_PLAN] 'travel_plan' 키 발견")
+                
+                # 2순위: 'itinerary' 키 확인 (AI가 자주 사용하는 키)
+                elif "itinerary" in itinerary_data:
+                    itinerary_list = itinerary_data["itinerary"]
+                    if isinstance(itinerary_list, list):
+                        days_data = itinerary_list
+                        # travel_plan 구조로 변환
+                        travel_plan = {
+                            "total_days": len(days_data),
+                            "daily_start_time": "09:00",
+                            "daily_end_time": "22:00",
+                            "days": days_data
+                        }
+                        logger.info("✅ [FOUND_ITINERARY] 'itinerary' 키 발견하여 travel_plan으로 변환")
+                    else:
+                        logger.warning("⚠️ [INVALID_ITINERARY] 'itinerary' 키가 배열이 아닙니다")
+                
+                # 3순위: 'daily_plans' 키 확인
+                elif "daily_plans" in itinerary_data:
+                    days_data = itinerary_data["daily_plans"]
+                    travel_plan = {
+                        "total_days": len(days_data),
+                        "daily_start_time": "09:00", 
+                        "daily_end_time": "22:00",
+                        "days": days_data
+                    }
+                    logger.info("✅ [FOUND_DAILY_PLANS] 'daily_plans' 키 발견하여 travel_plan으로 변환")
+                
+                # 4순위: 최상위가 배열인 경우 (직접 일정 데이터)
+                elif isinstance(itinerary_data, list):
+                    days_data = itinerary_data
+                    travel_plan = {
+                        "total_days": len(days_data),
+                        "daily_start_time": "09:00",
+                        "daily_end_time": "22:00", 
+                        "days": days_data
+                    }
+                    logger.info("✅ [FOUND_ARRAY] 최상위 배열을 travel_plan으로 변환")
+                
+                # 모든 키를 찾지 못한 경우
+                if not travel_plan or not days_data:
+                    logger.error(f"❌ [NO_VALID_STRUCTURE] AI 응답에서 유효한 일정 구조를 찾을 수 없습니다")
+                    logger.error(f"📝 [AVAILABLE_KEYS] 사용 가능한 키들: {list(itinerary_data.keys())}")
+                    raise ValueError("AI 응답에서 유효한 일정 구조를 찾을 수 없음")
                 logger.info(f"🔍 [DAYS_CHECK] days 배열 길이: {len(days_data)}")
                 
                 if not days_data or len(days_data) == 0:
@@ -865,7 +912,9 @@ $places_list
 - 총 $total_places개 장소 활용
 - 날짜별 시간 제약을 반드시 준수
 
-JSON 형식으로 응답해주세요:
+다음 JSON 형식 중 하나로 응답해주세요:
+
+형식 1 (권장):
 {
     "travel_plan": {
         "total_days": $duration,
@@ -887,6 +936,25 @@ JSON 형식으로 응답해주세요:
             }
         ]
     }
+}
+
+형식 2 (대안):
+{
+    "itinerary": [
+        {
+            "day": 1,
+            "date": "2024-01-01",
+            "activities": [
+                {
+                    "time": "09:00",
+                    "place_name": "장소명",
+                    "category": "관광",
+                    "duration_minutes": 120,
+                    "description": "활동 설명"
+                }
+            ]
+        }
+    ]
 }
 """
 
