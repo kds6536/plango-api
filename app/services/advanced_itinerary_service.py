@@ -371,7 +371,13 @@ JSON 형식으로 응답해주세요:
     async def create_final_itinerary(self, places: List[PlaceData], constraints: Dict[str, Any] = None) -> OptimizeResponse:
         """최종 일정 생성"""
         try:
-            logger.info(f"최종 일정 생성 시작: {len(places)}개 장소")
+            logger.info("🚀 [CREATE_FINAL_START] 최종 일정 생성 시작")
+            logger.info(f"📍 [INPUT_PLACES] 입력 장소 수: {len(places)}")
+            logger.info(f"📋 [INPUT_CONSTRAINTS] 제약 조건: {constraints}")
+            
+            # 입력 장소 목록 로깅
+            place_names = [f"{place.name} ({place.category})" for place in places]
+            logger.info(f"🏛️ [PLACE_LIST] 장소 목록: {place_names}")
             
             if not constraints:
                 constraints = {
@@ -384,25 +390,35 @@ JSON 형식으로 응답해주세요:
             daily_start = constraints.get("daily_start_time", "09:00")
             daily_end = constraints.get("daily_end_time", "22:00")
             
+            logger.info(f"⏰ [SCHEDULE_PARAMS] 일정 매개변수: {duration}일, {daily_start}~{daily_end}")
+            
             # AI 핸들러 가져오기
+            logger.info("🤖 [AI_HANDLER] AI 핸들러 가져오기 시작")
             ai_handler = await self._get_ai_handler()
             if not ai_handler:
-                logger.error("AI 핸들러를 가져올 수 없습니다")
+                logger.error("❌ [AI_HANDLER_FAIL] AI 핸들러를 가져올 수 없습니다")
+                logger.info("🔄 [FALLBACK] 간단한 일정 생성으로 폴백")
                 return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
+            logger.info(f"✅ [AI_HANDLER_SUCCESS] AI 핸들러 준비 완료: {type(ai_handler).__name__}")
+            
             # Supabase에서 itinerary_generation 프롬프트 가져오기
+            logger.info("📜 [PROMPT_FETCH] Supabase에서 프롬프트 가져오기 시작")
             try:
                 from app.services.supabase_service import supabase_service
                 prompt_template = await supabase_service.get_master_prompt('itinerary_generation')
-                logger.info("✅ Supabase에서 itinerary_generation 프롬프트 로드 성공")
+                logger.info(f"✅ [PROMPT_FETCH_SUCCESS] Supabase 프롬프트 로드 성공 (길이: {len(prompt_template)})")
             except Exception as prompt_error:
-                logger.warning(f"⚠️ Supabase 프롬프트 로드 실패: {prompt_error}, 기본 프롬프트 사용")
+                logger.warning(f"⚠️ [PROMPT_FETCH_FAIL] Supabase 프롬프트 로드 실패: {prompt_error}, 기본 프롬프트 사용")
                 prompt_template = self._get_default_itinerary_prompt()
             
             # 장소 정보 구성
+            logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작")
             places_info = []
             for place in places:
-                places_info.append(f"- {place.name} ({place.category}): {place.address}")
+                place_info = f"- {place.name} ({place.category}): {place.address}"
+                places_info.append(place_info)
+                logger.info(f"  📍 {place_info}")
             
             # 날짜별 시간 제약 조건 처리
             time_constraints_info = ""
@@ -413,10 +429,13 @@ JSON 형식으로 응답해주세요:
                     start = tc.get("startTime", daily_start)
                     end = tc.get("endTime", daily_end)
                     time_constraints_info += f"\n- {day}일차: {start} ~ {end}"
+                logger.info(f"⏰ [TIME_CONSTRAINTS] 개별 시간 제약: {constraints['time_constraints']}")
             else:
                 time_constraints_info = f"\n전체 일정 시간: {daily_start} ~ {daily_end}"
+                logger.info(f"⏰ [TIME_CONSTRAINTS] 전체 시간 제약: {daily_start} ~ {daily_end}")
             
             # 프롬프트 템플릿 변수 치환
+            logger.info("📜 [PROMPT_BUILD] 최종 프롬프트 구성 시작")
             from string import Template
             template = Template(prompt_template)
             prompt = template.safe_substitute(
@@ -428,72 +447,140 @@ JSON 형식으로 응답해주세요:
                 time_constraints_info=time_constraints_info
             )
             
-            # AI 호출
-            response = await ai_handler.generate_text(prompt, max_tokens=2000)
+            logger.info(f"📜 [FINAL_PROMPT] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(prompt)}):")
+            logger.info(f"📜 [PROMPT_PREVIEW] 프롬프트 미리보기 (처음 500자):\n{prompt[:500]}...")
             
-            if response:
-                try:
-                    import json
-                    # JSON 추출
-                    json_start = response.find('{')
-                    json_end = response.rfind('}') + 1
-                    if json_start != -1 and json_end > json_start:
-                        json_str = response[json_start:json_end]
-                        itinerary_data = json.loads(json_str)
-                        
-                        # OptimizeResponse 형식으로 변환
-                        travel_plan = itinerary_data.get("travel_plan", {})
-                        
-                        # DayPlan 객체들 생성
-                        day_plans = []
-                        for day_data in travel_plan.get("days", []):
-                            activities = []
-                            for activity_data in day_data.get("activities", []):
-                                activity = ActivityDetail(
-                                    time=activity_data.get("time", "09:00"),
-                                    place_name=activity_data.get("place_name", ""),
-                                    category=activity_data.get("category", "관광"),
-                                    duration_minutes=activity_data.get("duration_minutes", 120),
-                                    description=activity_data.get("description", "")
-                                )
-                                activities.append(activity)
-                            
-                            day_plan = DayPlan(
-                                day=day_data.get("day", 1),
-                                date=day_data.get("date", "2024-01-01"),
-                                activities=activities
-                            )
-                            day_plans.append(day_plan)
-                        
-                        # ===== 🚗 실제 이동 시간 계산 추가 =====
-                        logger.info("🚗 [DIRECTIONS_API] 실제 이동 시간 계산 시작")
-                        day_plans = await self._calculate_real_travel_times(day_plans, places)
-                        logger.info("🚗 [DIRECTIONS_API] 실제 이동 시간 계산 완료")
-                        
-                        final_plan = TravelPlan(
-                            total_days=travel_plan.get("total_days", duration),
-                            daily_start_time=travel_plan.get("daily_start_time", daily_start),
-                            daily_end_time=travel_plan.get("daily_end_time", daily_end),
-                            days=day_plans
+            # AI 호출
+            logger.info("🤖 [AI_CALL_START] AI 호출 시작")
+            response = await ai_handler.generate_text(prompt, max_tokens=2000)
+            logger.info(f"🤖 [AI_CALL_COMPLETE] AI 호출 완료 (응답 길이: {len(response) if response else 0})")
+            
+            # ===== 🚨 [핵심 수정] AI 응답 검증 및 파싱 강화 =====
+            if not response or not response.strip():
+                logger.error("❌ [AI_EMPTY_RESPONSE] AI가 빈 응답을 반환했습니다")
+                logger.info("🔄 [FALLBACK] 간단한 일정 생성으로 폴백")
+                return self._create_simple_itinerary(places, duration, daily_start, daily_end)
+            
+            logger.info("🤖 [RAW_AI_RESPONSE] 3단계 AI 원본 응답:")
+            logger.info("=" * 80)
+            logger.info(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
+            logger.info(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response)}")
+            logger.info("📝 [RESPONSE_CONTENT] 응답 내용:")
+            logger.info(response)
+            logger.info("=" * 80)
+            
+            try:
+                import json
+                logger.info("🔧 [JSON_PARSING] JSON 파싱 시작")
+                
+                # JSON 추출
+                json_start = response.find('{')
+                json_end = response.rfind('}') + 1
+                
+                logger.info(f"🔧 [JSON_BOUNDS] JSON 범위: {json_start} ~ {json_end}")
+                
+                if json_start == -1 or json_end <= json_start:
+                    logger.error("❌ [JSON_BOUNDS_ERROR] 유효한 JSON 범위를 찾을 수 없습니다")
+                    raise ValueError("JSON 범위 오류")
+                
+                json_str = response[json_start:json_end]
+                logger.info(f"🔧 [EXTRACTED_JSON] 추출된 JSON (길이: {len(json_str)}):")
+                logger.info(f"📝 [JSON_PREVIEW] JSON 미리보기 (처음 300자): {json_str[:300]}...")
+                
+                itinerary_data = json.loads(json_str)
+                logger.info("✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
+                logger.info(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(itinerary_data.keys())}")
+                
+                # ===== 🚨 [핵심] AI 응답 구조 검증 =====
+                travel_plan = itinerary_data.get("travel_plan", {})
+                logger.info(f"🔍 [TRAVEL_PLAN_CHECK] travel_plan 존재: {bool(travel_plan)}")
+                
+                if not travel_plan:
+                    logger.error("❌ [NO_TRAVEL_PLAN] AI 응답에 'travel_plan' 키가 없습니다")
+                    raise ValueError("travel_plan 키 없음")
+                
+                days_data = travel_plan.get("days", [])
+                logger.info(f"🔍 [DAYS_CHECK] days 배열 길이: {len(days_data)}")
+                
+                if not days_data or len(days_data) == 0:
+                    logger.error("❌ [EMPTY_DAYS] AI 응답의 days 배열이 비어있습니다")
+                    raise ValueError("days 배열이 비어있음")
+                
+                # 각 날짜별 활동 검증
+                total_activities = 0
+                for i, day_data in enumerate(days_data):
+                    activities = day_data.get("activities", [])
+                    activity_count = len(activities)
+                    total_activities += activity_count
+                    logger.info(f"🔍 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {activity_count}")
+                    
+                    if activity_count == 0:
+                        logger.warning(f"⚠️ [EMPTY_DAY] {i+1}일차에 활동이 없습니다")
+                
+                logger.info(f"🔍 [TOTAL_ACTIVITIES] 전체 활동 수: {total_activities}")
+                
+                # 🚨 [핵심] 모든 날짜가 비어있는 경우 에러 발생
+                if total_activities == 0:
+                    logger.error("❌ [ALL_DAYS_EMPTY] AI가 유효한 일정을 생성하지 못했습니다 (모든 날짜의 활동이 비어있음)")
+                    raise ValueError("AI가 빈 일정을 반환했습니다")
+                
+                # DayPlan 객체들 생성
+                logger.info("🏗️ [BUILD_DAY_PLANS] DayPlan 객체 생성 시작")
+                day_plans = []
+                for day_data in days_data:
+                    activities = []
+                    for activity_data in day_data.get("activities", []):
+                        activity = ActivityDetail(
+                            time=activity_data.get("time", "09:00"),
+                            place_name=activity_data.get("place_name", ""),
+                            category=activity_data.get("category", "관광"),
+                            duration_minutes=activity_data.get("duration_minutes", 120),
+                            description=activity_data.get("description", "")
                         )
+                        activities.append(activity)
+                    
+                    day_plan = DayPlan(
+                        day=day_data.get("day", 1),
+                        date=day_data.get("date", "2024-01-01"),
+                        activities=activities
+                    )
+                    day_plans.append(day_plan)
+                
+                logger.info(f"✅ [BUILD_DAY_PLANS_SUCCESS] {len(day_plans)}개 DayPlan 객체 생성 완료")
+                
+                # ===== 🚗 실제 이동 시간 계산 추가 =====
+                logger.info("🚗 [DIRECTIONS_API_START] Google Directions API로 이동 시간 재계산 시작")
+                day_plans = await self._calculate_real_travel_times(day_plans, places)
+                logger.info("🚗 [DIRECTIONS_API_SUCCESS] 실제 이동 시간 계산 완료")
+                
+                final_plan = TravelPlan(
+                    total_days=travel_plan.get("total_days", duration),
+                    daily_start_time=travel_plan.get("daily_start_time", daily_start),
+                    daily_end_time=travel_plan.get("daily_end_time", daily_end),
+                    days=day_plans
+                )
+                
+                logger.info(f"✅ [AI_ITINERARY_SUCCESS] AI 일정 생성 성공: {len(day_plans)}일 일정, 총 {total_activities}개 활동")
+                return OptimizeResponse(travel_plan=final_plan)
                         
-                        logger.info(f"AI 일정 생성 성공: {len(day_plans)}일 일정")
-                        return OptimizeResponse(travel_plan=final_plan)
-                        
-                except Exception as parse_error:
-                    logger.error(f"AI 응답 파싱 실패: {parse_error}")
+            except (json.JSONDecodeError, ValueError) as parse_error:
+                logger.error(f"❌ [AI_PARSE_FAIL] AI 응답 파싱 또는 구조 검증 실패: {parse_error}")
+                logger.error(f"📝 [FAILED_JSON] 파싱 실패한 JSON: {json_str if 'json_str' in locals() else 'N/A'}")
+                logger.info("🔄 [FALLBACK] 간단한 일정 생성으로 폴백")
             
             # 실패 시 간단한 일정 생성
             return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
         except Exception as e:
-            logger.error(f"최종 일정 생성 실패: {e}")
+            logger.error(f"❌ [CREATE_FINAL_ERROR] 최종 일정 생성 실패: {e}")
+            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
+            logger.info("🔄 [FINAL_FALLBACK] 최종 폴백: 간단한 일정 생성")
             return self._create_simple_itinerary(places, duration, daily_start, daily_end)
 
     def _create_simple_itinerary(self, places: List[PlaceData], duration: int, daily_start: str, daily_end: str) -> OptimizeResponse:
         """간단한 일정 생성 (AI 실패 시 폴백)"""
         try:
-            logger.info(f"간단한 일정 생성: {len(places)}개 장소, {duration}일")
+            logger.info(f"🔄 [SIMPLE_ITINERARY] 간단한 일정 생성: {len(places)}개 장소, {duration}일")
             
             # 장소를 일수로 나누어 배치
             places_per_day = max(1, len(places) // duration)
@@ -503,6 +590,8 @@ JSON 형식으로 응답해주세요:
                 start_idx = (day - 1) * places_per_day
                 end_idx = min(start_idx + places_per_day, len(places))
                 day_places = places[start_idx:end_idx]
+                
+                logger.info(f"🔄 [DAY_{day}] {day}일차: {len(day_places)}개 장소 배치")
                 
                 activities = []
                 current_time = daily_start
@@ -521,6 +610,7 @@ JSON 형식으로 응답해주세요:
                         description=f"{place.name}에서의 활동"
                     )
                     activities.append(activity)
+                    logger.info(f"  - {hour:02d}:00 {place.name} ({place.category})")
                 
                 day_plan = DayPlan(
                     day=day,
@@ -536,12 +626,15 @@ JSON 형식으로 응답해주세요:
                 days=day_plans
             )
             
-            logger.info(f"간단한 일정 생성 완료: {len(day_plans)}일")
+            total_activities = sum(len(day.activities) for day in day_plans)
+            logger.info(f"✅ [SIMPLE_ITINERARY_SUCCESS] 간단한 일정 생성 완료: {len(day_plans)}일, 총 {total_activities}개 활동")
             return OptimizeResponse(travel_plan=travel_plan)
             
         except Exception as e:
-            logger.error(f"간단한 일정 생성 실패: {e}")
+            logger.error(f"❌ [SIMPLE_ITINERARY_ERROR] 간단한 일정 생성 실패: {e}")
+            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
             # 최소한의 응답 반환
+            logger.info("🔄 [MINIMAL_FALLBACK] 최소한의 응답 반환")
             return OptimizeResponse(
                 travel_plan=TravelPlan(
                     total_days=1,
@@ -556,10 +649,11 @@ JSON 형식으로 응답해주세요:
         실제 Google Directions API를 사용하여 장소 간 이동 시간을 계산하고 업데이트
         """
         try:
-            logger.info("🚗 [TRAVEL_TIME_CALC] 실제 이동 시간 계산 시작")
+            logger.info("🚗 [DIRECTIONS_API_START] Google Directions API로 이동 시간 재계산 시작")
             
             # 장소명으로 PlaceData 매핑 생성
             place_map = {place.name: place for place in places}
+            total_legs = 0
             
             for day_plan in day_plans:
                 logger.info(f"🚗 [DAY_{day_plan.day}] {day_plan.day}일차 이동 시간 계산")
@@ -576,7 +670,7 @@ JSON 형식으로 응답해주세요:
                         next_place = place_map.get(next_activity.place_name)
                         
                         if not current_place or not next_place:
-                            logger.warning(f"⚠️ 장소 정보 없음: {current_activity.place_name} -> {next_activity.place_name}")
+                            logger.warning(f"⚠️ [PLACE_NOT_FOUND] 장소 정보 없음: {current_activity.place_name} -> {next_activity.place_name}")
                             # 기본값 15분 유지
                             if not hasattr(current_activity, 'travel_time_minutes'):
                                 current_activity.travel_time_minutes = 15
@@ -590,7 +684,7 @@ JSON 형식으로 응답해주세요:
                             origin = f"{current_place.lat},{current_place.lng}"
                             destination = f"{next_place.lat},{next_place.lng}"
                         
-                        logger.info(f"🚗 [DIRECTIONS] {current_activity.place_name} -> {next_activity.place_name}")
+                        logger.info(f"🚗 [ROUTE_{i+1}] 경로 {i+1}: {current_activity.place_name} -> {next_activity.place_name}")
                         
                         # Google Directions API 호출
                         directions_result = await self.google_directions.get_directions(
@@ -609,14 +703,15 @@ JSON 형식으로 응답해주세요:
                             current_activity.travel_time_minutes = duration_minutes
                             
                             distance_km = round(directions_result['distance']['value'] / 1000, 1)
-                            logger.info(f"✅ [CALC_SUCCESS] {current_activity.place_name} -> {next_activity.place_name}: {duration_minutes}분 ({distance_km}km)")
+                            total_legs += 1
+                            logger.info(f"  - ✅ 경로 {i+1}: {current_activity.place_name} -> {next_activity.place_name} = {duration_minutes}분 ({distance_km}km)")
                         else:
-                            logger.warning(f"⚠️ [CALC_FAILED] Directions API 실패: {current_activity.place_name} -> {next_activity.place_name}")
+                            logger.warning(f"  - ❌ 경로 {i+1} 계산 실패: Directions API 응답 없음")
                             # 실패 시 기본값 15분
                             current_activity.travel_time_minutes = 15
                             
                     except Exception as e:
-                        logger.error(f"💥 [CALC_ERROR] 이동 시간 계산 오류 (인덱스 {i}): {e}")
+                        logger.error(f"  - ❌ 경로 {i+1} 계산 실패: {e}")
                         # 에러 발생 시 기본값 15분
                         if not hasattr(activities[i], 'travel_time_minutes'):
                             activities[i].travel_time_minutes = 15
@@ -627,11 +722,12 @@ JSON 형식으로 응답해주세요:
                 
                 logger.info(f"✅ [DAY_{day_plan.day}_COMPLETE] {day_plan.day}일차 이동 시간 계산 완료")
             
-            logger.info("✅ [TRAVEL_TIME_CALC_COMPLETE] 전체 이동 시간 계산 완료")
+            logger.info(f"✅ [DIRECTIONS_API_SUCCESS] 총 {total_legs}개 구간의 이동 시간 계산 완료")
             return day_plans
             
         except Exception as e:
-            logger.error(f"💥 [TRAVEL_TIME_CALC_ERROR] 이동 시간 계산 전체 실패: {e}")
+            logger.error(f"❌ [DIRECTIONS_API_ERROR] 이동 시간 계산 전체 실패: {e}")
+            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
             # 실패 시 모든 활동에 기본값 15분 설정
             for day_plan in day_plans:
                 for i, activity in enumerate(day_plan.activities):

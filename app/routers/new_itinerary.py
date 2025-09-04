@@ -125,15 +125,46 @@ async def optimize_itinerary(
             logging.error("❌ [OPTIMIZE_FAIL] final_itinerary가 None입니다.")
             raise HTTPException(status_code=404, detail="최종 일정을 생성하지 못했습니다.")
         
-        # 성공 로그
+        # ===== 🚨 [핵심 수정] AI 실패 감지 로직 추가 =====
         travel_plan = final_itinerary.travel_plan if hasattr(final_itinerary, 'travel_plan') else None
-        if travel_plan and hasattr(travel_plan, 'day_plans'):
-            day_count = len(travel_plan.day_plans)
-            logging.info(f"✅ [OPTIMIZE_SUCCESS] 최종 일정 생성 완료: {day_count}일 일정")
+        if travel_plan and hasattr(travel_plan, 'days'):
+            day_plans = travel_plan.days
+            logging.info(f"🔍 [VALIDATION] travel_plan.days 길이: {len(day_plans)}")
+            
+            # 모든 날짜의 활동이 비어있는지 확인
+            all_days_empty = True
+            total_activities = 0
+            
+            for day_plan in day_plans:
+                activities = getattr(day_plan, 'activities', [])
+                activity_count = len(activities) if activities else 0
+                total_activities += activity_count
+                logging.info(f"  - {day_plan.day}일차: {activity_count}개 활동")
+                
+                if activity_count > 0:
+                    all_days_empty = False
+            
+            logging.info(f"🔍 [VALIDATION] 총 활동 수: {total_activities}, 모든 날짜 비어있음: {all_days_empty}")
+            
+            # 🚨 [핵심] AI가 빈 일정을 반환한 경우 에러 발생
+            if all_days_empty or total_activities == 0:
+                logging.error("❌ [AI_EMPTY_RESULT] AI가 유효한 일정을 생성하지 못했습니다 (모든 날짜의 활동이 비어있음)")
+                raise HTTPException(
+                    status_code=500, 
+                    detail="AI가 일정을 생성하지 못했습니다. 장소 수를 줄이거나 다시 시도해주세요."
+                )
+            
+            logging.info(f"✅ [OPTIMIZE_SUCCESS] 최종 일정 생성 완료: {len(day_plans)}일 일정, 총 {total_activities}개 활동")
         else:
             logging.warning("⚠️ [OPTIMIZE_WARNING] final_itinerary는 있지만 travel_plan 구조가 예상과 다릅니다.")
             logging.info(f"🔍 [OPTIMIZE_DEBUG] final_itinerary 타입: {type(final_itinerary)}")
             logging.info(f"🔍 [OPTIMIZE_DEBUG] final_itinerary 속성: {dir(final_itinerary)}")
+            
+            # travel_plan이 없거나 구조가 다른 경우도 에러로 처리
+            raise HTTPException(
+                status_code=500, 
+                detail="일정 데이터 구조에 문제가 있습니다. 다시 시도해주세요."
+            )
 
         return final_itinerary
 

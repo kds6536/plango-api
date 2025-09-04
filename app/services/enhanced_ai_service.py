@@ -141,11 +141,10 @@ class EnhancedAIService:
     async def generate_itinerary_with_master_prompt(self, user_data: Dict[str, Any]) -> str:
         """마스터 프롬프트를 사용한 일정 생성"""
         try:
-            logger.info("🚀 [ITINERARY_START] 마스터 프롬프트를 사용하여 일정 생성 시작")
+            logger.info("🚀 [ENHANCED_AI_START] Enhanced AI Service - 마스터 프롬프트 일정 생성 시작")
             logger.info(f"📊 [INPUT_DATA] 입력 데이터: {user_data}")
             
             # Supabase에서 마스터 프롬프트 가져오기
-            # 고정 프롬프트: itinerary_generation
             logger.info("📜 [PROMPT_FETCH] Supabase에서 마스터 프롬프트 가져오기 시작")
             master_prompt = await supabase_service.get_master_prompt('itinerary_generation')
             logger.info(f"📜 [PROMPT_FETCHED] 마스터 프롬프트 가져오기 완료 (길이: {len(master_prompt)})")
@@ -157,17 +156,17 @@ class EnhancedAIService:
             # 프롬프트에 실제 데이터 주입
             final_prompt = master_prompt.replace('{input_data}', input_data_json)
             
-            logger.info(f"📜 [FINAL_PROMPT_STEP_3] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):")
-            logger.info(f"📜 [PROMPT_CONTENT] {final_prompt}")
+            logger.info(f"📜 [FINAL_PROMPT_ENHANCED] Enhanced AI - 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):")
+            logger.info(f"📜 [PROMPT_PREVIEW] 프롬프트 미리보기 (처음 500자):\n{final_prompt[:500]}...")
             
             # AI로 응답 생성
-            logger.info("🤖 [AI_CALLING] AI 호출 시작...")
+            logger.info("🤖 [AI_CALLING] Enhanced AI - AI 호출 시작...")
             response = await self.generate_response(final_prompt)
-            logger.info(f"🤖 [AI_RESPONSE] AI 응답 수신 완료 (길이: {len(response) if response else 0})")
+            logger.info(f"🤖 [AI_RESPONSE_RECEIVED] Enhanced AI - AI 응답 수신 완료 (길이: {len(response) if response else 0})")
             
-            # ===== 🔍 AI 원본 응답 상세 로깅 (TypeError 디버깅용) =====
+            # ===== 🔍 AI 원본 응답 상세 로깅 =====
             logger.info("=" * 80)
-            logger.info("🤖 [RAW_RESPONSE_STEP_3] 3단계 AI 원본 응답:")
+            logger.info("🤖 [RAW_RESPONSE_ENHANCED] Enhanced AI Service - 3단계 AI 원본 응답:")
             logger.info(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
             logger.info(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response) if response else 0}")
             logger.info("📝 [RESPONSE_CONTENT] 응답 내용:")
@@ -181,34 +180,40 @@ class EnhancedAIService:
             
             # 🚨 [긴급 디버깅] JSON 구조 힌트 찾기
             if response:
+                structure_hints = []
                 if '"travel_plan"' in response:
-                    logger.info("✅ [STRUCTURE_HINT] 응답에 'travel_plan' 키 발견")
+                    structure_hints.append("travel_plan")
                 if '"days"' in response:
-                    logger.info("✅ [STRUCTURE_HINT] 응답에 'days' 키 발견")
+                    structure_hints.append("days")
                 if '"itinerary"' in response:
-                    logger.info("✅ [STRUCTURE_HINT] 응답에 'itinerary' 키 발견")
+                    structure_hints.append("itinerary")
                 if '"daily_plans"' in response:
-                    logger.info("✅ [STRUCTURE_HINT] 응답에 'daily_plans' 키 발견")
+                    structure_hints.append("daily_plans")
+                if '"activities"' in response:
+                    structure_hints.append("activities")
+                
+                logger.info(f"✅ [STRUCTURE_HINTS] 응답에서 발견된 구조 키워드: {structure_hints}")
             
             if not response or not response.strip():
-                logger.error("❌ [EMPTY_RESPONSE] AI 응답이 비어있습니다")
+                logger.error("❌ [EMPTY_RESPONSE] Enhanced AI - AI 응답이 비어있습니다")
                 raise ValueError("AI 응답이 비어있습니다")
             
-            # JSON 응답 검증 및 정제 - 간단하고 확실한 방법
-            logger.info("🔧 [JSON_PARSING] JSON 파싱 시작")
+            # JSON 응답 검증 및 정제
+            logger.info("🔧 [JSON_PARSING] Enhanced AI - JSON 파싱 시작")
             
-            # 즉시 강력한 정제 적용
+            # 강력한 정제 적용
             cleaned_response = self._extract_json_only(response)
-            logger.info(f"🔧 [CLEANED_JSON] 정제된 JSON (길이: {len(cleaned_response)}): {cleaned_response}")
+            logger.info(f"🔧 [CLEANED_JSON] 정제된 JSON (길이: {len(cleaned_response)})")
+            logger.info(f"🔧 [CLEANED_PREVIEW] 정제된 JSON 미리보기 (처음 300자): {cleaned_response[:300]}...")
             
             try:
                 # 정제된 응답 파싱 시도
                 parsed_json = json.loads(cleaned_response)
-                logger.info(f"✅ [PARSED_SUCCESS] JSON 파싱 성공")
+                logger.info(f"✅ [PARSED_SUCCESS] Enhanced AI - JSON 파싱 성공")
                 logger.info(f"📊 [PARSED_DATA_TYPE] 파싱된 데이터 타입: {type(parsed_json)}")
                 
-                # 🚨 [핵심 수정] 복잡한 자동 수정 로직 제거, 직접적인 데이터 추출
-                logger.info(f"🔍 [DIRECT_EXTRACTION] 직접적인 데이터 추출 시작")
+                # 🚨 [핵심 수정] 직접적인 데이터 추출 및 검증
+                logger.info(f"🔍 [DIRECT_EXTRACTION] Enhanced AI - 직접적인 데이터 추출 시작")
                 logger.info(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(parsed_json.keys())}")
                 
                 # 1. 기본 타입 검증
@@ -218,6 +223,7 @@ class EnhancedAIService:
                 
                 # 2. 직접적인 데이터 추출 - 가능한 모든 키 패턴 확인
                 travel_plan_data = None
+                found_key = None
                 
                 # 우선순위 순서로 키 확인
                 possible_keys = [
@@ -232,6 +238,7 @@ class EnhancedAIService:
                 for key in possible_keys:
                     if key in parsed_json:
                         travel_plan_data = parsed_json[key]
+                        found_key = key
                         logger.info(f"✅ [FOUND_DATA] '{key}' 키에서 데이터 발견")
                         break
                 
@@ -240,16 +247,20 @@ class EnhancedAIService:
                     logger.error(f"❌ [NO_VALID_DATA] 유효한 여행 계획 데이터를 찾을 수 없습니다. 사용 가능한 키: {list(parsed_json.keys())}")
                     raise ValueError("AI 응답에서 여행 계획 데이터를 찾을 수 없습니다")
                 
-                # 4. 데이터 구조 정규화
+                # 4. 데이터 구조 정규화 및 검증
+                logger.info(f"🔍 [DATA_STRUCTURE] 발견된 데이터 구조 분석: {type(travel_plan_data)}")
+                
                 if isinstance(travel_plan_data, dict):
                     # 딕셔너리인 경우 - daily_plans 또는 days 키 확인
                     if 'daily_plans' in travel_plan_data:
                         logger.info("✅ [FOUND_DAILY_PLANS] daily_plans 키 발견")
                         final_data = travel_plan_data
+                        days_data = travel_plan_data['daily_plans']
                     elif 'days' in travel_plan_data:
                         logger.info("✅ [FOUND_DAYS] days 키 발견, daily_plans로 변환")
                         final_data = travel_plan_data.copy()
                         final_data['daily_plans'] = final_data.pop('days')
+                        days_data = final_data['daily_plans']
                     else:
                         logger.warning("⚠️ [NO_DAILY_PLANS] daily_plans나 days 키가 없음, 전체 데이터를 daily_plans로 사용")
                         final_data = {
@@ -257,6 +268,7 @@ class EnhancedAIService:
                             'concept': 'AI가 생성한 최적화된 여행 계획',
                             'daily_plans': [travel_plan_data] if travel_plan_data else []
                         }
+                        days_data = final_data['daily_plans']
                 elif isinstance(travel_plan_data, list):
                     # 배열인 경우 - 직접 daily_plans로 사용
                     logger.info("✅ [ARRAY_DATA] 배열 데이터를 daily_plans로 사용")
@@ -265,29 +277,53 @@ class EnhancedAIService:
                         'concept': 'AI가 생성한 최적화된 여행 계획',
                         'daily_plans': travel_plan_data
                     }
+                    days_data = travel_plan_data
                 else:
                     logger.error(f"❌ [INVALID_DATA_TYPE] 예상치 못한 데이터 타입: {type(travel_plan_data)}")
                     raise ValueError(f"여행 계획 데이터 타입 오류: {type(travel_plan_data)}")
                 
-                # 5. 최종 검증
-                daily_plans = final_data.get('daily_plans', [])
-                if not isinstance(daily_plans, list):
-                    logger.error(f"❌ [INVALID_DAILY_PLANS] daily_plans가 배열이 아닙니다: {type(daily_plans)}")
-                    raise ValueError("daily_plans가 배열 형식이 아닙니다")
+                # 5. 최종 검증 - 빈 일정 감지
+                if not isinstance(days_data, list):
+                    logger.error(f"❌ [INVALID_DAYS_TYPE] days 데이터가 배열이 아닙니다: {type(days_data)}")
+                    raise ValueError("days 데이터가 배열 형식이 아닙니다")
                 
-                logger.info(f"✅ [EXTRACTION_SUCCESS] 데이터 추출 완료: daily_plans 길이 = {len(daily_plans)}")
+                logger.info(f"🔍 [DAYS_COUNT] 일정 일수: {len(days_data)}")
+                
+                # 각 날짜별 활동 수 검증
+                total_activities = 0
+                for i, day in enumerate(days_data):
+                    if isinstance(day, dict):
+                        activities = day.get('activities', []) or day.get('schedule', []) or day.get('places', [])
+                        activity_count = len(activities) if isinstance(activities, list) else 0
+                        total_activities += activity_count
+                        logger.info(f"🔍 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {activity_count}")
+                    else:
+                        logger.warning(f"⚠️ [INVALID_DAY_FORMAT] {i+1}일차 데이터가 딕셔너리가 아닙니다: {type(day)}")
+                
+                logger.info(f"🔍 [TOTAL_ACTIVITIES] 전체 활동 수: {total_activities}")
+                
+                # 🚨 [핵심] 빈 일정 감지 및 에러 발생
+                if len(days_data) == 0:
+                    logger.error("❌ [EMPTY_DAYS] AI가 일정 날짜를 생성하지 못했습니다 (days 배열이 비어있음)")
+                    raise ValueError("AI가 일정 날짜를 생성하지 못했습니다")
+                
+                if total_activities == 0:
+                    logger.error("❌ [NO_ACTIVITIES] AI가 유효한 활동을 생성하지 못했습니다 (모든 날짜의 활동이 비어있음)")
+                    raise ValueError("AI가 유효한 활동을 생성하지 못했습니다")
+                
+                logger.info(f"✅ [VALIDATION_SUCCESS] Enhanced AI - 데이터 검증 통과: {len(days_data)}일, 총 {total_activities}개 활동")
                 
                 # 최종 결과를 parsed_json에 할당 (기존 코드와의 호환성)
                 parsed_json = {'travel_plan': final_data}
                 
                 # 6. 최종 JSON 반환
                 final_response = json.dumps(parsed_json, ensure_ascii=False, indent=2)
-                logger.info(f"📊 [FINAL_JSON] 최종 JSON 길이: {len(final_response)}")
-                logger.info(f"✅ [PROCESSING_COMPLETE] AI 응답 처리 완료")
+                logger.info(f"📊 [FINAL_JSON] Enhanced AI - 최종 JSON 길이: {len(final_response)}")
+                logger.info(f"✅ [ENHANCED_AI_SUCCESS] Enhanced AI Service - 일정 생성 완료")
                 return final_response
                 
             except json.JSONDecodeError as e:
-                logger.error(f"❌ [JSON_ERROR] JSON 파싱 최종 실패: {e}")
+                logger.error(f"❌ [JSON_ERROR] Enhanced AI - JSON 파싱 최종 실패: {e}")
                 logger.error(f"📝 [CLEANED_RESPONSE] 정제된 응답: {cleaned_response}")
                 logger.error(f"📝 [ORIGINAL_RESPONSE] AI 원본 응답: {response}")
                 
@@ -300,11 +336,11 @@ class EnhancedAIService:
                         "days": []
                     }
                 }
-                logger.info("🔄 [FALLBACK] 폴백 응답 사용")
+                logger.info("🔄 [ENHANCED_AI_FALLBACK] Enhanced AI - 폴백 응답 사용")
                 return json.dumps(fallback_response, ensure_ascii=False)
                 
         except Exception as e:
-            logger.error(f"❌ [ITINERARY_ERROR] 마스터 프롬프트 일정 생성 실패: {e}")
+            logger.error(f"❌ [ENHANCED_AI_ERROR] Enhanced AI Service - 마스터 프롬프트 일정 생성 실패: {e}")
             logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
             raise
     
