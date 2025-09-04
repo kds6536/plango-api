@@ -80,7 +80,13 @@ async def optimize_itinerary(
            Google Directions API를 통해 이동 시간을 계산하여 최종 일정을 반환합니다.
     """
     try:
-        # ===== 🚨 [실제 실행 경로 확인] =====
+        # ===== 🚨 [실제 실행 경로 확인] - print로 강제 출력 =====
+        print("=" * 100)
+        print("✅✅✅ ACTUAL EXECUTION PATH: /routers/new_itinerary.py -> optimize_itinerary function CALLED! ✅✅✅")
+        print("🚀 [OPTIMIZE_START] 일정 최적화 API 호출 시작")
+        print(f"📋 [OPTIMIZE_PAYLOAD] 요청 페이로드: {payload}")
+        print("=" * 100)
+        
         logging.info("=" * 100)
         logging.info("✅✅✅ ACTUAL EXECUTION PATH: /routers/new_itinerary.py -> optimize_itinerary function CALLED! ✅✅✅")
         logging.info("🚀 [OPTIMIZE_START] 일정 최적화 API 호출 시작")
