@@ -62,32 +62,111 @@ class AdvancedItineraryService:
 
     async def _get_ai_handler(self):
         """Enhanced AI Service를 통해 활성화된 AI 핸들러 가져오기"""
-        try:
-            if enhanced_ai_service:
-                return await enhanced_ai_service.get_active_handler()
-        except Exception as e:
-            logger.error(f"Enhanced AI handler 가져오기 실패: {e}")
+        logger.info("🔍🔍🔍 [GET_AI_HANDLER_START] AI 핸들러 생성 프로세스 시작")
+        print("🔍🔍🔍 [GET_AI_HANDLER_START] AI 핸들러 생성 프로세스 시작")
         
-        # 폴백으로 기존 방식 사용
+        # ===== 1단계: Enhanced AI Service 시도 =====
         try:
+            logger.info("📊 [STEP_1] Enhanced AI Service 확인")
+            print("📊 [STEP_1] Enhanced AI Service 확인")
+            
+            logger.info(f"📊 [ENHANCED_SERVICE_CHECK] enhanced_ai_service 존재: {enhanced_ai_service is not None}")
+            logger.info(f"📊 [ENHANCED_SERVICE_TYPE] enhanced_ai_service 타입: {type(enhanced_ai_service)}")
+            print(f"📊 [ENHANCED_SERVICE_CHECK] enhanced_ai_service 존재: {enhanced_ai_service is not None}")
+            
+            if enhanced_ai_service:
+                logger.info("🔄 [ENHANCED_CALL] enhanced_ai_service.get_active_handler() 호출 시작")
+                print("🔄 [ENHANCED_CALL] enhanced_ai_service.get_active_handler() 호출 시작")
+                
+                handler = await enhanced_ai_service.get_active_handler()
+                
+                logger.info(f"✅ [ENHANCED_SUCCESS] Enhanced AI handler 가져오기 성공: {type(handler).__name__ if handler else 'None'}")
+                print(f"✅ [ENHANCED_SUCCESS] Enhanced AI handler 가져오기 성공: {type(handler).__name__ if handler else 'None'}")
+                
+                if handler:
+                    logger.info("🎉 [HANDLER_READY] Enhanced AI handler 준비 완료")
+                    print("🎉 [HANDLER_READY] Enhanced AI handler 준비 완료")
+                    return handler
+                else:
+                    logger.warning("⚠️ [ENHANCED_NULL] Enhanced AI handler가 None을 반환했습니다")
+                    print("⚠️ [ENHANCED_NULL] Enhanced AI handler가 None을 반환했습니다")
+            else:
+                logger.info("ℹ️ [NO_ENHANCED] enhanced_ai_service가 None입니다. 폴백으로 이동")
+                print("ℹ️ [NO_ENHANCED] enhanced_ai_service가 None입니다. 폴백으로 이동")
+                
+        except Exception as e:
+            logger.error(f"❌ [ENHANCED_ERROR] Enhanced AI handler 가져오기 실패: {e}")
+            logger.error(f"📊 [ERROR_TYPE] 에러 타입: {type(e).__name__}")
+            logger.error(f"📊 [ERROR_MSG] 에러 메시지: {str(e)}")
+            logger.error(f"📊 [ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+            print(f"❌ [ENHANCED_ERROR] Enhanced AI handler 가져오기 실패: {e}")
+        
+        # ===== 2단계: 폴백 방식 사용 =====
+        logger.info("🔄 [FALLBACK_START] 폴백 AI 핸들러 생성 시작")
+        print("🔄 [FALLBACK_START] 폴백 AI 핸들러 생성 시작")
+        
+        try:
+            logger.info("📊 [STEP_2] 폴백 설정 구성")
+            print("📊 [STEP_2] 폴백 설정 구성")
+            
             settings_dict = {
                 "default_provider": "openai",
                 "openai_model_name": "gpt-4",
                 "gemini_model_name": "gemini-1.5-flash"
             }
+            
             provider = settings_dict.get("default_provider", "openai").lower()
             openai_model = settings_dict.get("openai_model_name", "gpt-4")
             gemini_model = settings_dict.get("gemini_model_name", "gemini-1.5-flash")
             
+            logger.info(f"📊 [FALLBACK_CONFIG] 선택된 제공자: {provider}")
+            logger.info(f"📊 [FALLBACK_CONFIG] OpenAI 모델: {openai_model}")
+            logger.info(f"📊 [FALLBACK_CONFIG] Gemini 모델: {gemini_model}")
+            print(f"📊 [FALLBACK_CONFIG] 선택된 제공자: {provider}")
+            
+            # 클라이언트 상태 확인
+            logger.info(f"📊 [CLIENT_CHECK] self.openai_client 존재: {self.openai_client is not None}")
+            logger.info(f"📊 [CLIENT_CHECK] self.gemini_client 존재: {self.gemini_client is not None}")
+            logger.info(f"📊 [CLIENT_CHECK] OpenAIHandler 클래스 존재: {OpenAIHandler is not None}")
+            logger.info(f"📊 [CLIENT_CHECK] GeminiHandler 클래스 존재: {GeminiHandler is not None}")
+            print(f"📊 [CLIENT_CHECK] OpenAI 클라이언트: {self.openai_client is not None}, Gemini 클라이언트: {self.gemini_client is not None}")
+            
+            # 핸들러 생성 시도
             if provider == "gemini" and self.gemini_client and GeminiHandler:
-                return GeminiHandler(self.gemini_client, gemini_model)
+                logger.info("🔄 [GEMINI_HANDLER] Gemini 핸들러 생성 시도")
+                print("🔄 [GEMINI_HANDLER] Gemini 핸들러 생성 시도")
+                
+                handler = GeminiHandler(self.gemini_client, gemini_model)
+                
+                logger.info(f"✅ [GEMINI_SUCCESS] Gemini 핸들러 생성 성공: {type(handler).__name__}")
+                print(f"✅ [GEMINI_SUCCESS] Gemini 핸들러 생성 성공")
+                return handler
+                
             elif self.openai_client and OpenAIHandler:
-                return OpenAIHandler(self.openai_client, openai_model)
+                logger.info("🔄 [OPENAI_HANDLER] OpenAI 핸들러 생성 시도")
+                print("🔄 [OPENAI_HANDLER] OpenAI 핸들러 생성 시도")
+                
+                handler = OpenAIHandler(self.openai_client, openai_model)
+                
+                logger.info(f"✅ [OPENAI_SUCCESS] OpenAI 핸들러 생성 성공: {type(handler).__name__}")
+                print(f"✅ [OPENAI_SUCCESS] OpenAI 핸들러 생성 성공")
+                return handler
+                
             else:
-                logger.error("AI 핸들러를 생성할 수 없습니다")
+                logger.error("❌ [NO_VALID_CLIENT] 유효한 AI 클라이언트나 핸들러 클래스를 찾을 수 없습니다")
+                logger.error(f"📊 [CLIENT_DETAILS] OpenAI 클라이언트: {self.openai_client is not None}")
+                logger.error(f"📊 [CLIENT_DETAILS] Gemini 클라이언트: {self.gemini_client is not None}")
+                logger.error(f"📊 [HANDLER_DETAILS] OpenAIHandler: {OpenAIHandler is not None}")
+                logger.error(f"📊 [HANDLER_DETAILS] GeminiHandler: {GeminiHandler is not None}")
+                print("❌ [NO_VALID_CLIENT] 유효한 AI 클라이언트를 찾을 수 없습니다")
                 return None
+                
         except Exception as fallback_error:
-            logger.error(f"폴백 AI 핸들러 생성 실패: {fallback_error}")
+            logger.error(f"❌ [FALLBACK_ERROR] 폴백 AI 핸들러 생성 실패: {fallback_error}")
+            logger.error(f"📊 [FALLBACK_ERROR_TYPE] 에러 타입: {type(fallback_error).__name__}")
+            logger.error(f"📊 [FALLBACK_ERROR_MSG] 에러 메시지: {str(fallback_error)}")
+            logger.error(f"📊 [FALLBACK_ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+            print(f"❌ [FALLBACK_ERROR] 폴백 AI 핸들러 생성 실패: {fallback_error}")
             return None
 
     async def generate_recommendations_with_details(self, request: ItineraryRequest) -> List[PlaceData]:
@@ -433,15 +512,38 @@ JSON 형식으로 응답해주세요:
             
             logger.info(f"⏰ [SCHEDULE_PARAMS] 일정 매개변수: {duration}일, {daily_start}~{daily_end}")
             
-            # AI 핸들러 가져오기
-            logger.info("🤖 [AI_HANDLER] AI 핸들러 가져오기 시작")
+            # ===== 🚨 [핵심] AI 핸들러 생성 및 검증 =====
+            logger.info("🤖🤖🤖 [AI_HANDLER_PROCESS] AI 핸들러 생성 프로세스 시작")
+            print("🤖🤖🤖 [AI_HANDLER_PROCESS] AI 핸들러 생성 프로세스 시작")
+            
             ai_handler = await self._get_ai_handler()
+            
+            logger.info("🔍 [HANDLER_VALIDATION] AI 핸들러 검증 시작")
+            print("🔍 [HANDLER_VALIDATION] AI 핸들러 검증 시작")
+            
             if not ai_handler:
-                logger.error("❌ [AI_HANDLER_FAIL] AI 핸들러를 가져올 수 없습니다")
+                logger.error("❌❌❌ [AI_HANDLER_FAIL] AI 핸들러를 가져올 수 없습니다")
+                logger.error("📊 [HANDLER_NULL] ai_handler가 None입니다")
+                print("❌❌❌ [AI_HANDLER_FAIL] AI 핸들러를 가져올 수 없습니다")
+                
                 logger.info("🔄 [FALLBACK] 간단한 일정 생성으로 폴백")
+                print("🔄 [FALLBACK] 간단한 일정 생성으로 폴백")
                 return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
-            logger.info(f"✅ [AI_HANDLER_SUCCESS] AI 핸들러 준비 완료: {type(ai_handler).__name__}")
+            logger.info(f"✅✅✅ [AI_HANDLER_SUCCESS] AI 핸들러 준비 완료")
+            logger.info(f"📊 [HANDLER_TYPE] 핸들러 타입: {type(ai_handler).__name__}")
+            logger.info(f"📊 [HANDLER_METHODS] 핸들러 메서드들: {[method for method in dir(ai_handler) if not method.startswith('_')]}")
+            print(f"✅✅✅ [AI_HANDLER_SUCCESS] AI 핸들러 준비 완료: {type(ai_handler).__name__}")
+            
+            # 핸들러의 generate_text 메서드 존재 확인
+            if hasattr(ai_handler, 'generate_text'):
+                logger.info("✅ [METHOD_CHECK] generate_text 메서드 존재 확인")
+                print("✅ [METHOD_CHECK] generate_text 메서드 존재 확인")
+            else:
+                logger.error("❌ [METHOD_MISSING] generate_text 메서드가 존재하지 않습니다")
+                logger.error(f"📊 [AVAILABLE_METHODS] 사용 가능한 메서드들: {[method for method in dir(ai_handler) if not method.startswith('_')]}")
+                print("❌ [METHOD_MISSING] generate_text 메서드가 존재하지 않습니다")
+                return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
             # ===== 🚨 [핵심 수정] 프롬프트 생성 과정을 별도 try-catch로 감싸기 =====
             prompt = None
@@ -654,17 +756,61 @@ JSON 형식으로 응답해주세요:
             print("=" * 100)
             print("📜📜📜 FINAL PROMPT TO AI - END 📜📜📜")
             
-            # AI 호출
-            logger.info("🤖 [AI_CALL_START] AI 호출 시작")
-            print("🤖 [AI_CALL_START] AI 호출 시작")
+            # ===== 🚨 [핵심] AI 호출 과정 완전 추적 =====
+            logger.info("🤖🤖🤖 [AI_CALL_PROCESS] AI 호출 프로세스 시작")
+            print("🤖🤖🤖 [AI_CALL_PROCESS] AI 호출 프로세스 시작")
+            
+            # AI 호출 직전 최종 상태 확인
+            logger.info("🔍 [PRE_CALL_CHECK] AI 호출 직전 상태 확인")
+            logger.info(f"📊 [HANDLER_STATUS] ai_handler 타입: {type(ai_handler).__name__}")
+            logger.info(f"📊 [PROMPT_STATUS] prompt 길이: {len(prompt)} 문자")
+            logger.info(f"📊 [PROMPT_STATUS] prompt 비어있음: {not prompt or not prompt.strip()}")
+            print("🔍 [PRE_CALL_CHECK] AI 호출 직전 상태 확인 완료")
+            
             try:
+                logger.info("🚀 [ACTUAL_AI_CALL] 실제 AI generate_text 호출 시작")
+                print("🚀 [ACTUAL_AI_CALL] 실제 AI generate_text 호출 시작")
+                
+                # 호출 파라미터 로깅
+                logger.info("📊 [CALL_PARAMS] 호출 파라미터:")
+                logger.info(f"  - max_tokens: 2000")
+                logger.info(f"  - prompt 첫 100자: {prompt[:100]}...")
+                print("📊 [CALL_PARAMS] max_tokens=2000으로 AI 호출")
+                
+                # 실제 AI 호출
                 response = await ai_handler.generate_text(prompt, max_tokens=2000)
-                logger.info(f"🤖 [AI_CALL_COMPLETE] AI 호출 완료 (응답 길이: {len(response) if response else 0})")
-                print(f"🤖 [AI_CALL_COMPLETE] AI 호출 완료 (응답 길이: {len(response) if response else 0})")
+                
+                logger.info("✅ [AI_CALL_RETURNED] AI 호출이 반환되었습니다")
+                logger.info(f"📊 [RESPONSE_INITIAL_CHECK] 응답 타입: {type(response)}")
+                logger.info(f"📊 [RESPONSE_INITIAL_CHECK] 응답 길이: {len(response) if response else 0}")
+                logger.info(f"📊 [RESPONSE_INITIAL_CHECK] 응답이 None: {response is None}")
+                logger.info(f"📊 [RESPONSE_INITIAL_CHECK] 응답이 빈 문자열: {response == '' if response is not None else 'N/A'}")
+                
+                print(f"✅ [AI_CALL_RETURNED] AI 호출 완료 (응답 길이: {len(response) if response else 0})")
+                
+                if response:
+                    logger.info(f"📝 [RESPONSE_PREVIEW] 응답 미리보기 (첫 200자): {response[:200]}...")
+                else:
+                    logger.warning("⚠️ [EMPTY_RESPONSE] AI가 빈 응답을 반환했습니다")
+                    print("⚠️ [EMPTY_RESPONSE] AI가 빈 응답을 반환했습니다")
+                
             except Exception as ai_error:
-                logger.error(f"❌ [AI_CALL_ERROR] AI 호출 실패: {ai_error}")
-                print(f"❌ [AI_CALL_ERROR] AI 호출 실패: {ai_error}")
-                logger.info("🔄 [FALLBACK] 간단한 일정 생성으로 폴백")
+                logger.error("❌❌❌ [AI_CALL_EXCEPTION] AI 호출 중 예외 발생")
+                logger.error(f"📊 [AI_ERROR_TYPE] 예외 타입: {type(ai_error).__name__}")
+                logger.error(f"📊 [AI_ERROR_MSG] 예외 메시지: {str(ai_error)}")
+                logger.error(f"📊 [AI_ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+                
+                print(f"❌❌❌ [AI_CALL_EXCEPTION] AI 호출 실패: {ai_error}")
+                print(f"📊 [AI_ERROR_TYPE] 예외 타입: {type(ai_error).__name__}")
+                
+                # 특정 에러 타입별 추가 정보
+                if hasattr(ai_error, 'response'):
+                    logger.error(f"📊 [API_RESPONSE] API 응답: {ai_error.response}")
+                if hasattr(ai_error, 'status_code'):
+                    logger.error(f"📊 [STATUS_CODE] 상태 코드: {ai_error.status_code}")
+                
+                logger.info("🔄 [AI_ERROR_FALLBACK] AI 호출 실패로 인한 폴백")
+                print("🔄 [AI_ERROR_FALLBACK] AI 호출 실패로 인한 폴백")
                 return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
             # ===== 🚨 [핵심 수정] AI 응답 검증 및 파싱 강화 =====
