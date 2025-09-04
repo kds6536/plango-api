@@ -447,16 +447,86 @@ JSON 형식으로 응답해주세요:
             prompt = None
             try:
                 logger.info("📜 [PROMPT_CREATION_START] 최종 프롬프트 생성을 시작합니다")
+                print("📜 [PROMPT_CREATION_START] 최종 프롬프트 생성을 시작합니다")
                 
-                # Supabase에서 itinerary_generation 프롬프트 가져오기
-                logger.info("📜 [PROMPT_FETCH] Supabase에서 프롬프트 가져오기 시작")
+                # ===== 🚨 [단계별 디버깅] 각 단계마다 로깅 =====
+                logger.info("🔍 [STEP_1] Supabase 프롬프트 템플릿 가져오기 시작")
+                print("🔍 [STEP_1] Supabase 프롬프트 템플릿 가져오기 시작")
+                
+                # ===== 🚨 [핵심 수정] Supabase 프롬프트 로드를 더 안전하게 =====
+                prompt_template = None
                 try:
+                    logger.info("📜 [PROMPT_FETCH] Supabase 서비스 import 시작")
+                    print("📜 [PROMPT_FETCH] Supabase 서비스 import 시작")
+                    
+                    # import 과정을 더 세밀하게 로깅
+                    logger.info("📜 [IMPORT_STEP_1] supabase_service import 시도")
+                    print("📜 [IMPORT_STEP_1] supabase_service import 시도")
+                    
                     from app.services.supabase_service import supabase_service
-                    prompt_template = await supabase_service.get_master_prompt('itinerary_generation')
-                    logger.info(f"✅ [PROMPT_FETCH_SUCCESS] Supabase 프롬프트 로드 성공 (길이: {len(prompt_template)})")
+                    
+                    logger.info("✅ [IMPORT_SUCCESS] Supabase 서비스 import 성공")
+                    print("✅ [IMPORT_SUCCESS] Supabase 서비스 import 성공")
+                    
+                    # supabase_service 객체 상태 확인
+                    logger.info(f"📊 [SERVICE_CHECK] supabase_service 타입: {type(supabase_service)}")
+                    logger.info(f"📊 [SERVICE_CHECK] supabase_service 존재: {supabase_service is not None}")
+                    print(f"📊 [SERVICE_CHECK] supabase_service 타입: {type(supabase_service)}")
+                    
+                    logger.info("📜 [PROMPT_FETCH] get_master_prompt 호출 시작")
+                    print("📜 [PROMPT_FETCH] get_master_prompt 호출 시작")
+                    
+                    # 실제 호출 전에 메서드 존재 확인
+                    if hasattr(supabase_service, 'get_master_prompt'):
+                        logger.info("✅ [METHOD_CHECK] get_master_prompt 메서드 존재 확인")
+                        print("✅ [METHOD_CHECK] get_master_prompt 메서드 존재 확인")
+                        
+                        logger.info("📜 [ACTUAL_CALL] 실제 get_master_prompt 호출 시작")
+                        print("📜 [ACTUAL_CALL] 실제 get_master_prompt 호출 시작")
+                        
+                        prompt_template = await supabase_service.get_master_prompt('itinerary_generation')
+                        
+                        logger.info(f"✅ [PROMPT_FETCH_SUCCESS] Supabase 프롬프트 로드 성공")
+                        logger.info(f"📊 [PROMPT_LENGTH] 프롬프트 길이: {len(prompt_template) if prompt_template else 0}")
+                        logger.info(f"📊 [PROMPT_TYPE] 프롬프트 타입: {type(prompt_template)}")
+                        print(f"✅ [PROMPT_FETCH_SUCCESS] Supabase 프롬프트 로드 성공 (길이: {len(prompt_template) if prompt_template else 0})")
+                        
+                        # 프롬프트 내용 미리보기
+                        if prompt_template:
+                            preview = prompt_template[:200] + "..." if len(prompt_template) > 200 else prompt_template
+                            logger.info(f"📝 [PROMPT_PREVIEW] 프롬프트 미리보기: {preview}")
+                        
+                    else:
+                        logger.error("❌ [METHOD_NOT_FOUND] get_master_prompt 메서드가 존재하지 않습니다")
+                        print("❌ [METHOD_NOT_FOUND] get_master_prompt 메서드가 존재하지 않습니다")
+                        raise AttributeError("get_master_prompt 메서드가 존재하지 않음")
+                    
                 except Exception as prompt_error:
-                    logger.warning(f"⚠️ [PROMPT_FETCH_FAIL] Supabase 프롬프트 로드 실패: {prompt_error}, 기본 프롬프트 사용")
+                    logger.error("❌ [PROMPT_FETCH_FAIL] Supabase 프롬프트 로드 실패")
+                    logger.error(f"📊 [ERROR_TYPE] 에러 타입: {type(prompt_error).__name__}")
+                    logger.error(f"📊 [ERROR_MSG] 에러 메시지: {str(prompt_error)}")
+                    logger.error(f"📊 [ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+                    
+                    print(f"❌ [PROMPT_FETCH_FAIL] Supabase 프롬프트 로드 실패: {prompt_error}")
+                    print(f"📊 [ERROR_TYPE] 에러 타입: {type(prompt_error).__name__}")
+                    
+                    logger.info("🔄 [FALLBACK_PROMPT] 기본 프롬프트 사용")
+                    print("🔄 [FALLBACK_PROMPT] 기본 프롬프트 사용")
                     prompt_template = self._get_default_itinerary_prompt()
+                
+                # 프롬프트 템플릿 최종 검증
+                if not prompt_template or not prompt_template.strip():
+                    logger.error("❌ [EMPTY_TEMPLATE] 프롬프트 템플릿이 비어있습니다")
+                    print("❌ [EMPTY_TEMPLATE] 프롬프트 템플릿이 비어있습니다")
+                    logger.info("🔄 [EMERGENCY_FALLBACK] 긴급 기본 프롬프트 사용")
+                    print("🔄 [EMERGENCY_FALLBACK] 긴급 기본 프롬프트 사용")
+                    prompt_template = self._get_default_itinerary_prompt()
+                
+                logger.info(f"✅ [TEMPLATE_READY] 프롬프트 템플릿 준비 완료 (길이: {len(prompt_template)})")
+                print(f"✅ [TEMPLATE_READY] 프롬프트 템플릿 준비 완료 (길이: {len(prompt_template)})")
+                
+                logger.info("🔍 [STEP_2] 장소 정보 구성 시작")
+                print("🔍 [STEP_2] 장소 정보 구성 시작")
                 
                 # ===== 🚨 [핵심 수정] PlaceData 객체 정보 구성 =====
                 logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작")
@@ -482,9 +552,11 @@ JSON 형식으로 응답해주세요:
                         logger.info(f"  📍 [{i+1}] {fallback_info} (fallback)")
                 
                 logger.info(f"✅ [PLACES_INFO_SUCCESS] {len(places_info)}개 장소 정보 구성 완료")
+                print(f"✅ [PLACES_INFO_SUCCESS] {len(places_info)}개 장소 정보 구성 완료")
                 
                 # 날짜별 시간 제약 조건 처리
-                logger.info("⏰ [TIME_CONSTRAINTS_PROCESSING] 시간 제약 조건 처리 시작")
+                logger.info("🔍 [STEP_3] 시간 제약 조건 처리 시작")
+                print("🔍 [STEP_3] 시간 제약 조건 처리 시작")
                 time_constraints_info = ""
                 if constraints.get("time_constraints"):
                     time_constraints_info = "\n날짜별 시간 제약 조건:"
@@ -499,19 +571,38 @@ JSON 형식으로 응답해주세요:
                     logger.info(f"⏰ [TIME_CONSTRAINTS] 전체 시간 제약: {daily_start} ~ {daily_end}")
                 
                 logger.info("✅ [TIME_CONSTRAINTS_SUCCESS] 시간 제약 조건 처리 완료")
+                print("✅ [TIME_CONSTRAINTS_SUCCESS] 시간 제약 조건 처리 완료")
                 
                 # 프롬프트 템플릿 변수 치환
-                logger.info("📜 [PROMPT_BUILD] 최종 프롬프트 구성 시작")
+                logger.info("🔍 [STEP_4] 프롬프트 템플릿 변수 치환 시작")
+                print("🔍 [STEP_4] 프롬프트 템플릿 변수 치환 시작")
+                logger.info("📜 [TEMPLATE_IMPORT] string.Template import 시작")
+                print("📜 [TEMPLATE_IMPORT] string.Template import 시작")
+                
                 from string import Template
+                logger.info("✅ [TEMPLATE_IMPORT_SUCCESS] Template import 성공")
+                print("✅ [TEMPLATE_IMPORT_SUCCESS] Template import 성공")
+                
+                logger.info("📜 [TEMPLATE_CREATE] Template 객체 생성 시작")
+                print("📜 [TEMPLATE_CREATE] Template 객체 생성 시작")
+                
                 template = Template(prompt_template)
+                logger.info("✅ [TEMPLATE_CREATE_SUCCESS] Template 객체 생성 성공")
+                print("✅ [TEMPLATE_CREATE_SUCCESS] Template 객체 생성 성공")
                 
                 # 변수 치환 전에 각 변수 값 로깅
-                logger.info(f"📊 [TEMPLATE_VARS] places_list 길이: {len(places_info)}")
-                logger.info(f"📊 [TEMPLATE_VARS] duration: {duration}")
-                logger.info(f"📊 [TEMPLATE_VARS] daily_start_time: {daily_start}")
-                logger.info(f"📊 [TEMPLATE_VARS] daily_end_time: {daily_end}")
-                logger.info(f"📊 [TEMPLATE_VARS] total_places: {len(places)}")
-                logger.info(f"📊 [TEMPLATE_VARS] time_constraints_info 길이: {len(time_constraints_info)}")
+                logger.info("📊 [TEMPLATE_VARS] 템플릿 변수 값 확인:")
+                logger.info(f"  - places_list 길이: {len(places_info)}")
+                logger.info(f"  - duration: {duration}")
+                logger.info(f"  - daily_start_time: {daily_start}")
+                logger.info(f"  - daily_end_time: {daily_end}")
+                logger.info(f"  - total_places: {len(places)}")
+                logger.info(f"  - time_constraints_info 길이: {len(time_constraints_info)}")
+                
+                print("📊 [TEMPLATE_VARS] 템플릿 변수 값 확인 완료")
+                
+                logger.info("📜 [TEMPLATE_SUBSTITUTE] safe_substitute 호출 시작")
+                print("📜 [TEMPLATE_SUBSTITUTE] safe_substitute 호출 시작")
                 
                 prompt = template.safe_substitute(
                     places_list=chr(10).join(places_info),
@@ -521,6 +612,9 @@ JSON 형식으로 응답해주세요:
                     total_places=len(places),
                     time_constraints_info=time_constraints_info
                 )
+                
+                logger.info("✅ [TEMPLATE_SUBSTITUTE_SUCCESS] safe_substitute 성공")
+                print("✅ [TEMPLATE_SUBSTITUTE_SUCCESS] safe_substitute 성공")
                 
                 logger.info("✅ [PROMPT_CREATION_SUCCESS] 최종 프롬프트 생성 완료")
                 logger.info(f"📊 [FINAL_PROMPT_LENGTH] 최종 프롬프트 길이: {len(prompt)} 문자")
@@ -2254,4 +2348,49 @@ $places_list
                 title="기본 여행 일정",
                 concept="기본 여행 계획",
                 places=places
-            ) 
+            )   
+  def _get_default_itinerary_prompt(self) -> str:
+        """기본 일정 생성 프롬프트 (Supabase 실패 시 사용)"""
+        return """
+당신은 전문 여행 플래너입니다. 주어진 장소들과 제약 조건을 바탕으로 최적의 여행 일정을 생성해주세요.
+
+입력 정보:
+- 선택된 장소들: $places_list
+- 여행 기간: $duration일
+- 일일 시작 시간: $daily_start_time
+- 일일 종료 시간: $daily_end_time
+- 총 장소 수: $total_places개
+$time_constraints_info
+
+다음 JSON 형식으로 응답해주세요:
+
+{
+  "travel_plan": {
+    "total_days": $duration,
+    "daily_start_time": "$daily_start_time",
+    "daily_end_time": "$daily_end_time",
+    "days": [
+      {
+        "day": 1,
+        "date": "2024-01-01",
+        "activities": [
+          {
+            "time": "09:00",
+            "place_name": "장소명",
+            "category": "관광",
+            "duration_minutes": 120,
+            "description": "활동 설명"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+규칙:
+1. 각 일차마다 적절한 수의 활동을 배치하세요
+2. 이동 시간을 고려하여 현실적인 일정을 만드세요
+3. 식사 시간(12:00-13:00, 18:00-19:00)을 고려하세요
+4. 모든 선택된 장소를 포함하되, 무리하지 않게 배치하세요
+5. 각 활동의 소요 시간을 현실적으로 설정하세요
+"""
