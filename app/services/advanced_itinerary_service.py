@@ -398,27 +398,20 @@ JSON 형식으로 응답해주세요:
             logger.info(f"📊 [CONSTRAINTS_KEYS] constraints 키들: {list(constraints.keys()) if isinstance(constraints, dict) else 'Not a dict'}")
             logger.info("=" * 100)
             
-            # ===== 🚨 [핵심 수정] 안전한 장소 목록 로깅 =====
+            # ===== 🚨 [핵심 수정] PlaceData 객체 안전한 접근 =====
             place_names = []
             try:
                 for i, place in enumerate(places):
                     try:
-                        # 객체 속성으로 접근 시도
-                        if hasattr(place, 'name') and hasattr(place, 'category'):
-                            place_name = f"{place.name} ({place.category})"
-                        # 딕셔너리로 접근 시도
-                        elif isinstance(place, dict):
-                            name = place.get('name', f'Place_{i+1}')
-                            category = place.get('category', 'Unknown')
-                            place_name = f"{name} ({category})"
-                        else:
-                            place_name = f"Unknown_Place_{i+1} (type: {type(place).__name__})"
-                        
+                        # PlaceData는 Pydantic 모델이므로 직접 속성 접근 가능
+                        place_name = f"{place.name} ({place.category})"
                         place_names.append(place_name)
                         logger.info(f"  📍 [{i+1}] {place_name}")
                         
                     except Exception as place_error:
                         logger.error(f"❌ [PLACE_ACCESS_ERROR] 장소 {i+1} 접근 실패: {place_error}")
+                        logger.error(f"📊 [PLACE_ERROR_TYPE] 에러 타입: {type(place_error).__name__}")
+                        logger.error(f"📊 [PLACE_ERROR_MSG] 에러 메시지: {str(place_error)}")
                         place_names.append(f"Error_Place_{i+1}")
                 
                 logger.info(f"🏛️ [PLACE_LIST_SUCCESS] 장소 목록 생성 완료: {len(place_names)}개")
@@ -465,28 +458,15 @@ JSON 형식으로 응답해주세요:
                     logger.warning(f"⚠️ [PROMPT_FETCH_FAIL] Supabase 프롬프트 로드 실패: {prompt_error}, 기본 프롬프트 사용")
                     prompt_template = self._get_default_itinerary_prompt()
                 
-                # ===== 🚨 [핵심 수정] 안전한 장소 정보 구성 =====
+                # ===== 🚨 [핵심 수정] PlaceData 객체 정보 구성 =====
                 logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작")
                 places_info = []
                 for i, place in enumerate(places):
                     try:
-                        # 다양한 데이터 타입에 대응하는 안전한 접근
-                        if hasattr(place, 'name'):
-                            # PlaceData 객체인 경우
-                            place_name = getattr(place, 'name', f'Place_{i+1}')
-                            place_category = getattr(place, 'category', 'Unknown')
-                            place_address = getattr(place, 'address', 'Unknown Address')
-                        elif isinstance(place, dict):
-                            # 딕셔너리인 경우
-                            place_name = place.get('name', f'Place_{i+1}')
-                            place_category = place.get('category', 'Unknown')
-                            place_address = place.get('address', 'Unknown Address')
-                        else:
-                            # 기타 타입인 경우
-                            logger.warning(f"⚠️ [UNKNOWN_PLACE_TYPE] 장소 {i+1} 타입 불명: {type(place)}")
-                            place_name = f'Place_{i+1}'
-                            place_category = 'Unknown'
-                            place_address = 'Unknown Address'
+                        # PlaceData는 Pydantic 모델이므로 직접 속성 접근
+                        place_name = place.name
+                        place_category = place.category
+                        place_address = place.address or 'Unknown Address'
                         
                         place_info = f"- {place_name} ({place_category}): {place_address}"
                         places_info.append(place_info)
@@ -494,6 +474,8 @@ JSON 형식으로 응답해주세요:
                         
                     except Exception as place_info_error:
                         logger.error(f"❌ [PLACE_INFO_ERROR] 장소 {i+1} 정보 구성 실패: {place_info_error}")
+                        logger.error(f"📊 [PLACE_INFO_ERROR_TYPE] 에러 타입: {type(place_info_error).__name__}")
+                        logger.error(f"📊 [PLACE_INFO_ERROR_MSG] 에러 메시지: {str(place_info_error)}")
                         # 에러 발생 시 기본값 사용
                         fallback_info = f"- Place_{i+1} (Unknown): Error accessing place data"
                         places_info.append(fallback_info)
