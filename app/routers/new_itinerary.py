@@ -71,7 +71,7 @@ async def generate_recommendations(
 
 
 @router.post("/optimize", response_model=OptimizeResponse)
-async def optimize_itinerary(
+async def optimize_itinerary_v2(  # 함수명 변경으로 캐시 무효화
     payload: Dict[str, Any] = Body(...),
     service: AdvancedItineraryService = Depends(get_itinerary_service)
 ):
@@ -82,7 +82,8 @@ async def optimize_itinerary(
     try:
         # ===== 🚨 [실제 실행 경로 확인] - print로 강제 출력 =====
         print("=" * 100)
-        print("✅✅✅ ACTUAL EXECUTION PATH: /routers/new_itinerary.py -> optimize_itinerary function CALLED! ✅✅✅")
+        print("🔥🔥🔥 NEW VERSION DEPLOYED! optimize_itinerary_v2 function CALLED! 🔥🔥🔥")
+        print("✅✅✅ ACTUAL EXECUTION PATH: /routers/new_itinerary.py -> optimize_itinerary_v2 function CALLED! ✅✅✅")
         print("🚀 [OPTIMIZE_START] 일정 최적화 API 호출 시작")
         print(f"📋 [OPTIMIZE_PAYLOAD] 요청 페이로드: {payload}")
         print("=" * 100)
