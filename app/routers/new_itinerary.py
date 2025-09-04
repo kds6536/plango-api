@@ -131,7 +131,14 @@ async def optimize_itinerary_v2(  # 함수명 변경으로 캐시 무효화
         logging.info(f"🔍 [SERVICE_MODULE] 서비스 모듈: {type(service).__module__}")
         
         # create_final_itinerary는 비동기 함수
+        print("🚨🚨🚨 CALLING create_final_itinerary NOW! 🚨🚨🚨")
+        print(f"📊 [INPUT_TO_SERVICE] places 개수: {len(places)}")
+        print(f"📊 [INPUT_TO_SERVICE] constraints: {constraints}")
+        
         final_itinerary = await service.create_final_itinerary(places, constraints=constraints)
+        
+        print("🚨🚨🚨 create_final_itinerary RETURNED! 🚨🚨🚨")
+        print(f"🔍 [FINAL_ITINERARY_TYPE] 반환된 final_itinerary 타입: {type(final_itinerary).__name__}")
         logging.info(f"🔍 [FINAL_ITINERARY_TYPE] 반환된 final_itinerary 타입: {type(final_itinerary).__name__}")
 
         if not final_itinerary:

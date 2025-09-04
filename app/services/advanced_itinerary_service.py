@@ -1444,6 +1444,10 @@ JSON 형식으로 응답해주세요:
         v6.0: 선택된 장소들을 Supabase 마스터 프롬프트와 AI로 최적화하여 최종 일정을 생성합니다.
         """
         try:
+            print("🔥🔥🔥 AdvancedItineraryService.create_final_itinerary CALLED! 🔥🔥🔥")
+            print(f"🎯 [OPTIMIZE_START] 최종 일정 생성 시작: {len(places)}개 장소")
+            print(f"📊 [INPUT_PLACES] 입력 장소 목록: {[place.name for place in places]}")
+            
             logger.info(f"🎯 [OPTIMIZE_START] 최종 일정 생성 시작: {len(places)}개 장소")
             logger.info(f"📊 [INPUT_PLACES] 입력 장소 목록: {[place.name for place in places]}")
             
