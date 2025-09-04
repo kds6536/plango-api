@@ -448,7 +448,10 @@ JSON 형식으로 응답해주세요:
             )
             
             logger.info(f"📜 [FINAL_PROMPT] 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(prompt)}):")
-            logger.info(f"📜 [PROMPT_PREVIEW] 프롬프트 미리보기 (처음 500자):\n{prompt[:500]}...")
+            logger.info("=" * 80)
+            logger.info("📜 [COMPLETE_PROMPT] 최종 프롬프트 전체 내용:")
+            logger.info(prompt)
+            logger.info("=" * 80)
             
             # AI 호출
             logger.info("🤖 [AI_CALL_START] AI 호출 시작")

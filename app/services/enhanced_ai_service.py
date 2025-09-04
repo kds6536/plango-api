@@ -157,7 +157,10 @@ class EnhancedAIService:
             final_prompt = master_prompt.replace('{input_data}', input_data_json)
             
             logger.info(f"📜 [FINAL_PROMPT_ENHANCED] Enhanced AI - 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):")
-            logger.info(f"📜 [PROMPT_PREVIEW] 프롬프트 미리보기 (처음 500자):\n{final_prompt[:500]}...")
+            logger.info("=" * 80)
+            logger.info("📜 [COMPLETE_PROMPT_ENHANCED] Enhanced AI - 최종 프롬프트 전체 내용:")
+            logger.info(final_prompt)
+            logger.info("=" * 80)
             
             # AI로 응답 생성
             logger.info("🤖 [AI_CALLING] Enhanced AI - AI 호출 시작...")
