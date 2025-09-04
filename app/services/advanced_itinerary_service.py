@@ -2348,8 +2348,9 @@ $places_list
                 title="기본 여행 일정",
                 concept="기본 여행 계획",
                 places=places
-            )   
-  def _get_default_itinerary_prompt(self) -> str:
+            )
+    
+    def _get_default_itinerary_prompt(self) -> str:
         """기본 일정 생성 프롬프트 (Supabase 실패 시 사용)"""
         return """
 당신은 전문 여행 플래너입니다. 주어진 장소들과 제약 조건을 바탕으로 최적의 여행 일정을 생성해주세요.
