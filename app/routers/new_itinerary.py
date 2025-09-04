@@ -117,9 +117,12 @@ async def optimize_itinerary(
             raise HTTPException(status_code=400, detail="최적화를 위해 최소 2곳 이상의 장소가 필요합니다.")
         
         logging.info("🔄 [OPTIMIZE_PROCESSING] create_final_itinerary 호출 시작")
+        logging.info(f"🔍 [SERVICE_TYPE] 사용 중인 서비스 타입: {type(service).__name__}")
+        logging.info(f"🔍 [SERVICE_MODULE] 서비스 모듈: {type(service).__module__}")
         
         # create_final_itinerary는 비동기 함수
         final_itinerary = await service.create_final_itinerary(places, constraints=constraints)
+        logging.info(f"🔍 [FINAL_ITINERARY_TYPE] 반환된 final_itinerary 타입: {type(final_itinerary).__name__}")
 
         if not final_itinerary:
             logging.error("❌ [OPTIMIZE_FAIL] final_itinerary가 None입니다.")

@@ -371,9 +371,12 @@ JSON 형식으로 응답해주세요:
     async def create_final_itinerary(self, places: List[PlaceData], constraints: Dict[str, Any] = None) -> OptimizeResponse:
         """최종 일정 생성"""
         try:
+            logger.info("=" * 100)
+            logger.info("🚀 [ADVANCED_ITINERARY_SERVICE] AdvancedItineraryService.create_final_itinerary 호출됨!")
             logger.info("🚀 [CREATE_FINAL_START] 최종 일정 생성 시작")
             logger.info(f"📍 [INPUT_PLACES] 입력 장소 수: {len(places)}")
             logger.info(f"📋 [INPUT_CONSTRAINTS] 제약 조건: {constraints}")
+            logger.info("=" * 100)
             
             # 입력 장소 목록 로깅
             place_names = [f"{place.name} ({place.category})" for place in places]
