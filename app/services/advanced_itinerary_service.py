@@ -456,6 +456,20 @@ JSON 형식으로 응답해주세요:
             logger.info(f"📍 [INPUT_PLACES] 입력 장소 수: {len(places)}")
             logger.info(f"📋 [INPUT_CONSTRAINTS] 제약 조건: {constraints}")
             
+            # ===== 🚨 [핵심] 입력된 장소들의 상세 정보 로깅 =====
+            logger.info("🔍🔍🔍 [DETAILED_PLACES_INFO] 입력된 장소들의 상세 정보:")
+            print("🔍🔍🔍 [DETAILED_PLACES_INFO] 입력된 장소들의 상세 정보:")
+            for i, place in enumerate(places):
+                try:
+                    place_info = f"[{i+1}] {place.name} - 카테고리: {place.category}, 위도: {place.lat}, 경도: {place.lng}, 주소: {place.address}"
+                    logger.info(f"  📍 {place_info}")
+                    print(f"  📍 {place_info}")
+                except Exception as e:
+                    logger.error(f"  ❌ [{i+1}] 장소 정보 접근 실패: {e}")
+                    print(f"  ❌ [{i+1}] 장소 정보 접근 실패: {e}")
+            logger.info("🔍🔍🔍 [DETAILED_PLACES_INFO_END]")
+            print("🔍🔍🔍 [DETAILED_PLACES_INFO_END]")
+            
             # ===== 🚨 [핵심] 입력 데이터 타입 검증 =====
             logger.info("🔍 [DATA_TYPE_CHECK] 입력 데이터 타입 검증 시작")
             logger.info(f"📊 [PLACES_TYPE] places 타입: {type(places)}")
