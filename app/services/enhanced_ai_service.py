@@ -608,6 +608,12 @@ class EnhancedAIService:
             travel_plan_data = None
             found_key = None
             
+            # [핵심 디버깅] 파싱 직후 객체 내용 상세 로깅
+            logger.info("🔍🔍🔍 [PARSED_OBJECT_CONTENT] 파싱 직후 객체 내용:")
+            logger.info(f"{json.dumps(parsed_json, indent=2, ensure_ascii=False)}")
+            print("🔍🔍🔍 [PARSED_OBJECT_CONTENT] 파싱 직후 객체 내용:")
+            print(f"{json.dumps(parsed_json, indent=2, ensure_ascii=False)}")
+            
             # [핵심 수정] 우선순위 순서로 키 확인 - itinerary를 최우선으로
             possible_keys = [
                 'itinerary',        # [최우선] AI가 실제로 사용하는 키
@@ -618,12 +624,26 @@ class EnhancedAIService:
                 'days'              # 직접 배열인 경우
             ]
             
+            logger.info("🔍 [KEY_SEARCH_START] 키 검색 시작...")
+            print("🔍 [KEY_SEARCH_START] 키 검색 시작...")
+            
             for key in possible_keys:
+                logger.info(f"🔍 [CHECKING_KEY] '{key}' 키 확인 중...")
+                print(f"🔍 [CHECKING_KEY] '{key}' 키 확인 중...")
+                
                 if key in parsed_json:
                     travel_plan_data = parsed_json[key]
                     found_key = key
                     logger.info(f"✅ [FOUND_DATA] '{key}' 키에서 데이터 발견")
+                    logger.info(f"📊 [FOUND_DATA_TYPE] 발견된 데이터 타입: {type(travel_plan_data)}")
+                    logger.info(f"📊 [FOUND_DATA_LENGTH] 발견된 데이터 길이: {len(travel_plan_data) if hasattr(travel_plan_data, '__len__') else 'N/A'}")
+                    print(f"✅ [FOUND_DATA] '{key}' 키에서 데이터 발견")
+                    print(f"📊 [FOUND_DATA_TYPE] 발견된 데이터 타입: {type(travel_plan_data)}")
+                    print(f"📊 [FOUND_DATA_LENGTH] 발견된 데이터 길이: {len(travel_plan_data) if hasattr(travel_plan_data, '__len__') else 'N/A'}")
                     break
+                else:
+                    logger.info(f"❌ [KEY_NOT_FOUND] '{key}' 키 없음")
+                    print(f"❌ [KEY_NOT_FOUND] '{key}' 키 없음")
             
             # 3. 데이터 유효성 검증
             if travel_plan_data is None:
@@ -632,20 +652,38 @@ class EnhancedAIService:
             
             # 4. 데이터 구조 정규화 및 검증
             logger.info(f"🔍 [DATA_STRUCTURE] 발견된 데이터 구조 분석: {type(travel_plan_data)}")
+            print(f"🔍 [DATA_STRUCTURE] 발견된 데이터 구조 분석: {type(travel_plan_data)}")
+            
+            # [핵심 디버깅] 추출된 데이터 내용 상세 로깅
+            logger.info("🔍🔍🔍 [EXTRACTED_DATA_CHECK] 추출된 데이터 내용:")
+            if isinstance(travel_plan_data, list):
+                logger.info(f"📊 [ARRAY_LENGTH] 배열 길이: {len(travel_plan_data)}")
+                logger.info(f"📊 [FIRST_ITEM] 첫 번째 항목: {travel_plan_data[0] if travel_plan_data else 'EMPTY'}")
+                print(f"📊 [ARRAY_LENGTH] 배열 길이: {len(travel_plan_data)}")
+                print(f"📊 [FIRST_ITEM] 첫 번째 항목: {travel_plan_data[0] if travel_plan_data else 'EMPTY'}")
+            elif isinstance(travel_plan_data, dict):
+                logger.info(f"📊 [DICT_KEYS] 딕셔너리 키들: {list(travel_plan_data.keys())}")
+                print(f"📊 [DICT_KEYS] 딕셔너리 키들: {list(travel_plan_data.keys())}")
+            else:
+                logger.info(f"📊 [OTHER_TYPE] 기타 타입 내용: {travel_plan_data}")
+                print(f"📊 [OTHER_TYPE] 기타 타입 내용: {travel_plan_data}")
             
             if isinstance(travel_plan_data, dict):
                 # 딕셔너리인 경우 - daily_plans 또는 days 키 확인
                 if 'daily_plans' in travel_plan_data:
                     logger.info("✅ [FOUND_DAILY_PLANS] daily_plans 키 발견")
+                    print("✅ [FOUND_DAILY_PLANS] daily_plans 키 발견")
                     final_data = travel_plan_data
                     days_data = travel_plan_data['daily_plans']
                 elif 'days' in travel_plan_data:
                     logger.info("✅ [FOUND_DAYS] days 키 발견, daily_plans로 변환")
+                    print("✅ [FOUND_DAYS] days 키 발견, daily_plans로 변환")
                     final_data = travel_plan_data.copy()
                     final_data['daily_plans'] = final_data.pop('days')
                     days_data = final_data['daily_plans']
                 else:
                     logger.warning("⚠️ [NO_DAILY_PLANS] daily_plans나 days 키가 없음, 전체 데이터를 daily_plans로 사용")
+                    print("⚠️ [NO_DAILY_PLANS] daily_plans나 days 키가 없음, 전체 데이터를 daily_plans로 사용")
                     final_data = {
                         'title': '맞춤형 여행 일정',
                         'concept': 'AI가 생성한 최적화된 여행 계획',
@@ -653,8 +691,12 @@ class EnhancedAIService:
                     }
                     days_data = final_data['daily_plans']
             elif isinstance(travel_plan_data, list):
-                # 배열인 경우 - 직접 daily_plans로 사용
+                # [핵심] 배열인 경우 - 직접 daily_plans로 사용 (itinerary 키의 경우)
                 logger.info("✅ [ARRAY_DATA] 배열 데이터를 daily_plans로 사용")
+                logger.info(f"📊 [ARRAY_PROCESSING] 배열 길이: {len(travel_plan_data)}, 첫 번째 항목 타입: {type(travel_plan_data[0]) if travel_plan_data else 'EMPTY'}")
+                print("✅ [ARRAY_DATA] 배열 데이터를 daily_plans로 사용")
+                print(f"📊 [ARRAY_PROCESSING] 배열 길이: {len(travel_plan_data)}, 첫 번째 항목 타입: {type(travel_plan_data[0]) if travel_plan_data else 'EMPTY'}")
+                
                 final_data = {
                     'title': '맞춤형 여행 일정',
                     'concept': 'AI가 생성한 최적화된 여행 계획',
@@ -663,7 +705,16 @@ class EnhancedAIService:
                 days_data = travel_plan_data
             else:
                 logger.error(f"❌ [INVALID_DATA_TYPE] 예상치 못한 데이터 타입: {type(travel_plan_data)}")
+                print(f"❌ [INVALID_DATA_TYPE] 예상치 못한 데이터 타입: {type(travel_plan_data)}")
                 raise ValueError(f"여행 계획 데이터 타입 오류: {type(travel_plan_data)}")
+            
+            # [핵심 디버깅] days_data 최종 확인
+            logger.info(f"🔍🔍🔍 [FINAL_DAYS_DATA_CHECK] 최종 days_data:")
+            logger.info(f"📊 [FINAL_TYPE] 타입: {type(days_data)}")
+            logger.info(f"📊 [FINAL_LENGTH] 길이: {len(days_data) if hasattr(days_data, '__len__') else 'N/A'}")
+            print(f"🔍🔍🔍 [FINAL_DAYS_DATA_CHECK] 최종 days_data:")
+            print(f"📊 [FINAL_TYPE] 타입: {type(days_data)}")
+            print(f"📊 [FINAL_LENGTH] 길이: {len(days_data) if hasattr(days_data, '__len__') else 'N/A'}")
             
             # 5. 최종 검증 - 빈 일정 감지
             if not isinstance(days_data, list):
