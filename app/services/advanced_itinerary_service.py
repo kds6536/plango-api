@@ -2570,83 +2570,102 @@ $places_list
             logger.info(f"✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
             logger.info(f"🤖 [AI_DATA_STRUCTURE] AI 응답 구조:\n{json.dumps(ai_data, ensure_ascii=False, indent=2)}")
             
-            # travel_plan 구조 확인
-            if 'travel_plan' in ai_data:
+            # [핵심 수정] AI 응답에서 일정 데이터 추출 - itinerary 키를 우선 확인
+            logger.info(f"📊 [AI_DATA_KEYS] AI 응답의 최상위 키들: {list(ai_data.keys())}")
+            
+            # 1순위: itinerary 키 확인 (AI가 실제로 보내주는 키)
+            travel_plan_data = None
+            days_data = []
+            
+            if 'itinerary' in ai_data:
+                logger.info("✅ [ITINERARY_KEY_FOUND] 'itinerary' 키 발견 - AI 표준 응답 형식")
+                days_data = ai_data['itinerary']
+                travel_plan_data = ai_data  # 전체 데이터를 travel_plan_data로 사용
+                
+            elif 'travel_plan' in ai_data:
+                logger.info("✅ [TRAVEL_PLAN_KEY_FOUND] 'travel_plan' 키 발견")
                 travel_plan_data = ai_data['travel_plan']
-                logger.info(f"📊 [TRAVEL_PLAN_KEYS] travel_plan 키: {list(travel_plan_data.keys())}")
+                days_data = travel_plan_data.get('days', travel_plan_data.get('itinerary', []))
                 
-                # days 배열 확인
-                days_data = travel_plan_data.get('days', [])
-                logger.info(f"📊 [DAYS_COUNT] 일정 일수: {len(days_data)}")
+            elif 'days' in ai_data:
+                logger.info("✅ [DAYS_KEY_FOUND] 'days' 키 발견")
+                days_data = ai_data['days']
+                travel_plan_data = ai_data
                 
-                # 장소명으로 PlaceData 매핑 생성
-                place_map = {place.name: place for place in places}
-                logger.info(f"📊 [PLACE_MAP] 장소 매핑: {list(place_map.keys())}")
+            elif 'daily_plans' in ai_data:
+                logger.info("✅ [DAILY_PLANS_KEY_FOUND] 'daily_plans' 키 발견")
+                days_data = ai_data['daily_plans']
+                travel_plan_data = ai_data
                 
-                daily_plans = []
-                for i, day_data in enumerate(days_data):
-                    logger.info(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
-                    
-                    activities = []
-                    activities_data = day_data.get('activities', [])
-                    logger.info(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
-                    
-                    for j, activity_data in enumerate(activities_data):
-                        place_name = activity_data.get("place_name", "장소")
-                        place_data = place_map.get(place_name)
-                        
-                        # ActivityDetail 객체 생성 (새로운 스키마)
-                        activity = ActivityDetail(
-                            time=activity_data.get("time", "09:00"),
-                            place_name=place_name,
-                            category=activity_data.get("category", "관광"),
-                            duration_minutes=activity_data.get("duration_minutes", 120),
-                            description=activity_data.get("description", f"{place_name}에서의 활동"),
-                            travel_time_minutes=activity_data.get("travel_time_minutes", 15),
-                            place_id=place_data.place_id if place_data else None,
-                            lat=place_data.lat if place_data else None,
-                            lng=place_data.lng if place_data else None
-                        )
-                        activities.append(activity)
-                        logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가: {place_name}")
-                    
-                    # 새로운 DayPlan 생성
-                    day_plan = DayPlan(
-                        day=day_data.get("day", i+1),
-                        date=day_data.get("date", f"2024-01-{i+1:02d}"),
-                        activities=activities,
-                        theme=f"{i+1}일차 여행"
-                    )
-                    daily_plans.append(day_plan)
-                    logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
-                
-                # 새로운 TravelPlan 생성
-                travel_plan = TravelPlan(
-                    total_days=travel_plan_data.get("total_days", len(days_data)),
-                    daily_start_time=travel_plan_data.get("daily_start_time", "09:00"),
-                    daily_end_time=travel_plan_data.get("daily_end_time", "21:00"),
-                    days=daily_plans,
-                    title=travel_plan_data.get("title", "AI 생성 여행 일정"),
-                    concept="AI가 최적화한 맞춤형 여행 계획",
-                    places=places
-                )
-                
-                logger.info(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정")
-                return travel_plan
+            elif isinstance(ai_data, list):
+                logger.info("✅ [ARRAY_FORMAT] 배열 형식의 AI 응답")
+                days_data = ai_data
+                travel_plan_data = {'days': ai_data}
                 
             else:
-                # 기존 형식이나 다른 구조 처리 (폴백)
-                logger.warning("⚠️ [FALLBACK_FORMAT] 예상치 못한 AI 응답 구조, 폴백 처리")
-                logger.info(f"📊 [AVAILABLE_KEYS] 사용 가능한 키: {list(ai_data.keys())}")
+                logger.error(f"❌ [NO_VALID_KEY] 유효한 일정 키를 찾을 수 없음. 사용 가능한 키: {list(ai_data.keys())}")
+                raise ValueError(f"AI 응답에서 일정 데이터를 찾을 수 없습니다. 키: {list(ai_data.keys())}")
+            
+            logger.info(f"📊 [DAYS_COUNT] 추출된 일정 일수: {len(days_data)}")
+            
+            if not days_data:
+                logger.error("❌ [EMPTY_DAYS_DATA] 일정 데이터가 비어있습니다")
+                raise ValueError("AI 응답에서 일정 데이터가 비어있습니다")
+            
+            # 장소명으로 PlaceData 매핑 생성
+            place_map = {place.name: place for place in places}
+            logger.info(f"📊 [PLACE_MAP] 장소 매핑: {list(place_map.keys())}")
+            
+            daily_plans = []
+            for i, day_data in enumerate(days_data):
+                logger.info(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
                 
-                # 가능한 키들 확인
-                days_data = []
-                if 'days' in ai_data:
-                    days_data = ai_data['days']
-                elif 'itinerary' in ai_data:
-                    days_data = ai_data['itinerary']
-                elif isinstance(ai_data, list):
-                    days_data = ai_data
+                activities = []
+                activities_data = day_data.get('activities', [])
+                logger.info(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
+                
+                for j, activity_data in enumerate(activities_data):
+                    place_name = activity_data.get("place_name", activity_data.get("name", "장소"))
+                    place_data = place_map.get(place_name)
+                    
+                    # ActivityDetail 객체 생성 (새로운 스키마)
+                    activity = ActivityDetail(
+                        time=activity_data.get("time", "09:00"),
+                        place_name=place_name,
+                        category=activity_data.get("category", activity_data.get("type", "관광")),
+                        duration_minutes=activity_data.get("duration_minutes", activity_data.get("duration", 120)),
+                        description=activity_data.get("description", f"{place_name}에서의 활동"),
+                        travel_time_minutes=activity_data.get("travel_time_minutes", 15),
+                        place_id=place_data.place_id if place_data else None,
+                        lat=place_data.lat if place_data else None,
+                        lng=place_data.lng if place_data else None
+                    )
+                    activities.append(activity)
+                    logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가: {place_name}")
+                
+                # 새로운 DayPlan 생성
+                day_plan = DayPlan(
+                    day=day_data.get("day", i+1),
+                    date=day_data.get("date", f"2024-01-{i+1:02d}"),
+                    activities=activities,
+                    theme=f"{i+1}일차 여행"
+                )
+                daily_plans.append(day_plan)
+                logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
+            
+            # 새로운 TravelPlan 생성
+            travel_plan = TravelPlan(
+                total_days=travel_plan_data.get("total_days", len(days_data)),
+                daily_start_time=travel_plan_data.get("daily_start_time", "09:00"),
+                daily_end_time=travel_plan_data.get("daily_end_time", "21:00"),
+                days=daily_plans,
+                title=travel_plan_data.get("title", travel_plan_data.get("trip_title", "AI 생성 여행 일정")),
+                concept="AI가 최적화한 맞춤형 여행 계획",
+                places=places
+            )
+            
+            logger.info(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정")
+            return travel_plan
                 
                 if not days_data:
                     logger.error("❌ [NO_DAYS_DATA] 일정 데이터를 찾을 수 없음")

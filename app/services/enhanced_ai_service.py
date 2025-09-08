@@ -608,11 +608,11 @@ class EnhancedAIService:
             travel_plan_data = None
             found_key = None
             
-            # 우선순위 순서로 키 확인
+            # [핵심 수정] 우선순위 순서로 키 확인 - itinerary를 최우선으로
             possible_keys = [
+                'itinerary',        # [최우선] AI가 실제로 사용하는 키
                 'travel_plan',      # 표준 키
                 'optimized_plan',   # AI가 사용할 가능성이 높은 키
-                'itinerary',        # 대안 키
                 'plan',             # 대안 키
                 'schedule',         # 대안 키
                 'days'              # 직접 배열인 경우
