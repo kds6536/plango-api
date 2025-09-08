@@ -668,9 +668,99 @@ JSON 형식으로 응답해주세요:
                 logger.info("🔍 [STEP_2] 장소 정보 구성 시작")
                 print("🔍 [STEP_2] 장소 정보 구성 시작")
                 
-                # ===== 🚨 [핵심 수정] PlaceData 객체 정보 구성 - 위도/경도 포함 =====
+                # ===== 🚨 [핵심 수정] PlaceData 객체 정보 구성 - JSON 변환 테스트 포함 =====
                 logger.info("📍 [PLACES_INFO] 장소 정보 구성 시작 (위도/경도 포함)")
                 print("📍 [PLACES_INFO] 장소 정보 구성 시작 (위도/경도 포함)")
+                
+                # ===== 🚨 [핵심 추가] JSON 변환 테스트 - 에러 원인 찾기 =====
+                logger.info("🧪 [JSON_TEST_START] PlaceData 객체 JSON 변환 테스트 시작")
+                print("🧪 [JSON_TEST_START] PlaceData 객체 JSON 변환 테스트 시작")
+                
+                try:
+                    # 각 PlaceData 객체를 dict로 변환 테스트
+                    places_dict_list = []
+                    for i, place in enumerate(places):
+                        try:
+                            logger.info(f"🧪 [JSON_TEST_{i+1}] 장소 {i+1} JSON 변환 테스트: {place.name}")
+                            print(f"🧪 [JSON_TEST_{i+1}] 장소 {i+1} JSON 변환 테스트: {place.name}")
+                            
+                            # PlaceData를 dict로 변환 시도
+                            if hasattr(place, 'dict'):
+                                place_dict = place.dict()
+                                logger.info(f"✅ [DICT_SUCCESS_{i+1}] place.dict() 성공")
+                            elif hasattr(place, '__dict__'):
+                                place_dict = place.__dict__
+                                logger.info(f"✅ [DICT_SUCCESS_{i+1}] place.__dict__ 사용")
+                            else:
+                                place_dict = {
+                                    'name': place.name,
+                                    'category': place.category,
+                                    'lat': place.lat,
+                                    'lng': place.lng,
+                                    'address': place.address
+                                }
+                                logger.info(f"✅ [DICT_SUCCESS_{i+1}] 수동 dict 생성")
+                            
+                            # JSON 직렬화 테스트
+                            json_test = json.dumps(place_dict, ensure_ascii=False)
+                            logger.info(f"✅ [JSON_SUCCESS_{i+1}] JSON 직렬화 성공 (길이: {len(json_test)})")
+                            places_dict_list.append(place_dict)
+                            
+                        except Exception as json_test_error:
+                            logger.error(f"❌ [JSON_TEST_FAIL_{i+1}] 장소 {i+1} JSON 변환 실패: {json_test_error}")
+                            logger.error(f"📊 [JSON_ERROR_TYPE_{i+1}] 에러 타입: {type(json_test_error).__name__}")
+                            logger.error(f"📊 [JSON_ERROR_MSG_{i+1}] 에러 메시지: {str(json_test_error)}")
+                            logger.error(f"📊 [JSON_ERROR_TRACEBACK_{i+1}]", exc_info=True)
+                            print(f"❌ [JSON_TEST_FAIL_{i+1}] 장소 {i+1} JSON 변환 실패: {json_test_error}")
+                            
+                            # 실패한 객체의 상세 정보
+                            logger.error(f"📊 [FAILED_OBJECT_{i+1}] 실패한 객체 타입: {type(place)}")
+                            logger.error(f"📊 [FAILED_OBJECT_{i+1}] 실패한 객체 속성: {dir(place)}")
+                            if hasattr(place, '__dict__'):
+                                logger.error(f"📊 [FAILED_OBJECT_{i+1}] __dict__ 내용: {place.__dict__}")
+                            
+                            # 폴백 dict 생성
+                            fallback_dict = {
+                                'name': f'Error_Place_{i+1}',
+                                'category': 'Unknown',
+                                'lat': 0.0,
+                                'lng': 0.0,
+                                'address': 'Error accessing place data'
+                            }
+                            places_dict_list.append(fallback_dict)
+                    
+                    # 전체 places 리스트 JSON 변환 테스트
+                    logger.info("🧪 [FULL_JSON_TEST] 전체 places 리스트 JSON 변환 테스트")
+                    print("🧪 [FULL_JSON_TEST] 전체 places 리스트 JSON 변환 테스트")
+                    
+                    full_json_test = json.dumps(places_dict_list, ensure_ascii=False)
+                    logger.info(f"✅ [FULL_JSON_SUCCESS] 전체 JSON 변환 성공 (길이: {len(full_json_test)})")
+                    print(f"✅ [FULL_JSON_SUCCESS] 전체 JSON 변환 성공 (길이: {len(full_json_test)})")
+                    
+                    # constraints dict JSON 변환 테스트
+                    logger.info("🧪 [CONSTRAINTS_JSON_TEST] constraints JSON 변환 테스트")
+                    print("🧪 [CONSTRAINTS_JSON_TEST] constraints JSON 변환 테스트")
+                    
+                    constraints_json_test = json.dumps(constraints, ensure_ascii=False)
+                    logger.info(f"✅ [CONSTRAINTS_JSON_SUCCESS] constraints JSON 변환 성공 (길이: {len(constraints_json_test)})")
+                    print(f"✅ [CONSTRAINTS_JSON_SUCCESS] constraints JSON 변환 성공")
+                    
+                except Exception as json_test_global_error:
+                    logger.error("❌❌❌ [JSON_TEST_GLOBAL_FAIL] 전체 JSON 테스트 실패")
+                    logger.error(f"📊 [GLOBAL_ERROR_TYPE] 에러 타입: {type(json_test_global_error).__name__}")
+                    logger.error(f"📊 [GLOBAL_ERROR_MSG] 에러 메시지: {str(json_test_global_error)}")
+                    logger.error(f"📊 [GLOBAL_ERROR_TRACEBACK]", exc_info=True)
+                    print(f"❌❌❌ [JSON_TEST_GLOBAL_FAIL] 전체 JSON 테스트 실패: {json_test_global_error}")
+                    
+                    # JSON 변환 실패 시 즉시 폴백
+                    logger.info("🔄 [JSON_FAIL_IMMEDIATE_FALLBACK] JSON 변환 실패로 즉시 폴백")
+                    print("🔄 [JSON_FAIL_IMMEDIATE_FALLBACK] JSON 변환 실패로 즉시 폴백")
+                    return self._create_simple_itinerary(places, duration, daily_start, daily_end)
+                
+                logger.info("✅ [JSON_TEST_COMPLETE] JSON 변환 테스트 완료 - 모든 객체 변환 가능")
+                print("✅ [JSON_TEST_COMPLETE] JSON 변환 테스트 완료 - 모든 객체 변환 가능")
+                
+                # 기존 places_info 구성 로직
                 places_info = []
                 for i, place in enumerate(places):
                     try:
@@ -791,22 +881,22 @@ JSON 형식으로 응답해주세요:
                 return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
             # ===== 🚨 [핵심] AI에게 전달되는 최종 프롬프트 완전 로깅 =====
-            logger.info("📜📜📜 FINAL PROMPT TO AI - START 📜📜📜")
+            logger.info("📜 [COMPLETE_PROMPT_DEBUG] AI에게 전달되는 최종 프롬프트 전체:")
             logger.info("=" * 100)
             logger.info(f"📊 [PROMPT_LENGTH] 프롬프트 총 길이: {len(prompt)} 문자")
             logger.info("📝 [COMPLETE_PROMPT_CONTENT] AI에게 전달되는 최종 프롬프트 전체 내용:")
             logger.info(prompt)
             logger.info("=" * 100)
-            logger.info("📜📜📜 FINAL PROMPT TO AI - END 📜📜📜")
+            logger.info("📜 [COMPLETE_PROMPT_DEBUG] 최종 프롬프트 로깅 완료")
             
             # 추가로 print도 사용하여 확실히 출력되도록 함
-            print("📜📜📜 FINAL PROMPT TO AI - START 📜📜📜")
+            print("📜 [COMPLETE_PROMPT_DEBUG] AI에게 전달되는 최종 프롬프트 전체:")
             print("=" * 100)
             print(f"📊 [PROMPT_LENGTH] 프롬프트 총 길이: {len(prompt)} 문자")
             print("📝 [COMPLETE_PROMPT_CONTENT] AI에게 전달되는 최종 프롬프트 전체 내용:")
             print(prompt)
             print("=" * 100)
-            print("📜📜📜 FINAL PROMPT TO AI - END 📜📜📜")
+            print("📜 [COMPLETE_PROMPT_DEBUG] 최종 프롬프트 로깅 완료")
             
             # ===== 🚨 [핵심] AI 호출 과정 완전 추적 =====
             logger.info("🤖🤖🤖 [AI_CALL_PROCESS] AI 호출 프로세스 시작")
@@ -872,24 +962,24 @@ JSON 형식으로 응답해주세요:
                 return self._create_simple_itinerary(places, duration, daily_start, daily_end)
             
             # ===== 🚨 [핵심] AI 원본 응답 완전 로깅 =====
-            logger.info("🤖🤖🤖 RAW AI RESPONSE - START 🤖🤖🤖")
+            logger.info("🤖 [AI_RAW_RESPONSE_DEBUG] AI 원본 응답 전체:")
             logger.info("=" * 100)
             logger.info(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
             logger.info(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response) if response else 0}")
             logger.info("📝 [COMPLETE_RESPONSE_CONTENT] AI 원본 응답 전체 내용:")
             logger.info(response if response else "None 또는 빈 응답")
             logger.info("=" * 100)
-            logger.info("🤖🤖🤖 RAW AI RESPONSE - END 🤖🤖🤖")
+            logger.info("🤖 [AI_RAW_RESPONSE_DEBUG] AI 원본 응답 로깅 완료")
             
             # 추가로 print도 사용
-            print("🤖🤖🤖 RAW AI RESPONSE - START 🤖🤖🤖")
+            print("🤖 [AI_RAW_RESPONSE_DEBUG] AI 원본 응답 전체:")
             print("=" * 100)
             print(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
             print(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response) if response else 0}")
             print("📝 [COMPLETE_RESPONSE_CONTENT] AI 원본 응답 전체 내용:")
             print(response if response else "None 또는 빈 응답")
             print("=" * 100)
-            print("🤖🤖🤖 RAW AI RESPONSE - END 🤖🤖🤖")
+            print("🤖 [AI_RAW_RESPONSE_DEBUG] AI 원본 응답 로깅 완료")
             
             try:
                 import json

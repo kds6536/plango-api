@@ -283,9 +283,116 @@ class EnhancedAIService:
             logger.info("🚨🚨🚨 [MASTER_PROMPT_DEBUG_END] 마스터 프롬프트 끝")
             logger.info("=" * 100)
             
-            # 입력 데이터를 JSON 문자열로 변환
-            input_data_json = json.dumps(user_data, ensure_ascii=False, indent=2)
-            logger.info(f"📊 [JSON_INPUT] 입력 데이터 JSON 변환 완료 (길이: {len(input_data_json)})")
+            # ===== 🚨 [핵심 추가] 입력 데이터 JSON 변환 과정 상세 디버깅 =====
+            logger.info("🧪 [JSON_CONVERSION_START] 입력 데이터 JSON 변환 시작")
+            print("🧪 [JSON_CONVERSION_START] 입력 데이터 JSON 변환 시작")
+            
+            # 입력 데이터 타입 및 구조 분석
+            logger.info(f"📊 [USER_DATA_TYPE] user_data 타입: {type(user_data)}")
+            logger.info(f"📊 [USER_DATA_KEYS] user_data 키들: {list(user_data.keys()) if isinstance(user_data, dict) else 'Not a dict'}")
+            print(f"📊 [USER_DATA_TYPE] user_data 타입: {type(user_data)}")
+            
+            # 각 키별 데이터 타입 확인
+            if isinstance(user_data, dict):
+                for key, value in user_data.items():
+                    logger.info(f"📊 [KEY_ANALYSIS] '{key}': 타입={type(value)}, 길이={len(value) if hasattr(value, '__len__') else 'N/A'}")
+                    print(f"📊 [KEY_ANALYSIS] '{key}': 타입={type(value)}")
+                    
+                    # places 데이터 특별 분석
+                    if key == 'places' and isinstance(value, list) and len(value) > 0:
+                        logger.info(f"🔍 [PLACES_ANALYSIS] places 배열 첫 번째 요소 타입: {type(value[0])}")
+                        print(f"🔍 [PLACES_ANALYSIS] places 배열 첫 번째 요소 타입: {type(value[0])}")
+                        
+                        # 첫 번째 place 객체 상세 분석
+                        first_place = value[0]
+                        if hasattr(first_place, '__dict__'):
+                            logger.info(f"🔍 [FIRST_PLACE_ATTRS] 첫 번째 place 속성들: {list(first_place.__dict__.keys())}")
+                            print(f"🔍 [FIRST_PLACE_ATTRS] 첫 번째 place 속성들: {list(first_place.__dict__.keys())}")
+                        elif isinstance(first_place, dict):
+                            logger.info(f"🔍 [FIRST_PLACE_KEYS] 첫 번째 place 키들: {list(first_place.keys())}")
+                            print(f"🔍 [FIRST_PLACE_KEYS] 첫 번째 place 키들: {list(first_place.keys())}")
+                        
+                        # 개별 place 객체 JSON 변환 테스트
+                        for i, place in enumerate(value[:3]):  # 처음 3개만 테스트
+                            try:
+                                logger.info(f"🧪 [PLACE_JSON_TEST_{i+1}] place {i+1} JSON 변환 테스트")
+                                print(f"🧪 [PLACE_JSON_TEST_{i+1}] place {i+1} JSON 변환 테스트")
+                                
+                                # PlaceData 객체를 dict로 변환
+                                if hasattr(place, 'dict'):
+                                    place_dict = place.dict()
+                                    logger.info(f"✅ [PLACE_DICT_{i+1}] place.dict() 성공")
+                                elif hasattr(place, '__dict__'):
+                                    place_dict = place.__dict__
+                                    logger.info(f"✅ [PLACE_DICT_{i+1}] place.__dict__ 사용")
+                                else:
+                                    place_dict = dict(place) if hasattr(place, 'keys') else place
+                                    logger.info(f"✅ [PLACE_DICT_{i+1}] dict() 변환 사용")
+                                
+                                # JSON 직렬화 테스트
+                                place_json = json.dumps(place_dict, ensure_ascii=False)
+                                logger.info(f"✅ [PLACE_JSON_SUCCESS_{i+1}] place {i+1} JSON 변환 성공 (길이: {len(place_json)})")
+                                print(f"✅ [PLACE_JSON_SUCCESS_{i+1}] place {i+1} JSON 변환 성공")
+                                
+                            except Exception as place_json_error:
+                                logger.error(f"❌ [PLACE_JSON_FAIL_{i+1}] place {i+1} JSON 변환 실패: {place_json_error}")
+                                logger.error(f"📊 [PLACE_ERROR_TYPE_{i+1}] 에러 타입: {type(place_json_error).__name__}")
+                                logger.error(f"📊 [PLACE_ERROR_MSG_{i+1}] 에러 메시지: {str(place_json_error)}")
+                                logger.error(f"📊 [PLACE_ERROR_TRACEBACK_{i+1}]", exc_info=True)
+                                print(f"❌ [PLACE_JSON_FAIL_{i+1}] place {i+1} JSON 변환 실패: {place_json_error}")
+                                
+                                # 실패한 객체의 상세 정보
+                                logger.error(f"📊 [FAILED_PLACE_{i+1}] 실패한 place 타입: {type(place)}")
+                                logger.error(f"📊 [FAILED_PLACE_{i+1}] 실패한 place 내용: {place}")
+                                if hasattr(place, '__dict__'):
+                                    logger.error(f"📊 [FAILED_PLACE_{i+1}] __dict__ 내용: {place.__dict__}")
+                                
+                                # 즉시 폴백 처리
+                                logger.info("🔄 [PLACE_JSON_FAIL_IMMEDIATE_FALLBACK] place JSON 변환 실패로 즉시 폴백")
+                                print("🔄 [PLACE_JSON_FAIL_IMMEDIATE_FALLBACK] place JSON 변환 실패로 즉시 폴백")
+                                raise ValueError(f"Place 객체 JSON 변환 실패: {place_json_error}")
+            
+            # 전체 user_data JSON 변환 시도
+            try:
+                logger.info("🧪 [FULL_JSON_CONVERSION] 전체 user_data JSON 변환 시도")
+                print("🧪 [FULL_JSON_CONVERSION] 전체 user_data JSON 변환 시도")
+                
+                # 안전한 변환을 위해 places를 dict로 변환
+                safe_user_data = user_data.copy()
+                if 'places' in safe_user_data and isinstance(safe_user_data['places'], list):
+                    safe_places = []
+                    for place in safe_user_data['places']:
+                        if hasattr(place, 'dict'):
+                            safe_places.append(place.dict())
+                        elif hasattr(place, '__dict__'):
+                            safe_places.append(place.__dict__)
+                        elif isinstance(place, dict):
+                            safe_places.append(place)
+                        else:
+                            # 최후 수단: 문자열로 변환
+                            safe_places.append(str(place))
+                    safe_user_data['places'] = safe_places
+                    logger.info(f"✅ [PLACES_CONVERSION] places 배열을 dict로 변환 완료: {len(safe_places)}개")
+                    print(f"✅ [PLACES_CONVERSION] places 배열을 dict로 변환 완료: {len(safe_places)}개")
+                
+                input_data_json = json.dumps(safe_user_data, ensure_ascii=False, indent=2)
+                logger.info(f"✅ [JSON_CONVERSION_SUCCESS] 입력 데이터 JSON 변환 완료 (길이: {len(input_data_json)})")
+                print(f"✅ [JSON_CONVERSION_SUCCESS] 입력 데이터 JSON 변환 완료 (길이: {len(input_data_json)})")
+                
+            except Exception as json_conversion_error:
+                logger.error("❌❌❌ [JSON_CONVERSION_FAIL] 전체 user_data JSON 변환 실패")
+                logger.error(f"📊 [JSON_ERROR_TYPE] 에러 타입: {type(json_conversion_error).__name__}")
+                logger.error(f"📊 [JSON_ERROR_MSG] 에러 메시지: {str(json_conversion_error)}")
+                logger.error(f"📊 [JSON_ERROR_TRACEBACK]", exc_info=True)
+                print(f"❌❌❌ [JSON_CONVERSION_FAIL] 전체 user_data JSON 변환 실패: {json_conversion_error}")
+                
+                # JSON 변환 실패 시 즉시 에러 발생
+                logger.info("🔄 [JSON_FAIL_IMMEDIATE_ERROR] JSON 변환 실패로 즉시 에러 발생")
+                print("🔄 [JSON_FAIL_IMMEDIATE_ERROR] JSON 변환 실패로 즉시 에러 발생")
+                raise ValueError(f"입력 데이터 JSON 변환 실패: {json_conversion_error}")
+            
+            logger.info("✅ [JSON_CONVERSION_COMPLETE] JSON 변환 과정 완료")
+            print("✅ [JSON_CONVERSION_COMPLETE] JSON 변환 과정 완료")
             
             # 프롬프트에 실제 데이터 주입
             final_prompt = master_prompt.replace('{input_data}', input_data_json)
