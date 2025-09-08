@@ -610,3 +610,61 @@ class GooglePlacesService:
         except Exception as e:
             logger.error(f"❌ [DUPLICATE_SEARCH_ERROR] 동명 도시 검색 실패: {e}")
             return []
+    
+    def optimize_route(self, places: List[Dict[str, Any]], start_location: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]:
+        """
+        장소들의 경로를 최적화합니다.
+        현재는 간단한 거리 기반 정렬을 사용합니다.
+        """
+        if not places or len(places) <= 1:
+            return places
+        
+        try:
+            # 시작점이 없으면 첫 번째 장소를 시작점으로 사용
+            if not start_location and places:
+                start_location = {
+                    'lat': places[0].get('lat', 0.0),
+                    'lng': places[0].get('lng', 0.0)
+                }
+            
+            # 간단한 최근접 이웃 알고리즘으로 경로 최적화
+            optimized_places = []
+            remaining_places = places.copy()
+            current_location = start_location
+            
+            while remaining_places:
+                # 현재 위치에서 가장 가까운 장소 찾기
+                closest_place = None
+                min_distance = float('inf')
+                
+                for place in remaining_places:
+                    place_lat = place.get('lat', 0.0)
+                    place_lng = place.get('lng', 0.0)
+                    
+                    # 간단한 유클리드 거리 계산
+                    distance = ((current_location['lat'] - place_lat) ** 2 + 
+                               (current_location['lng'] - place_lng) ** 2) ** 0.5
+                    
+                    if distance < min_distance:
+                        min_distance = distance
+                        closest_place = place
+                
+                if closest_place:
+                    optimized_places.append(closest_place)
+                    remaining_places.remove(closest_place)
+                    current_location = {
+                        'lat': closest_place.get('lat', 0.0),
+                        'lng': closest_place.get('lng', 0.0)
+                    }
+                else:
+                    # 예외 상황: 남은 장소들을 그대로 추가
+                    optimized_places.extend(remaining_places)
+                    break
+            
+            logger.info(f"✅ 경로 최적화 완료: {len(places)}개 장소")
+            return optimized_places
+            
+        except Exception as e:
+            logger.error(f"❌ 경로 최적화 실패: {e}")
+            # 실패 시 원래 순서 반환
+            return places

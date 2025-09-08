@@ -1994,24 +1994,23 @@ $places_list
                 })
             
             # 구글 다이렉션 API로 경로 최적화
-            optimization_result = await self.google_places.optimize_route(
+            optimized_places = self.google_places.optimize_route(
                 places_for_optimization, 
                 request.start_location
             )
             
-            if not optimization_result:
+            if not optimized_places:
                 raise Exception("경로 최적화 실패")
             
             # 최적화된 순서로 일정 재구성
-            optimized_places = optimization_result.get("optimized_places", [])
             optimized_plan = self._create_optimized_plan(optimized_places, request.duration)
             
             return OptimizeResponse(
                 travel_plan=optimized_plan,
                 optimized_plan=optimized_plan,
-                total_distance=optimization_result.get("total_distance"),
-                total_duration=optimization_result.get("total_duration"),
-                optimization_details=optimization_result
+                total_distance="최적화됨",
+                total_duration="최적화됨",
+                optimization_details={"optimized_places": optimized_places}
             )
             
         except Exception as e:
@@ -2657,21 +2656,70 @@ $places_list
                             logger.info(f"🔍 [ACTIVITY_{j+1}_PLACE] 장소명: {place_name}, 매핑 결과: {place_data is not None}")
                             print(f"🔍 [ACTIVITY_{j+1}_PLACE] 장소명: {place_name}, 매핑 결과: {place_data is not None}")
                             
-                            # [핵심] ActivityDetail 객체 생성 - 여기서 ValidationError 발생 가능
+                            # [핵심] ActivityDetail 객체 생성 - 타입 안전성 강화
                             logger.info(f"🔧 [ACTIVITY_{j+1}_CREATE] ActivityDetail 객체 생성 시작")
                             print(f"🔧 [ACTIVITY_{j+1}_CREATE] ActivityDetail 객체 생성 시작")
                             
-                            activity = ActivityDetail(
-                                time=activity_data.get("time", "09:00"),
-                                place_name=place_name,
-                                category=activity_data.get("category", activity_data.get("type", "관광")),
-                                duration_minutes=activity_data.get("duration_minutes", activity_data.get("duration", 120)),
-                                description=activity_data.get("description", f"{place_name}에서의 활동"),
-                                travel_time_minutes=activity_data.get("travel_time_minutes", 15),
-                                place_id=place_data.place_id if place_data else None,
-                                lat=place_data.lat if place_data else None,
-                                lng=place_data.lng if place_data else None
-                            )
+                            # [핵심 수정] 데이터 타입 안전 변환
+                            try:
+                                # 시간 필드 - 문자열로 변환
+                                time_str = str(activity_data.get("time", "09:00"))
+                                
+                                # 장소명 - 문자열로 변환
+                                place_name_str = str(place_name)
+                                
+                                # 카테고리 - 문자열로 변환
+                                category_str = str(activity_data.get("category", activity_data.get("type", "관광")))
+                                
+                                # duration_minutes - 정수로 안전 변환
+                                duration_raw = activity_data.get("duration_minutes", activity_data.get("duration", 120))
+                                if isinstance(duration_raw, str):
+                                    duration_minutes = int(float(duration_raw)) if duration_raw.replace('.', '').isdigit() else 120
+                                else:
+                                    duration_minutes = int(duration_raw) if duration_raw is not None else 120
+                                
+                                # travel_time_minutes - 정수로 안전 변환
+                                travel_time_raw = activity_data.get("travel_time_minutes", 15)
+                                if isinstance(travel_time_raw, str):
+                                    travel_time_minutes = int(float(travel_time_raw)) if travel_time_raw.replace('.', '').isdigit() else 15
+                                else:
+                                    travel_time_minutes = int(travel_time_raw) if travel_time_raw is not None else 15
+                                
+                                # 설명 - 문자열로 변환
+                                description_str = str(activity_data.get("description", f"{place_name}에서의 활동"))
+                                
+                                logger.info(f"🔧 [ACTIVITY_{j+1}_TYPES] 변환된 타입들: time={type(time_str)}, duration={type(duration_minutes)}, travel_time={type(travel_time_minutes)}")
+                                print(f"🔧 [ACTIVITY_{j+1}_TYPES] 변환된 타입들: time={type(time_str)}, duration={type(duration_minutes)}, travel_time={type(travel_time_minutes)}")
+                                
+                                activity = ActivityDetail(
+                                    time=time_str,
+                                    place_name=place_name_str,
+                                    category=category_str,
+                                    duration_minutes=duration_minutes,
+                                    description=description_str,
+                                    travel_time_minutes=travel_time_minutes,
+                                    place_id=place_data.place_id if place_data else None,
+                                    lat=place_data.lat if place_data else None,
+                                    lng=place_data.lng if place_data else None
+                                )
+                                
+                            except (ValueError, TypeError) as type_error:
+                                logger.error(f"❌ [ACTIVITY_{j+1}_TYPE_ERROR] 타입 변환 실패: {type_error}")
+                                logger.error(f"📊 [ACTIVITY_{j+1}_RAW_DATA] 원본 데이터: {activity_data}")
+                                print(f"❌ [ACTIVITY_{j+1}_TYPE_ERROR] 타입 변환 실패: {type_error}")
+                                
+                                # 타입 변환 실패 시 기본값으로 ActivityDetail 생성
+                                activity = ActivityDetail(
+                                    time="09:00",
+                                    place_name=str(place_name),
+                                    category="관광",
+                                    duration_minutes=120,
+                                    description=f"{place_name}에서의 활동",
+                                    travel_time_minutes=15,
+                                    place_id=place_data.place_id if place_data else None,
+                                    lat=place_data.lat if place_data else None,
+                                    lng=place_data.lng if place_data else None
+                                )
                             activities.append(activity)
                             logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가 성공: {place_name}")
                             print(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가 성공: {place_name}")
@@ -2686,21 +2734,53 @@ $places_list
                             # 활동 생성 실패 시 건너뛰기
                             continue
                 
-                    # [핵심] DayPlan 생성 - 여기서도 ValidationError 발생 가능
+                    # [핵심] DayPlan 생성 - 타입 안전성 강화
                     logger.info(f"🔧 [DAY_{i+1}_CREATE] DayPlan 객체 생성 시작")
-                    logger.info(f"🔧 [DAY_{i+1}_PARAMS] day={day_data.get('day', i+1)}, date={day_data.get('date', f'2024-01-{i+1:02d}')}, activities={len(activities)}")
                     print(f"🔧 [DAY_{i+1}_CREATE] DayPlan 객체 생성 시작")
-                    print(f"🔧 [DAY_{i+1}_PARAMS] day={day_data.get('day', i+1)}, date={day_data.get('date', f'2024-01-{i+1:02d}')}, activities={len(activities)}")
                     
-                    day_plan = DayPlan(
-                        day=day_data.get("day", i+1),
-                        date=day_data.get("date", f"2024-01-{i+1:02d}"),
-                        activities=activities,
-                        theme=f"{i+1}일차 여행"
-                    )
-                    daily_plans.append(day_plan)
-                    logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
-                    print(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
+                    # [핵심 수정] DayPlan 데이터 타입 안전 변환
+                    try:
+                        # day 필드 - 정수로 안전 변환
+                        day_raw = day_data.get("day", i+1)
+                        if isinstance(day_raw, str):
+                            day_num = int(day_raw) if day_raw.isdigit() else i+1
+                        else:
+                            day_num = int(day_raw) if day_raw is not None else i+1
+                        
+                        # date 필드 - 문자열로 변환
+                        date_str = str(day_data.get("date", f"2024-01-{i+1:02d}"))
+                        
+                        # theme 필드 - 문자열로 변환
+                        theme_str = str(f"{i+1}일차 여행")
+                        
+                        logger.info(f"🔧 [DAY_{i+1}_PARAMS] day={day_num}({type(day_num)}), date={date_str}({type(date_str)}), activities={len(activities)}")
+                        print(f"🔧 [DAY_{i+1}_PARAMS] day={day_num}({type(day_num)}), date={date_str}({type(date_str)}), activities={len(activities)}")
+                        
+                        day_plan = DayPlan(
+                            day=day_num,
+                            date=date_str,
+                            activities=activities,
+                            theme=theme_str
+                        )
+                        daily_plans.append(day_plan)
+                        logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
+                        print(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
+                        
+                    except (ValueError, TypeError) as day_type_error:
+                        logger.error(f"❌ [DAY_{i+1}_TYPE_ERROR] DayPlan 타입 변환 실패: {day_type_error}")
+                        logger.error(f"📊 [DAY_{i+1}_RAW_DATA] 원본 일차 데이터: {day_data}")
+                        print(f"❌ [DAY_{i+1}_TYPE_ERROR] DayPlan 타입 변환 실패: {day_type_error}")
+                        
+                        # 타입 변환 실패 시 기본값으로 DayPlan 생성
+                        day_plan = DayPlan(
+                            day=i+1,
+                            date=f"2024-01-{i+1:02d}",
+                            activities=activities,
+                            theme=f"{i+1}일차 여행"
+                        )
+                        daily_plans.append(day_plan)
+                        logger.info(f"✅ [DAY_{i+1}_FALLBACK] {i+1}일차 기본값으로 계획 완성: {len(activities)}개 활동")
+                        print(f"✅ [DAY_{i+1}_FALLBACK] {i+1}일차 기본값으로 계획 완성: {len(activities)}개 활동")
                     
                 except Exception as day_loop_error:
                     logger.error(f"❌ [DAY_LOOP_ERROR] {i+1}일차 전체 처리에서 심각한 오류: {day_loop_error}")
@@ -2799,3 +2879,54 @@ $time_constraints_info
 4. 모든 선택된 장소를 포함하되, 무리하지 않게 배치하세요
 5. 각 활동의 소요 시간을 현실적으로 설정하세요
 """
+    
+    def _create_optimized_plan(self, place_data_list: List[Dict], duration: int) -> TravelPlan:
+        """최적화된 여행 계획 생성 (폴백용)"""
+        # 기본 일정 생성 (하루에 3-4개 장소)
+        places_per_day = 3
+        total_days = max(1, (len(place_data_list) + places_per_day - 1) // places_per_day)
+        
+        # 일별 계획 생성
+        daily_plans = []
+        for day in range(1, total_days + 1):
+            start_idx = (day - 1) * places_per_day
+            end_idx = min(start_idx + places_per_day, len(place_data_list))
+            day_places = place_data_list[start_idx:end_idx]
+            
+            activities = []
+            current_time = "09:00"
+            
+            for i, place in enumerate(day_places):
+                activities.append(ActivityDetail(
+                    time=current_time,
+                    place_name=place.get('name', f'장소 {i+1}'),
+                    category=place.get('category', '관광지'),
+                    description=place.get('description', '추천 장소입니다'),
+                    duration_minutes=120,
+                    travel_time_minutes=30 if i < len(day_places) - 1 else 0
+                ))
+                
+                # 다음 시간 계산 (2시간 + 이동시간)
+                hour = int(current_time.split(':')[0])
+                minute = int(current_time.split(':')[1])
+                total_minutes = hour * 60 + minute + 120 + 30
+                new_hour = (total_minutes // 60) % 24
+                new_minute = total_minutes % 60
+                current_time = f"{new_hour:02d}:{new_minute:02d}"
+            
+            daily_plans.append(DayPlan(
+                day=day,
+                date=f"2024-01-{day:02d}",
+                theme=f"{day}일차 여행",
+                activities=activities
+            ))
+        
+        return TravelPlan(
+            title="나만의 맞춤 일정",
+            concept="선택하신 장소들로 구성된 맞춤형 여행 계획",
+            total_days=total_days,
+            daily_start_time="09:00",
+            daily_end_time="21:00",
+            days=daily_plans,
+            places=place_data_list
+        )
