@@ -2079,10 +2079,16 @@ $places_list
                 logger.error(f"❌ [AI_ERROR] AI 기반 일정 생성 실패: {ai_error}")
                 logger.error(f"📊 [AI_ERROR_TRACEBACK] {traceback.format_exc()}")
                 logger.info("🔄 [FALLBACK_START] 폴백 일정 생성 시작")
+                
                 # 폴백으로 간단한 일정 생성
-                # 제약을 반영한 폴백 일정 생성
-                optimized_plan = self._create_time_constrained_plan(places, duration, daily_start_time, daily_end_time)
-                logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 일정 생성 완료: {len(optimized_plan.daily_plans) if optimized_plan and optimized_plan.daily_plans else 0}일 일정")
+                try:
+                    optimized_plan = self._create_time_constrained_plan(places, duration, daily_start_time, daily_end_time)
+                    logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 일정 생성 완료: {len(optimized_plan.daily_plans) if optimized_plan and optimized_plan.daily_plans else 0}일 일정")
+                except Exception as fallback_error:
+                    logger.error(f"❌ [FALLBACK_ERROR] 폴백 일정 생성도 실패: {fallback_error}")
+                    # 최후 수단: 기본 일정 생성
+                    optimized_plan = self._create_basic_plan(places, duration)
+                    logger.info("🆘 [EMERGENCY_PLAN] 기본 일정 생성 완료")
             
             final_plan = self._ensure_schema_compat(optimized_plan)
             
@@ -2112,6 +2118,65 @@ $places_list
         except Exception as e:
             logger.error(f"최종 일정 생성 실패: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
+
+    def _create_basic_plan(self, places: List[PlaceData], duration: int) -> TravelPlan:
+        """최후 수단: 기본 일정 생성"""
+        try:
+            from app.schemas.itinerary import TravelPlan, DayPlan, Activity
+            
+            daily_plans = []
+            places_per_day = max(1, len(places) // duration)
+            
+            for day in range(duration):
+                start_idx = day * places_per_day
+                end_idx = min(start_idx + places_per_day, len(places))
+                day_places = places[start_idx:end_idx]
+                
+                activities = []
+                for i, place in enumerate(day_places):
+                    activity = Activity(
+                        time=f"{9 + i * 2:02d}:00",
+                        name=place.name,
+                        location=place.address or "위치 정보 없음",
+                        duration=120,
+                        type=place.category or "관광",
+                        description=f"{place.name} 방문"
+                    )
+                    activities.append(activity)
+                
+                if not activities:  # 활동이 없으면 기본 활동 추가
+                    activities.append(Activity(
+                        time="09:00",
+                        name=f"{day + 1}일차 자유시간",
+                        location="여행지",
+                        duration=480,
+                        type="자유시간",
+                        description="자유롭게 여행을 즐겨보세요"
+                    ))
+                
+                day_plan = DayPlan(
+                    day=day + 1,
+                    date=f"2024-01-{day + 1:02d}",
+                    activities=activities,
+                    meals={"점심": "현지 맛집", "저녁": "추천 레스토랑"},
+                    transportation=["도보", "대중교통"],
+                    estimated_cost=f"{50000 + day * 20000}원"
+                )
+                daily_plans.append(day_plan)
+            
+            return TravelPlan(
+                title="기본 여행 일정",
+                concept="선택하신 장소들을 기반으로 한 기본 일정입니다",
+                total_days=duration,
+                daily_start_time="09:00",
+                daily_end_time="22:00",
+                daily_plans=daily_plans
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ [BASIC_PLAN_ERROR] 기본 일정 생성 실패: {e}")
+            # 최후의 최후 수단
+            return self._create_empty_travel_plan()
 
     def _ensure_schema_compat(self, plan: TravelPlan) -> TravelPlan:
         """Pydantic 스키마 적합성 보정: 문자열/누락 필드 보완"""

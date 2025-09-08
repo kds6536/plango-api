@@ -13,7 +13,12 @@ logger = logging.getLogger(__name__)
 class GeocodingService:
     def __init__(self, api_key: Optional[str] = None):
         """GeocodingService 초기화"""
-        self.api_key = api_key or getattr(settings, "MAPS_PLATFORM_API_KEY_BACKEND", None) or getattr(settings, "GOOGLE_MAPS_API_KEY", None)
+        self.api_key = (
+            api_key or 
+            getattr(settings, "MAPS_PLATFORM_API_KEY_BACKEND", None) or 
+            getattr(settings, "GOOGLE_MAPS_API_KEY", None) or
+            getattr(settings, "MAPS_PLATFORM_API_KEY", None)
+        )
         self.gmaps = None
         if self.api_key:
             try:

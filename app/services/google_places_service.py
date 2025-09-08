@@ -22,7 +22,12 @@ class GooglePlacesService:
         # Backend API Key - Server-side use only, must be kept secret
         # This key should NOT have HTTP Referer restrictions
         # Railway 변수명은 'MAPS_PLATFORM_API_KEY_BACKEND' 사용
-        self.api_key = api_key or getattr(settings, "MAPS_PLATFORM_API_KEY_BACKEND", None) or getattr(settings, "GOOGLE_MAPS_API_KEY", None)
+        self.api_key = (
+            api_key or 
+            getattr(settings, "MAPS_PLATFORM_API_KEY_BACKEND", None) or 
+            getattr(settings, "GOOGLE_MAPS_API_KEY", None) or
+            getattr(settings, "MAPS_PLATFORM_API_KEY", None)
+        )
         self.gmaps = None
         if self.api_key:
             try:
