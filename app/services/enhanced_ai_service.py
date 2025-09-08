@@ -397,31 +397,60 @@ class EnhancedAIService:
             # 프롬프트에 실제 데이터 주입
             final_prompt = master_prompt.replace('{input_data}', input_data_json)
             
-            logger.info(f"📜 [FINAL_PROMPT_ENHANCED] Enhanced AI - 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):")
-            logger.info("=" * 100)
-            logger.info("🚨🚨🚨 [COMPLETE_PROMPT_DEBUG] AI에게 전달되는 최종 프롬프트 전체 내용:")
-            logger.info("=" * 100)
+            # ===================================================================
+            # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ FINAL PROMPT TO AI ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+            # ===================================================================
+            logger.info("🔥🔥🔥 FINAL PROMPT TO AI 🔥🔥🔥")
+            logger.info("=" * 80)
+            logger.info(f"📊 프롬프트 길이: {len(final_prompt)} 문자")
+            logger.info("📝 AI에게 전달되는 최종 프롬프트:")
+            logger.info("-" * 80)
             logger.info(final_prompt)
-            logger.info("=" * 100)
-            logger.info("🚨🚨🚨 [COMPLETE_PROMPT_DEBUG_END] 프롬프트 끝")
-            logger.info("=" * 100)
+            logger.info("-" * 80)
+            logger.info("🔥🔥🔥 FINAL PROMPT END 🔥🔥🔥")
+            logger.info("=" * 80)
+            
+            # 추가로 print도 사용하여 확실히 출력되도록 함
+            print("🔥🔥🔥 FINAL PROMPT TO AI 🔥🔥🔥")
+            print("=" * 80)
+            print(f"📊 프롬프트 길이: {len(final_prompt)} 문자")
+            print("📝 AI에게 전달되는 최종 프롬프트:")
+            print("-" * 80)
+            print(final_prompt)
+            print("-" * 80)
+            print("🔥🔥🔥 FINAL PROMPT END 🔥🔥🔥")
+            print("=" * 80)
             
             # AI로 응답 생성
             logger.info("🤖 [AI_CALLING] Enhanced AI - AI 호출 시작...")
             response = await self.generate_response(final_prompt)
             logger.info(f"🤖 [AI_RESPONSE_RECEIVED] Enhanced AI - AI 응답 수신 완료 (길이: {len(response) if response else 0})")
             
-            # ===== 🔍 AI 원본 응답 상세 로깅 =====
-            logger.info("=" * 100)
-            logger.info("🚨🚨🚨 [AI_RAW_RESPONSE_DEBUG] AI 원본 응답 전체:")
-            logger.info("=" * 100)
-            logger.info(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
-            logger.info(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response) if response else 0}")
-            logger.info("📝 [RESPONSE_CONTENT] AI 응답 내용:")
+            # ===================================================================
+            # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ RAW RESPONSE FROM AI ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+            # ===================================================================
+            logger.info("🤖🤖🤖 RAW RESPONSE FROM AI 🤖🤖🤖")
+            logger.info("=" * 80)
+            logger.info(f"📊 응답 타입: {type(response)}")
+            logger.info(f"📊 응답 길이: {len(response) if response else 0} 문자")
+            logger.info("📝 AI 원본 응답:")
+            logger.info("-" * 80)
             logger.info(response if response else "❌ 빈 응답")
-            logger.info("=" * 100)
-            logger.info("🚨🚨🚨 [AI_RAW_RESPONSE_DEBUG_END] AI 응답 끝")
-            logger.info("=" * 100)
+            logger.info("-" * 80)
+            logger.info("🤖🤖🤖 RAW RESPONSE END 🤖🤖🤖")
+            logger.info("=" * 80)
+            
+            # 추가로 print도 사용하여 확실히 출력되도록 함
+            print("🤖🤖🤖 RAW RESPONSE FROM AI 🤖🤖🤖")
+            print("=" * 80)
+            print(f"📊 응답 타입: {type(response)}")
+            print(f"📊 응답 길이: {len(response) if response else 0} 문자")
+            print("📝 AI 원본 응답:")
+            print("-" * 80)
+            print(response if response else "❌ 빈 응답")
+            print("-" * 80)
+            print("🤖🤖🤖 RAW RESPONSE END 🤖🤖🤖")
+            print("=" * 80)
             
             # 🚨 [긴급 디버깅] AI 응답의 첫 500자와 마지막 500자 별도 로깅
             if response and len(response) > 1000:
