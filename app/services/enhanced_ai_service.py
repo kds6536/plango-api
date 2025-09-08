@@ -274,6 +274,15 @@ class EnhancedAIService:
             master_prompt = await supabase_service.get_master_prompt('itinerary_generation')
             logger.info(f"📜 [PROMPT_FETCHED] 마스터 프롬프트 가져오기 완료 (길이: {len(master_prompt)})")
             
+            # 🚨 마스터 프롬프트도 로깅 (디버깅용)
+            logger.info("=" * 100)
+            logger.info("🚨🚨🚨 [MASTER_PROMPT_DEBUG] Supabase에서 가져온 마스터 프롬프트:")
+            logger.info("=" * 100)
+            logger.info(master_prompt)
+            logger.info("=" * 100)
+            logger.info("🚨🚨🚨 [MASTER_PROMPT_DEBUG_END] 마스터 프롬프트 끝")
+            logger.info("=" * 100)
+            
             # 입력 데이터를 JSON 문자열로 변환
             input_data_json = json.dumps(user_data, ensure_ascii=False, indent=2)
             logger.info(f"📊 [JSON_INPUT] 입력 데이터 JSON 변환 완료 (길이: {len(input_data_json)})")
@@ -282,10 +291,13 @@ class EnhancedAIService:
             final_prompt = master_prompt.replace('{input_data}', input_data_json)
             
             logger.info(f"📜 [FINAL_PROMPT_ENHANCED] Enhanced AI - 3단계 AI에게 보낼 최종 프롬프트 (길이: {len(final_prompt)}):")
-            logger.info("=" * 80)
-            logger.info("📜 [COMPLETE_PROMPT_ENHANCED] Enhanced AI - 최종 프롬프트 전체 내용:")
+            logger.info("=" * 100)
+            logger.info("🚨🚨🚨 [COMPLETE_PROMPT_DEBUG] AI에게 전달되는 최종 프롬프트 전체 내용:")
+            logger.info("=" * 100)
             logger.info(final_prompt)
-            logger.info("=" * 80)
+            logger.info("=" * 100)
+            logger.info("🚨🚨🚨 [COMPLETE_PROMPT_DEBUG_END] 프롬프트 끝")
+            logger.info("=" * 100)
             
             # AI로 응답 생성
             logger.info("🤖 [AI_CALLING] Enhanced AI - AI 호출 시작...")
@@ -293,13 +305,16 @@ class EnhancedAIService:
             logger.info(f"🤖 [AI_RESPONSE_RECEIVED] Enhanced AI - AI 응답 수신 완료 (길이: {len(response) if response else 0})")
             
             # ===== 🔍 AI 원본 응답 상세 로깅 =====
-            logger.info("=" * 80)
-            logger.info("🤖 [RAW_RESPONSE_ENHANCED] Enhanced AI Service - 3단계 AI 원본 응답:")
+            logger.info("=" * 100)
+            logger.info("🚨🚨🚨 [AI_RAW_RESPONSE_DEBUG] AI 원본 응답 전체:")
+            logger.info("=" * 100)
             logger.info(f"📊 [RESPONSE_TYPE] 응답 타입: {type(response)}")
             logger.info(f"📊 [RESPONSE_LENGTH] 응답 길이: {len(response) if response else 0}")
-            logger.info("📝 [RESPONSE_CONTENT] 응답 내용:")
-            logger.info(response)
-            logger.info("=" * 80)
+            logger.info("📝 [RESPONSE_CONTENT] AI 응답 내용:")
+            logger.info(response if response else "❌ 빈 응답")
+            logger.info("=" * 100)
+            logger.info("🚨🚨🚨 [AI_RAW_RESPONSE_DEBUG_END] AI 응답 끝")
+            logger.info("=" * 100)
             
             # 🚨 [긴급 디버깅] AI 응답의 첫 500자와 마지막 500자 별도 로깅
             if response and len(response) > 1000:
@@ -323,7 +338,14 @@ class EnhancedAIService:
                 logger.info(f"✅ [STRUCTURE_HINTS] 응답에서 발견된 구조 키워드: {structure_hints}")
             
             if not response or not response.strip():
-                logger.error("❌ [EMPTY_RESPONSE] Enhanced AI - AI 응답이 비어있습니다")
+                logger.error("=" * 100)
+                logger.error("🚨🚨🚨 [EMPTY_RESPONSE_DEBUG] AI 빈 응답 분석:")
+                logger.error(f"📊 [RESPONSE_IS_NONE] response is None: {response is None}")
+                logger.error(f"📊 [RESPONSE_IS_EMPTY_STRING] response == '': {response == '' if response is not None else 'N/A'}")
+                logger.error(f"📊 [RESPONSE_STRIPPED_EMPTY] response.strip() == '': {response.strip() == '' if response else 'N/A'}")
+                logger.error(f"📊 [RESPONSE_REPR] repr(response): {repr(response)}")
+                logger.error("🚨🚨🚨 [EMPTY_RESPONSE_DEBUG_END]")
+                logger.error("=" * 100)
                 raise ValueError("AI 응답이 비어있습니다")
             
             # JSON 응답 검증 및 정제
