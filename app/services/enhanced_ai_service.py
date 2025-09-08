@@ -455,23 +455,120 @@ class EnhancedAIService:
                 logger.error("=" * 100)
                 raise ValueError("AI 응답이 비어있습니다")
             
-            # JSON 응답 검증 및 정제
-            logger.info("🔧 [JSON_PARSING] Enhanced AI - JSON 파싱 시작")
-            
-            # 강력한 정제 적용
-            cleaned_response = self._extract_json_only(response)
-            logger.info(f"🔧 [CLEANED_JSON] 정제된 JSON (길이: {len(cleaned_response)})")
-            logger.info(f"🔧 [CLEANED_PREVIEW] 정제된 JSON 미리보기 (처음 300자): {cleaned_response[:300]}...")
+            # ===== 🚨 [핵심 강화] JSON 응답 검증 및 정제 과정 상세 로깅 =====
+            logger.info("🔧 [JSON_PARSING_START] Enhanced AI - JSON 파싱 시작")
+            print("🔧 [JSON_PARSING_START] Enhanced AI - JSON 파싱 시작")
             
             try:
-                # 정제된 응답 파싱 시도
-                parsed_json = json.loads(cleaned_response)
-                logger.info(f"✅ [PARSED_SUCCESS] Enhanced AI - JSON 파싱 성공")
-                logger.info(f"📊 [PARSED_DATA_TYPE] 파싱된 데이터 타입: {type(parsed_json)}")
+                # 1단계: JSON 정제
+                logger.info("🔧 [STEP_1] JSON 정제 시작")
+                print("🔧 [STEP_1] JSON 정제 시작")
                 
-                # 🚨 [핵심 수정] 직접적인 데이터 추출 및 검증
-                logger.info(f"🔍 [DIRECT_EXTRACTION] Enhanced AI - 직접적인 데이터 추출 시작")
-                logger.info(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(parsed_json.keys())}")
+                cleaned_response = self._extract_json_only(response)
+                
+                logger.info(f"✅ [CLEANED_SUCCESS] JSON 정제 완료 (길이: {len(cleaned_response)})")
+                logger.info(f"🔧 [CLEANED_PREVIEW] 정제된 JSON 미리보기 (처음 500자): {cleaned_response[:500]}...")
+                print(f"✅ [CLEANED_SUCCESS] JSON 정제 완료 (길이: {len(cleaned_response)})")
+                
+                # 2단계: JSON 파싱
+                logger.info("🔧 [STEP_2] JSON 파싱 시작")
+                print("🔧 [STEP_2] JSON 파싱 시작")
+                
+                parsed_json = json.loads(cleaned_response)
+                
+                logger.info(f"✅ [PARSED_SUCCESS] JSON 파싱 성공")
+                logger.info(f"📊 [PARSED_DATA_TYPE] 파싱된 데이터 타입: {type(parsed_json)}")
+                print(f"✅ [PARSED_SUCCESS] JSON 파싱 성공")
+                
+                # 3단계: 데이터 구조 분석
+                logger.info("🔧 [STEP_3] 데이터 구조 분석 시작")
+                print("🔧 [STEP_3] 데이터 구조 분석 시작")
+                
+                if isinstance(parsed_json, dict):
+                    logger.info(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(parsed_json.keys())}")
+                    print(f"📊 [PARSED_KEYS] 파싱된 최상위 키들: {list(parsed_json.keys())}")
+                elif isinstance(parsed_json, list):
+                    logger.info(f"📊 [PARSED_LIST] 파싱된 데이터는 배열 (길이: {len(parsed_json)})")
+                    print(f"📊 [PARSED_LIST] 파싱된 데이터는 배열 (길이: {len(parsed_json)})")
+                else:
+                    logger.error(f"❌ [INVALID_TYPE] 예상치 못한 데이터 타입: {type(parsed_json)}")
+                    print(f"❌ [INVALID_TYPE] 예상치 못한 데이터 타입: {type(parsed_json)}")
+                    raise ValueError(f"AI 응답 데이터 타입 오류: {type(parsed_json)}")
+                
+            except json.JSONDecodeError as json_error:
+                logger.error("❌❌❌ [JSON_DECODE_ERROR] JSON 파싱 실패")
+                logger.error(f"📊 [JSON_ERROR_MSG] JSON 에러 메시지: {str(json_error)}")
+                logger.error(f"📊 [JSON_ERROR_POS] 에러 위치: line {json_error.lineno}, column {json_error.colno}")
+                logger.error(f"📊 [JSON_ERROR_DOC] 에러 문서: {json_error.doc[:200] if hasattr(json_error, 'doc') and json_error.doc else 'N/A'}...")
+                logger.error(f"📊 [CLEANED_RESPONSE_SAMPLE] 정제된 응답 샘플 (처음 1000자): {cleaned_response[:1000]}...")
+                print(f"❌❌❌ [JSON_DECODE_ERROR] JSON 파싱 실패: {json_error}")
+                
+                # JSON 파싱 실패 시 즉시 폴백
+                logger.info("🔄 [JSON_PARSE_FAIL_FALLBACK] JSON 파싱 실패로 폴백 응답 반환")
+                print("🔄 [JSON_PARSE_FAIL_FALLBACK] JSON 파싱 실패로 폴백 응답 반환")
+                
+                fallback_response = {
+                    "travel_plan": {
+                        "title": "일정 생성 실패",
+                        "concept": "AI 응답 파싱 오류로 인한 기본 응답",
+                        "total_days": 1,
+                        "daily_start_time": "09:00",
+                        "daily_end_time": "22:00",
+                        "daily_plans": [{
+                            "day": 1,
+                            "date": "2024-01-01",
+                            "activities": [{
+                                "time": "09:00",
+                                "name": "일정 재생성 필요",
+                                "type": "안내",
+                                "duration": 60,
+                                "description": "AI 응답 파싱에 실패했습니다. 다시 시도해주세요."
+                            }]
+                        }]
+                    }
+                }
+                return json.dumps(fallback_response, ensure_ascii=False)
+                
+            except Exception as parsing_error:
+                logger.error("❌❌❌ [PARSING_GENERAL_ERROR] JSON 파싱 과정 일반 에러")
+                logger.error(f"📊 [PARSING_ERROR_TYPE] 에러 타입: {type(parsing_error).__name__}")
+                logger.error(f"📊 [PARSING_ERROR_MSG] 에러 메시지: {str(parsing_error)}")
+                logger.error(f"📊 [PARSING_ERROR_TRACEBACK]", exc_info=True)
+                print(f"❌❌❌ [PARSING_GENERAL_ERROR] JSON 파싱 과정 일반 에러: {parsing_error}")
+                
+                # 일반 파싱 에러 시 즉시 폴백
+                logger.info("🔄 [PARSING_ERROR_FALLBACK] 파싱 에러로 폴백 응답 반환")
+                print("🔄 [PARSING_ERROR_FALLBACK] 파싱 에러로 폴백 응답 반환")
+                
+                fallback_response = {
+                    "travel_plan": {
+                        "title": "일정 생성 실패",
+                        "concept": "파싱 오류로 인한 기본 응답",
+                        "total_days": 1,
+                        "daily_start_time": "09:00",
+                        "daily_end_time": "22:00",
+                        "daily_plans": [{
+                            "day": 1,
+                            "date": "2024-01-01",
+                            "activities": [{
+                                "time": "09:00",
+                                "name": "일정 재생성 필요",
+                                "type": "안내",
+                                "duration": 60,
+                                "description": f"파싱 오류: {str(parsing_error)}"
+                            }]
+                        }]
+                    }
+                }
+                return json.dumps(fallback_response, ensure_ascii=False)
+            
+            # 4단계: 데이터 추출 및 검증
+            logger.info("🔧 [STEP_4] 데이터 추출 및 검증 시작")
+            print("🔧 [STEP_4] 데이터 추출 및 검증 시작")
+            
+            # 🚨 [핵심 수정] 직접적인 데이터 추출 및 검증
+            logger.info(f"🔍 [DIRECT_EXTRACTION] Enhanced AI - 직접적인 데이터 추출 시작")
+            print(f"🔍 [DIRECT_EXTRACTION] Enhanced AI - 직접적인 데이터 추출 시작")
                 
                 # 1. 기본 타입 검증
                 if not isinstance(parsed_json, dict):
