@@ -2562,13 +2562,17 @@ $places_list
         AI 응답을 TravelPlan 객체로 변환 (새로운 스키마 적용)
         """
         try:
-            logger.info("🔄 [CONVERT_START] AI 응답을 TravelPlan으로 변환 시작")
+            logger.info("🔄🔄🔄 [CONVERT_START] AI 응답을 TravelPlan으로 변환 시작")
             logger.info(f"📊 [AI_RESPONSE_LENGTH] AI 응답 길이: {len(ai_response)}")
+            print("🔄🔄🔄 [CONVERT_START] AI 응답을 TravelPlan으로 변환 시작")
+            print(f"📊 [AI_RESPONSE_LENGTH] AI 응답 길이: {len(ai_response)}")
             
             import json
             ai_data = json.loads(ai_response)
             logger.info(f"✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
             logger.info(f"🤖 [AI_DATA_STRUCTURE] AI 응답 구조:\n{json.dumps(ai_data, ensure_ascii=False, indent=2)}")
+            print(f"✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
+            print(f"🤖 [AI_DATA_STRUCTURE] AI 응답 구조:\n{json.dumps(ai_data, ensure_ascii=False, indent=2)}")
             
             # [핵심 수정] AI 응답에서 일정 데이터 추출 - itinerary 키를 우선 확인
             logger.info(f"📊 [AI_DATA_KEYS] AI 응답의 최상위 키들: {list(ai_data.keys())}")
@@ -2607,53 +2611,129 @@ $places_list
                 raise ValueError(f"AI 응답에서 일정 데이터를 찾을 수 없습니다. 키: {list(ai_data.keys())}")
             
             logger.info(f"📊 [DAYS_COUNT] 추출된 일정 일수: {len(days_data)}")
+            print(f"📊 [DAYS_COUNT] 추출된 일정 일수: {len(days_data)}")
+            
+            # [핵심 디버깅] days_data 내용 상세 로깅
+            logger.info("🔍🔍🔍 [DAYS_DATA_DETAIL] 추출된 days_data 상세 내용:")
+            for idx, day in enumerate(days_data):
+                logger.info(f"  📅 [DAY_{idx+1}_STRUCTURE] {idx+1}일차 구조: {type(day)} - 키들: {list(day.keys()) if isinstance(day, dict) else 'Not a dict'}")
+                print(f"  📅 [DAY_{idx+1}_STRUCTURE] {idx+1}일차 구조: {type(day)} - 키들: {list(day.keys()) if isinstance(day, dict) else 'Not a dict'}")
             
             if not days_data:
                 logger.error("❌ [EMPTY_DAYS_DATA] 일정 데이터가 비어있습니다")
+                print("❌ [EMPTY_DAYS_DATA] 일정 데이터가 비어있습니다")
                 raise ValueError("AI 응답에서 일정 데이터가 비어있습니다")
             
             # 장소명으로 PlaceData 매핑 생성
             place_map = {place.name: place for place in places}
             logger.info(f"📊 [PLACE_MAP] 장소 매핑: {list(place_map.keys())}")
+            print(f"📊 [PLACE_MAP] 장소 매핑: {list(place_map.keys())}")
             
             daily_plans = []
-            for i, day_data in enumerate(days_data):
-                logger.info(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
-                
-                activities = []
-                activities_data = day_data.get('activities', [])
-                logger.info(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
-                
-                for j, activity_data in enumerate(activities_data):
-                    place_name = activity_data.get("place_name", activity_data.get("name", "장소"))
-                    place_data = place_map.get(place_name)
-                    
-                    # ActivityDetail 객체 생성 (새로운 스키마)
-                    activity = ActivityDetail(
-                        time=activity_data.get("time", "09:00"),
-                        place_name=place_name,
-                        category=activity_data.get("category", activity_data.get("type", "관광")),
-                        duration_minutes=activity_data.get("duration_minutes", activity_data.get("duration", 120)),
-                        description=activity_data.get("description", f"{place_name}에서의 활동"),
-                        travel_time_minutes=activity_data.get("travel_time_minutes", 15),
-                        place_id=place_data.place_id if place_data else None,
-                        lat=place_data.lat if place_data else None,
-                        lng=place_data.lng if place_data else None
-                    )
-                    activities.append(activity)
-                    logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가: {place_name}")
-                
-                # 새로운 DayPlan 생성
-                day_plan = DayPlan(
-                    day=day_data.get("day", i+1),
-                    date=day_data.get("date", f"2024-01-{i+1:02d}"),
-                    activities=activities,
-                    theme=f"{i+1}일차 여행"
-                )
-                daily_plans.append(day_plan)
-                logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
+            logger.info("🔄 [CONVERSION_LOOP_START] 일정 변환 루프 시작")
+            print("🔄 [CONVERSION_LOOP_START] 일정 변환 루프 시작")
             
-            # 새로운 TravelPlan 생성
+            for i, day_data in enumerate(days_data):
+                try:
+                    logger.info(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
+                    logger.info(f"📅 [DAY_{i+1}_DATA] {i+1}일차 원본 데이터: {day_data}")
+                    print(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
+                    print(f"📅 [DAY_{i+1}_DATA] {i+1}일차 원본 데이터: {day_data}")
+                    
+                    activities = []
+                    activities_data = day_data.get('activities', [])
+                    logger.info(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
+                    print(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
+                    
+                    for j, activity_data in enumerate(activities_data):
+                        try:
+                            logger.info(f"🔍 [ACTIVITY_{j+1}_DEBUG] {i+1}일차 {j+1}번째 활동 처리 시작")
+                            logger.info(f"🔍 [ACTIVITY_{j+1}_RAW] 원본 활동 데이터: {activity_data}")
+                            print(f"🔍 [ACTIVITY_{j+1}_DEBUG] {i+1}일차 {j+1}번째 활동 처리 시작")
+                            
+                            place_name = activity_data.get("place_name", activity_data.get("name", "장소"))
+                            place_data = place_map.get(place_name)
+                            
+                            logger.info(f"🔍 [ACTIVITY_{j+1}_PLACE] 장소명: {place_name}, 매핑 결과: {place_data is not None}")
+                            print(f"🔍 [ACTIVITY_{j+1}_PLACE] 장소명: {place_name}, 매핑 결과: {place_data is not None}")
+                            
+                            # [핵심] ActivityDetail 객체 생성 - 여기서 ValidationError 발생 가능
+                            logger.info(f"🔧 [ACTIVITY_{j+1}_CREATE] ActivityDetail 객체 생성 시작")
+                            print(f"🔧 [ACTIVITY_{j+1}_CREATE] ActivityDetail 객체 생성 시작")
+                            
+                            activity = ActivityDetail(
+                                time=activity_data.get("time", "09:00"),
+                                place_name=place_name,
+                                category=activity_data.get("category", activity_data.get("type", "관광")),
+                                duration_minutes=activity_data.get("duration_minutes", activity_data.get("duration", 120)),
+                                description=activity_data.get("description", f"{place_name}에서의 활동"),
+                                travel_time_minutes=activity_data.get("travel_time_minutes", 15),
+                                place_id=place_data.place_id if place_data else None,
+                                lat=place_data.lat if place_data else None,
+                                lng=place_data.lng if place_data else None
+                            )
+                            activities.append(activity)
+                            logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가 성공: {place_name}")
+                            print(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가 성공: {place_name}")
+                            
+                        except Exception as activity_error:
+                            logger.error(f"❌ [ACTIVITY_{j+1}_ERROR] {i+1}일차 {j+1}번째 활동 생성 실패: {activity_error}")
+                            logger.error(f"📊 [ACTIVITY_{j+1}_ERROR_TYPE] 에러 타입: {type(activity_error).__name__}")
+                            logger.error(f"📊 [ACTIVITY_{j+1}_ERROR_DATA] 실패한 활동 데이터: {activity_data}")
+                            logger.error(f"📊 [ACTIVITY_{j+1}_TRACEBACK] 상세 트레이스백:", exc_info=True)
+                            print(f"❌ [ACTIVITY_{j+1}_ERROR] {i+1}일차 {j+1}번째 활동 생성 실패: {activity_error}")
+                            print(f"📊 [ACTIVITY_{j+1}_ERROR_TYPE] 에러 타입: {type(activity_error).__name__}")
+                            # 활동 생성 실패 시 건너뛰기
+                            continue
+                
+                # [핵심] DayPlan 생성 - 여기서도 ValidationError 발생 가능
+                try:
+                    logger.info(f"🔧 [DAY_{i+1}_CREATE] DayPlan 객체 생성 시작")
+                    logger.info(f"🔧 [DAY_{i+1}_PARAMS] day={day_data.get('day', i+1)}, date={day_data.get('date', f'2024-01-{i+1:02d}')}, activities={len(activities)}")
+                    print(f"🔧 [DAY_{i+1}_CREATE] DayPlan 객체 생성 시작")
+                    print(f"🔧 [DAY_{i+1}_PARAMS] day={day_data.get('day', i+1)}, date={day_data.get('date', f'2024-01-{i+1:02d}')}, activities={len(activities)}")
+                    
+                    day_plan = DayPlan(
+                        day=day_data.get("day", i+1),
+                        date=day_data.get("date", f"2024-01-{i+1:02d}"),
+                        activities=activities,
+                        theme=f"{i+1}일차 여행"
+                    )
+                    daily_plans.append(day_plan)
+                    logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
+                    print(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
+                    
+                except Exception as day_error:
+                    logger.error(f"❌ [DAY_{i+1}_ERROR] {i+1}일차 DayPlan 생성 실패: {day_error}")
+                    logger.error(f"📊 [DAY_{i+1}_ERROR_TYPE] 에러 타입: {type(day_error).__name__}")
+                    logger.error(f"📊 [DAY_{i+1}_ERROR_DATA] 실패한 일차 데이터: {day_data}")
+                    logger.error(f"📊 [DAY_{i+1}_TRACEBACK] 상세 트레이스백:", exc_info=True)
+                    print(f"❌ [DAY_{i+1}_ERROR] {i+1}일차 DayPlan 생성 실패: {day_error}")
+                    print(f"📊 [DAY_{i+1}_ERROR_TYPE] 에러 타입: {type(day_error).__name__}")
+                    # DayPlan 생성 실패 시 건너뛰기
+                    continue
+                    
+            except Exception as loop_error:
+                logger.error(f"❌ [CONVERSION_LOOP_ERROR] 일정 변환 루프에서 심각한 오류: {loop_error}")
+                logger.error(f"📊 [LOOP_ERROR_TYPE] 에러 타입: {type(loop_error).__name__}")
+                logger.error(f"📊 [LOOP_ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+                print(f"❌ [CONVERSION_LOOP_ERROR] 일정 변환 루프에서 심각한 오류: {loop_error}")
+                print(f"📊 [LOOP_ERROR_TYPE] 에러 타입: {type(loop_error).__name__}")
+                # 루프 에러 시 빈 daily_plans로 계속 진행
+                daily_plans = []
+            
+            # [핵심] TravelPlan 생성 - 최종 단계에서 ValidationError 발생 가능
+            logger.info("🔧 [TRAVEL_PLAN_CREATE] TravelPlan 객체 생성 시작")
+            logger.info(f"🔧 [TRAVEL_PLAN_PARAMS] total_days={travel_plan_data.get('total_days', len(days_data))}, daily_plans={len(daily_plans)}")
+            print("🔧 [TRAVEL_PLAN_CREATE] TravelPlan 객체 생성 시작")
+            print(f"🔧 [TRAVEL_PLAN_PARAMS] total_days={travel_plan_data.get('total_days', len(days_data))}, daily_plans={len(daily_plans)}")
+            
+            # daily_plans가 비어있는지 최종 확인
+            if not daily_plans:
+                logger.error("❌ [FINAL_EMPTY_CHECK] daily_plans가 비어있습니다!")
+                print("❌ [FINAL_EMPTY_CHECK] daily_plans가 비어있습니다!")
+                raise ValueError("변환 과정에서 모든 일정이 손실되었습니다")
+            
             travel_plan = TravelPlan(
                 total_days=travel_plan_data.get("total_days", len(days_data)),
                 daily_start_time=travel_plan_data.get("daily_start_time", "09:00"),
@@ -2665,6 +2745,7 @@ $places_list
             )
             
             logger.info(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정")
+            print(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정")
             return travel_plan
             
         except Exception as e:
