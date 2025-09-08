@@ -20,6 +20,7 @@ from app.schemas.itinerary import (
     TravelPlan, DayPlan, ActivityDetail, PlaceData,
     ItineraryRequest, RecommendationResponse
 )
+from pydantic import BaseModel, Field, ValidationError
 from app.services.google_places_service import GooglePlacesService
 from app.services.google_directions_service import GoogleDirectionsService
 from app.utils.logger import get_logger
@@ -40,6 +41,37 @@ except ImportError:
     enhanced_ai_service = None
 
 logger = get_logger(__name__)
+
+# --- AI 응답을 유연하게 받기 위한 Pydantic 모델 정의 ---
+class LocationFromAI(BaseModel):
+    place_id: Optional[str] = None
+    name: Optional[str] = None
+
+class ActivityFromAI(BaseModel):
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    activity: Optional[str] = None
+    location: Optional[LocationFromAI] = None
+    description: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    travel_time_minutes: Optional[int] = None
+    # AI가 다양한 키로 보낼 수 있는 필드들
+    place_name: Optional[str] = None
+    category: Optional[str] = None
+    time: Optional[str] = None
+
+class AccommodationFromAI(BaseModel):
+    place_id: Optional[str] = None
+    name: Optional[str] = None
+
+class DailyPlanFromAI(BaseModel):
+    day: int
+    date: Optional[str] = None
+    daily_theme: Optional[str] = None
+    theme: Optional[str] = None  # AI가 theme으로 보낼 수도 있음
+    accommodation: Optional[AccommodationFromAI] = None
+    schedule: Optional[List[ActivityFromAI]] = []
+    activities: Optional[List[ActivityFromAI]] = []  # AI가 activities로 보낼 수도 있음
 
 
 class AdvancedItineraryService:
@@ -2558,299 +2590,134 @@ $places_list
     
     def _convert_ai_response_to_travel_plan(self, ai_response: str, places: List[PlaceData]) -> TravelPlan:
         """
-        AI 응답을 TravelPlan 객체로 변환 (새로운 스키마 적용)
+        AI 응답을 TravelPlan 객체로 변환 - 매우 견고한 2단계 검증 방식
         """
+        logger.info("🔄🔄🔄 [CONVERT_START] AI 응답을 TravelPlan으로 변환 시작")
+        logger.info(f"📊 [AI_RESPONSE_LENGTH] AI 응답 길이: {len(ai_response)}")
+        
         try:
-            logger.info("🔄🔄🔄 [CONVERT_START] AI 응답을 TravelPlan으로 변환 시작")
-            logger.info(f"📊 [AI_RESPONSE_LENGTH] AI 응답 길이: {len(ai_response)}")
-            print("🔄🔄🔄 [CONVERT_START] AI 응답을 TravelPlan으로 변환 시작")
-            print(f"📊 [AI_RESPONSE_LENGTH] AI 응답 길이: {len(ai_response)}")
-            
+            # 1단계: JSON 파싱
             import json
             ai_data = json.loads(ai_response)
-            logger.info(f"✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
-            logger.info(f"🤖 [AI_DATA_STRUCTURE] AI 응답 구조:\n{json.dumps(ai_data, ensure_ascii=False, indent=2)}")
-            print(f"✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
-            print(f"🤖 [AI_DATA_STRUCTURE] AI 응답 구조:\n{json.dumps(ai_data, ensure_ascii=False, indent=2)}")
-            
-            # [핵심 수정] AI 응답에서 일정 데이터 추출 - itinerary 키를 우선 확인
+            logger.info("✅ [JSON_PARSE_SUCCESS] JSON 파싱 성공")
             logger.info(f"📊 [AI_DATA_KEYS] AI 응답의 최상위 키들: {list(ai_data.keys())}")
             
-            # 1순위: itinerary 키 확인 (AI가 실제로 보내주는 키)
-            travel_plan_data = None
+            # 2단계: 일정 데이터 추출
             days_data = []
-            
             if 'itinerary' in ai_data:
-                logger.info("✅ [ITINERARY_KEY_FOUND] 'itinerary' 키 발견 - AI 표준 응답 형식")
-                logger.info(f"🔍 [ITINERARY_DATA] itinerary 데이터: {ai_data['itinerary']}")
-                logger.info(f"🔍 [ITINERARY_TYPE] itinerary 타입: {type(ai_data['itinerary'])}")
+                logger.info("✅ [ITINERARY_KEY_FOUND] 'itinerary' 키 발견")
                 days_data = ai_data['itinerary']
-                travel_plan_data = ai_data  # 전체 데이터를 travel_plan_data로 사용
-                logger.info(f"🔍 [AFTER_ASSIGNMENT] days_data 할당 후: {days_data}")
-                print(f"🔍 [ITINERARY_DATA] itinerary 데이터: {ai_data['itinerary']}")
-                print(f"🔍 [AFTER_ASSIGNMENT] days_data 할당 후: {days_data}")
-                
-            elif 'travel_plan' in ai_data:
-                logger.info("✅ [TRAVEL_PLAN_KEY_FOUND] 'travel_plan' 키 발견")
-                travel_plan_data = ai_data['travel_plan']
-                days_data = travel_plan_data.get('days', travel_plan_data.get('itinerary', []))
-                
+            elif 'travel_plan' in ai_data and 'days' in ai_data['travel_plan']:
+                logger.info("✅ [TRAVEL_PLAN_DAYS_FOUND] 'travel_plan.days' 키 발견")
+                days_data = ai_data['travel_plan']['days']
             elif 'days' in ai_data:
                 logger.info("✅ [DAYS_KEY_FOUND] 'days' 키 발견")
                 days_data = ai_data['days']
-                travel_plan_data = ai_data
-                
-            elif 'daily_plans' in ai_data:
-                logger.info("✅ [DAILY_PLANS_KEY_FOUND] 'daily_plans' 키 발견")
-                days_data = ai_data['daily_plans']
-                travel_plan_data = ai_data
-                
             elif isinstance(ai_data, list):
                 logger.info("✅ [ARRAY_FORMAT] 배열 형식의 AI 응답")
                 days_data = ai_data
-                travel_plan_data = {'days': ai_data}
-                
             else:
-                logger.error(f"❌ [NO_VALID_KEY] 유효한 일정 키를 찾을 수 없음. 사용 가능한 키: {list(ai_data.keys())}")
-                raise ValueError(f"AI 응답에서 일정 데이터를 찾을 수 없습니다. 키: {list(ai_data.keys())}")
+                logger.error(f"❌ [NO_VALID_KEY] 유효한 일정 키를 찾을 수 없음. 키: {list(ai_data.keys())}")
+                raise ValueError(f"AI 응답에서 일정 데이터를 찾을 수 없습니다")
             
             logger.info(f"📊 [DAYS_COUNT] 추출된 일정 일수: {len(days_data)}")
-            print(f"📊 [DAYS_COUNT] 추출된 일정 일수: {len(days_data)}")
             
-            # [핵심 디버깅] days_data 내용 상세 로깅
-            logger.info("🔍🔍🔍 [DAYS_DATA_DETAIL] 추출된 days_data 상세 내용:")
-            logger.info(f"🔍 [DAYS_DATA_TYPE] days_data 타입: {type(days_data)}")
-            logger.info(f"🔍 [DAYS_DATA_VALUE] days_data 값: {days_data}")
-            logger.info(f"🔍 [DAYS_DATA_BOOL] bool(days_data): {bool(days_data)}")
-            logger.info(f"🔍 [DAYS_DATA_LEN] len(days_data): {len(days_data) if hasattr(days_data, '__len__') else 'No len'}")
-            
-            for idx, day in enumerate(days_data):
-                logger.info(f"  📅 [DAY_{idx+1}_STRUCTURE] {idx+1}일차 구조: {type(day)} - 키들: {list(day.keys()) if isinstance(day, dict) else 'Not a dict'}")
-                print(f"  📅 [DAY_{idx+1}_STRUCTURE] {idx+1}일차 구조: {type(day)} - 키들: {list(day.keys()) if isinstance(day, dict) else 'Not a dict'}")
-            
-            # [수정] days_data 검증 로직 강화 - 단순 not 체크가 아닌 상세 검증
-            logger.info(f"🔍 [VALIDATION_CHECK] days_data 검증 시작 - not days_data: {not days_data}, len == 0: {len(days_data) == 0 if hasattr(days_data, '__len__') else 'No len'}")
-            
-            if not days_data or (hasattr(days_data, '__len__') and len(days_data) == 0):
+            if not days_data:
                 logger.error("❌ [EMPTY_DAYS_DATA] 일정 데이터가 비어있습니다")
-                logger.error(f"📊 [EMPTY_DAYS_DEBUG] days_data 타입: {type(days_data)}, 값: {days_data}")
-                print("❌ [EMPTY_DAYS_DATA] 일정 데이터가 비어있습니다")
-                print(f"📊 [EMPTY_DAYS_DEBUG] days_data 타입: {type(days_data)}, 값: {days_data}")
                 raise ValueError("AI 응답에서 일정 데이터가 비어있습니다")
-            else:
-                logger.info(f"✅ [DAYS_DATA_VALID] days_data 검증 통과: 타입={type(days_data)}, 길이={len(days_data) if hasattr(days_data, '__len__') else 'No len'}")
-                print(f"✅ [DAYS_DATA_VALID] days_data 검증 통과: 타입={type(days_data)}, 길이={len(days_data) if hasattr(days_data, '__len__') else 'No len'}")
             
-            # 장소명으로 PlaceData 매핑 생성
-            place_map = {place.name: place for place in places}
-            logger.info(f"📊 [PLACE_MAP] 장소 매핑: {list(place_map.keys())}")
-            print(f"📊 [PLACE_MAP] 장소 매핑: {list(place_map.keys())}")
-            
-            daily_plans = []
-            logger.info("🔄 [CONVERSION_LOOP_START] 일정 변환 루프 시작")
-            print("🔄 [CONVERSION_LOOP_START] 일정 변환 루프 시작")
+            # 3단계: AI 응답을 유연한 Pydantic 모델로 1차 검증
+            logger.info("🔍 [STAGE1_VALIDATION] 1단계 - AI 응답 구조 검증 시작")
+            validated_days_from_ai = []
             
             for i, day_data in enumerate(days_data):
                 try:
-                    logger.info(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
-                    logger.info(f"📅 [DAY_{i+1}_DATA] {i+1}일차 원본 데이터: {day_data}")
-                    print(f"📅 [DAY_{i+1}] {i+1}일차 처리 시작")
-                    print(f"📅 [DAY_{i+1}_DATA] {i+1}일차 원본 데이터: {day_data}")
-                    
-                    activities = []
-                    activities_data = day_data.get('activities', [])
-                    logger.info(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
-                    print(f"📊 [DAY_{i+1}_ACTIVITIES] {i+1}일차 활동 수: {len(activities_data)}")
-                    
-                    for j, activity_data in enumerate(activities_data):
-                        try:
-                            logger.info(f"🔍 [ACTIVITY_{j+1}_DEBUG] {i+1}일차 {j+1}번째 활동 처리 시작")
-                            logger.info(f"🔍 [ACTIVITY_{j+1}_RAW] 원본 활동 데이터: {activity_data}")
-                            print(f"🔍 [ACTIVITY_{j+1}_DEBUG] {i+1}일차 {j+1}번째 활동 처리 시작")
-                            
-                            place_name = activity_data.get("place_name", activity_data.get("name", "장소"))
-                            place_data = place_map.get(place_name)
-                            
-                            logger.info(f"🔍 [ACTIVITY_{j+1}_PLACE] 장소명: {place_name}, 매핑 결과: {place_data is not None}")
-                            print(f"🔍 [ACTIVITY_{j+1}_PLACE] 장소명: {place_name}, 매핑 결과: {place_data is not None}")
-                            
-                            # [핵심] ActivityDetail 객체 생성 - 타입 안전성 강화
-                            logger.info(f"🔧 [ACTIVITY_{j+1}_CREATE] ActivityDetail 객체 생성 시작")
-                            print(f"🔧 [ACTIVITY_{j+1}_CREATE] ActivityDetail 객체 생성 시작")
-                            
-                            # [핵심 수정] 데이터 타입 안전 변환
-                            try:
-                                # 시간 필드 - 문자열로 변환
-                                time_str = str(activity_data.get("time", "09:00"))
-                                
-                                # 장소명 - 문자열로 변환
-                                place_name_str = str(place_name)
-                                
-                                # 카테고리 - 문자열로 변환
-                                category_str = str(activity_data.get("category", activity_data.get("type", "관광")))
-                                
-                                # duration_minutes - 정수로 안전 변환
-                                duration_raw = activity_data.get("duration_minutes", activity_data.get("duration", 120))
-                                if isinstance(duration_raw, str):
-                                    duration_minutes = int(float(duration_raw)) if duration_raw.replace('.', '').isdigit() else 120
-                                else:
-                                    duration_minutes = int(duration_raw) if duration_raw is not None else 120
-                                
-                                # travel_time_minutes - 정수로 안전 변환
-                                travel_time_raw = activity_data.get("travel_time_minutes", 15)
-                                if isinstance(travel_time_raw, str):
-                                    travel_time_minutes = int(float(travel_time_raw)) if travel_time_raw.replace('.', '').isdigit() else 15
-                                else:
-                                    travel_time_minutes = int(travel_time_raw) if travel_time_raw is not None else 15
-                                
-                                # 설명 - 문자열로 변환
-                                description_str = str(activity_data.get("description", f"{place_name}에서의 활동"))
-                                
-                                logger.info(f"🔧 [ACTIVITY_{j+1}_TYPES] 변환된 타입들: time={type(time_str)}, duration={type(duration_minutes)}, travel_time={type(travel_time_minutes)}")
-                                print(f"🔧 [ACTIVITY_{j+1}_TYPES] 변환된 타입들: time={type(time_str)}, duration={type(duration_minutes)}, travel_time={type(travel_time_minutes)}")
-                                
-                                activity = ActivityDetail(
-                                    time=time_str,
-                                    place_name=place_name_str,
-                                    category=category_str,
-                                    duration_minutes=duration_minutes,
-                                    description=description_str,
-                                    travel_time_minutes=travel_time_minutes,
-                                    place_id=place_data.place_id if place_data else None,
-                                    lat=place_data.lat if place_data else None,
-                                    lng=place_data.lng if place_data else None
-                                )
-                                
-                            except (ValueError, TypeError) as type_error:
-                                logger.error(f"❌ [ACTIVITY_{j+1}_TYPE_ERROR] 타입 변환 실패: {type_error}")
-                                logger.error(f"📊 [ACTIVITY_{j+1}_RAW_DATA] 원본 데이터: {activity_data}")
-                                print(f"❌ [ACTIVITY_{j+1}_TYPE_ERROR] 타입 변환 실패: {type_error}")
-                                
-                                # 타입 변환 실패 시 기본값으로 ActivityDetail 생성
-                                activity = ActivityDetail(
-                                    time="09:00",
-                                    place_name=str(place_name),
-                                    category="관광",
-                                    duration_minutes=120,
-                                    description=f"{place_name}에서의 활동",
-                                    travel_time_minutes=15,
-                                    place_id=place_data.place_id if place_data else None,
-                                    lat=place_data.lat if place_data else None,
-                                    lng=place_data.lng if place_data else None
-                                )
-                            activities.append(activity)
-                            logger.info(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가 성공: {place_name}")
-                            print(f"✅ [ACTIVITY_{j+1}] {i+1}일차 {j+1}번째 활동 추가 성공: {place_name}")
-                            
-                        except Exception as activity_error:
-                            logger.error(f"❌ [ACTIVITY_{j+1}_ERROR] {i+1}일차 {j+1}번째 활동 생성 실패: {activity_error}")
-                            logger.error(f"📊 [ACTIVITY_{j+1}_ERROR_TYPE] 에러 타입: {type(activity_error).__name__}")
-                            logger.error(f"📊 [ACTIVITY_{j+1}_ERROR_DATA] 실패한 활동 데이터: {activity_data}")
-                            logger.error(f"📊 [ACTIVITY_{j+1}_TRACEBACK] 상세 트레이스백:", exc_info=True)
-                            print(f"❌ [ACTIVITY_{j+1}_ERROR] {i+1}일차 {j+1}번째 활동 생성 실패: {activity_error}")
-                            print(f"📊 [ACTIVITY_{j+1}_ERROR_TYPE] 에러 타입: {type(activity_error).__name__}")
-                            # 활동 생성 실패 시 건너뛰기
-                            continue
-                
-                    # [핵심] DayPlan 생성 - 타입 안전성 강화
-                    logger.info(f"🔧 [DAY_{i+1}_CREATE] DayPlan 객체 생성 시작")
-                    print(f"🔧 [DAY_{i+1}_CREATE] DayPlan 객체 생성 시작")
-                    
-                    # [핵심 수정] DayPlan 데이터 타입 안전 변환
-                    try:
-                        # day 필드 - 정수로 안전 변환
-                        day_raw = day_data.get("day", i+1)
-                        if isinstance(day_raw, str):
-                            day_num = int(day_raw) if day_raw.isdigit() else i+1
-                        else:
-                            day_num = int(day_raw) if day_raw is not None else i+1
-                        
-                        # date 필드 - 문자열로 변환
-                        date_str = str(day_data.get("date", f"2024-01-{i+1:02d}"))
-                        
-                        # theme 필드 - 문자열로 변환
-                        theme_str = str(f"{i+1}일차 여행")
-                        
-                        logger.info(f"🔧 [DAY_{i+1}_PARAMS] day={day_num}({type(day_num)}), date={date_str}({type(date_str)}), activities={len(activities)}")
-                        print(f"🔧 [DAY_{i+1}_PARAMS] day={day_num}({type(day_num)}), date={date_str}({type(date_str)}), activities={len(activities)}")
-                        
-                        day_plan = DayPlan(
-                            day=day_num,
-                            date=date_str,
-                            activities=activities,
-                            theme=theme_str
-                        )
-                        daily_plans.append(day_plan)
-                        logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
-                        print(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
-                        
-                    except (ValueError, TypeError) as day_type_error:
-                        logger.error(f"❌ [DAY_{i+1}_TYPE_ERROR] DayPlan 타입 변환 실패: {day_type_error}")
-                        logger.error(f"📊 [DAY_{i+1}_RAW_DATA] 원본 일차 데이터: {day_data}")
-                        print(f"❌ [DAY_{i+1}_TYPE_ERROR] DayPlan 타입 변환 실패: {day_type_error}")
-                        
-                        # 타입 변환 실패 시 기본값으로 DayPlan 생성
-                        day_plan = DayPlan(
-                            day=i+1,
-                            date=f"2024-01-{i+1:02d}",
-                            activities=activities,
-                            theme=f"{i+1}일차 여행"
-                        )
-                        daily_plans.append(day_plan)
-                        logger.info(f"✅ [DAY_{i+1}_FALLBACK] {i+1}일차 기본값으로 계획 완성: {len(activities)}개 활동")
-                        print(f"✅ [DAY_{i+1}_FALLBACK] {i+1}일차 기본값으로 계획 완성: {len(activities)}개 활동")
-                    
-                except Exception as day_loop_error:
-                    logger.error(f"❌ [DAY_LOOP_ERROR] {i+1}일차 전체 처리에서 심각한 오류: {day_loop_error}")
-                    logger.error(f"📊 [DAY_LOOP_ERROR_TYPE] 에러 타입: {type(day_loop_error).__name__}")
-                    logger.error(f"📊 [DAY_LOOP_ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
-                    print(f"❌ [DAY_LOOP_ERROR] {i+1}일차 전체 처리에서 심각한 오류: {day_loop_error}")
-                    print(f"📊 [DAY_LOOP_ERROR_TYPE] 에러 타입: {type(day_loop_error).__name__}")
-                    # 해당 일차 처리 실패 시 다음 일차로 넘어가기
+                    # AI가 보낸 데이터를 유연한 모델로 검증
+                    validated_day = DailyPlanFromAI.model_validate(day_data)
+                    validated_days_from_ai.append(validated_day)
+                    logger.info(f"✅ [DAY_{i+1}_VALIDATED] {i+1}일차 구조 검증 성공")
+                except ValidationError as e:
+                    logger.error(f"❌ [DAY_{i+1}_VALIDATION_ERROR] {i+1}일차 구조 검증 실패: {e}")
+                    logger.error(f"📊 [DAY_{i+1}_RAW_DATA] 원본 데이터: {day_data}")
+                    # 검증 실패한 일차는 건너뛰기
                     continue
             
-            # [핵심] TravelPlan 생성 - 최종 단계에서 ValidationError 발생 가능
-            logger.info("🔧 [TRAVEL_PLAN_CREATE] TravelPlan 객체 생성 시작")
-            logger.info(f"🔧 [TRAVEL_PLAN_PARAMS] total_days={travel_plan_data.get('total_days', len(days_data))}, daily_plans={len(daily_plans)}")
-            print("🔧 [TRAVEL_PLAN_CREATE] TravelPlan 객체 생성 시작")
-            print(f"🔧 [TRAVEL_PLAN_PARAMS] total_days={travel_plan_data.get('total_days', len(days_data))}, daily_plans={len(daily_plans)}")
+            if not validated_days_from_ai:
+                logger.error("❌ [NO_VALID_DAYS] 검증된 일정이 없습니다")
+                raise ValueError("모든 일정 데이터의 구조 검증에 실패했습니다")
             
-            # daily_plans가 비어있는지 최종 확인
-            if not daily_plans:
-                logger.error("❌ [FINAL_EMPTY_CHECK] daily_plans가 비어있습니다!")
-                print("❌ [FINAL_EMPTY_CHECK] daily_plans가 비어있습니다!")
-                raise ValueError("변환 과정에서 모든 일정이 손실되었습니다")
+            logger.info(f"✅ [STAGE1_SUCCESS] 1단계 검증 완료: {len(validated_days_from_ai)}일 일정")
             
-            travel_plan = TravelPlan(
-                total_days=travel_plan_data.get("total_days", len(days_data)),
-                daily_start_time=travel_plan_data.get("daily_start_time", "09:00"),
-                daily_end_time=travel_plan_data.get("daily_end_time", "21:00"),
-                days=daily_plans,
-                title=travel_plan_data.get("title", travel_plan_data.get("trip_title", "AI 생성 여행 일정")),
+            # 4단계: 검증된 데이터를 시스템 내부 모델로 안전하게 변환
+            logger.info("🔧 [STAGE2_CONVERSION] 2단계 - 시스템 모델로 변환 시작")
+            final_daily_plans = []
+            
+            for day_from_ai in validated_days_from_ai:
+                try:
+                    # 활동 데이터 변환
+                    final_activities = []
+                    activities_source = day_from_ai.activities or day_from_ai.schedule or []
+                    
+                    for activity_from_ai in activities_source:
+                        # 안전한 데이터 매핑
+                        final_activity = ActivityDetail(
+                            time=activity_from_ai.time or activity_from_ai.start_time or "09:00",
+                            place_name=activity_from_ai.place_name or (activity_from_ai.location.name if activity_from_ai.location else None) or activity_from_ai.activity or "장소",
+                            category=activity_from_ai.category or "관광",
+                            description=activity_from_ai.description or activity_from_ai.activity or "",
+                            duration_minutes=activity_from_ai.duration_minutes or 120,
+                            travel_time_minutes=activity_from_ai.travel_time_minutes or 0
+                        )
+                        final_activities.append(final_activity)
+                    
+                    # 일별 계획 생성
+                    final_day_plan = DayPlan(
+                        day=day_from_ai.day,
+                        date=day_from_ai.date or f"2024-01-{day_from_ai.day:02d}",
+                        theme=day_from_ai.theme or day_from_ai.daily_theme or f"{day_from_ai.day}일차 여행",
+                        activities=final_activities
+                    )
+                    final_daily_plans.append(final_day_plan)
+                    logger.info(f"✅ [DAY_{day_from_ai.day}_CONVERTED] {day_from_ai.day}일차 변환 완료: {len(final_activities)}개 활동")
+                    
+                except Exception as day_error:
+                    logger.error(f"❌ [DAY_{day_from_ai.day}_CONVERSION_ERROR] {day_from_ai.day}일차 변환 실패: {day_error}")
+                    continue
+            
+            if not final_daily_plans:
+                logger.error("❌ [NO_CONVERTED_DAYS] 변환된 일정이 없습니다")
+                raise ValueError("모든 일정 데이터의 변환에 실패했습니다")
+            
+            logger.info(f"✅ [STAGE2_SUCCESS] 2단계 변환 완료: {len(final_daily_plans)}일 일정")
+            
+            # 5단계: 최종 TravelPlan 객체 생성
+            final_travel_plan = TravelPlan(
+                title=ai_data.get("title", "AI 생성 여행 일정"),
                 concept="AI가 최적화한 맞춤형 여행 계획",
-                places=places
-            )
-            
-            logger.info(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정")
-            print(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정")
-            return travel_plan
-            
-        except Exception as e:
-            logger.error(f"❌ [CONVERT_ERROR] AI 응답 변환 실패: {e}")
-            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
-            logger.error(f"📊 [RAW_RESPONSE] 원본 응답: {ai_response}")
-            
-            # 최후 폴백: 기본 계획 반환
-            logger.info("🔄 [EMERGENCY_FALLBACK] 긴급 폴백 계획 생성")
-            return TravelPlan(
-                total_days=1,
+                total_days=len(final_daily_plans),
                 daily_start_time="09:00",
                 daily_end_time="21:00",
-                days=[],
-                title="기본 여행 일정",
-                concept="기본 여행 계획",
+                days=final_daily_plans,
                 places=places
             )
+            
+            logger.info("✅ [CONVERT_SUCCESS] TravelPlan 객체 생성 완료!")
+            return final_travel_plan
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ [JSON_PARSE_ERROR] JSON 파싱 실패: {e}")
+            logger.error(f"📊 [RAW_RESPONSE] 원본 응답: {ai_response[:500]}...")
+            raise ValueError(f"AI 응답의 JSON 파싱에 실패했습니다: {e}")
+            
+        except ValidationError as e:
+            logger.error(f"❌ [VALIDATION_ERROR] Pydantic 모델 검증 실패: {e}")
+            logger.error(f"📊 [VALIDATION_DETAILS] 검증 실패 상세: {e.errors()}")
+            raise ValueError(f"AI 응답 데이터 구조 검증에 실패했습니다: {e}")
+            
+        except Exception as e:
+            logger.error(f"❌ [CONVERT_ERROR] 예상치 못한 변환 오류: {e}")
+            logger.error(f"📊 [ERROR_TRACEBACK] {traceback.format_exc()}")
+            raise ValueError(f"AI 응답 변환 중 오류가 발생했습니다: {e}")
     
     def _get_default_itinerary_prompt(self) -> str:
         """기본 일정 생성 프롬프트 (Supabase 실패 시 사용)"""
