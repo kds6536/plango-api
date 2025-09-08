@@ -2582,8 +2582,13 @@ $places_list
             
             if 'itinerary' in ai_data:
                 logger.info("✅ [ITINERARY_KEY_FOUND] 'itinerary' 키 발견 - AI 표준 응답 형식")
+                logger.info(f"🔍 [ITINERARY_DATA] itinerary 데이터: {ai_data['itinerary']}")
+                logger.info(f"🔍 [ITINERARY_TYPE] itinerary 타입: {type(ai_data['itinerary'])}")
                 days_data = ai_data['itinerary']
                 travel_plan_data = ai_data  # 전체 데이터를 travel_plan_data로 사용
+                logger.info(f"🔍 [AFTER_ASSIGNMENT] days_data 할당 후: {days_data}")
+                print(f"🔍 [ITINERARY_DATA] itinerary 데이터: {ai_data['itinerary']}")
+                print(f"🔍 [AFTER_ASSIGNMENT] days_data 할당 후: {days_data}")
                 
             elif 'travel_plan' in ai_data:
                 logger.info("✅ [TRAVEL_PLAN_KEY_FOUND] 'travel_plan' 키 발견")
@@ -2614,14 +2619,27 @@ $places_list
             
             # [핵심 디버깅] days_data 내용 상세 로깅
             logger.info("🔍🔍🔍 [DAYS_DATA_DETAIL] 추출된 days_data 상세 내용:")
+            logger.info(f"🔍 [DAYS_DATA_TYPE] days_data 타입: {type(days_data)}")
+            logger.info(f"🔍 [DAYS_DATA_VALUE] days_data 값: {days_data}")
+            logger.info(f"🔍 [DAYS_DATA_BOOL] bool(days_data): {bool(days_data)}")
+            logger.info(f"🔍 [DAYS_DATA_LEN] len(days_data): {len(days_data) if hasattr(days_data, '__len__') else 'No len'}")
+            
             for idx, day in enumerate(days_data):
                 logger.info(f"  📅 [DAY_{idx+1}_STRUCTURE] {idx+1}일차 구조: {type(day)} - 키들: {list(day.keys()) if isinstance(day, dict) else 'Not a dict'}")
                 print(f"  📅 [DAY_{idx+1}_STRUCTURE] {idx+1}일차 구조: {type(day)} - 키들: {list(day.keys()) if isinstance(day, dict) else 'Not a dict'}")
             
-            if not days_data:
+            # [수정] days_data 검증 로직 강화 - 단순 not 체크가 아닌 상세 검증
+            logger.info(f"🔍 [VALIDATION_CHECK] days_data 검증 시작 - not days_data: {not days_data}, len == 0: {len(days_data) == 0 if hasattr(days_data, '__len__') else 'No len'}")
+            
+            if not days_data or (hasattr(days_data, '__len__') and len(days_data) == 0):
                 logger.error("❌ [EMPTY_DAYS_DATA] 일정 데이터가 비어있습니다")
+                logger.error(f"📊 [EMPTY_DAYS_DEBUG] days_data 타입: {type(days_data)}, 값: {days_data}")
                 print("❌ [EMPTY_DAYS_DATA] 일정 데이터가 비어있습니다")
+                print(f"📊 [EMPTY_DAYS_DEBUG] days_data 타입: {type(days_data)}, 값: {days_data}")
                 raise ValueError("AI 응답에서 일정 데이터가 비어있습니다")
+            else:
+                logger.info(f"✅ [DAYS_DATA_VALID] days_data 검증 통과: 타입={type(days_data)}, 길이={len(days_data) if hasattr(days_data, '__len__') else 'No len'}")
+                print(f"✅ [DAYS_DATA_VALID] days_data 검증 통과: 타입={type(days_data)}, 길이={len(days_data) if hasattr(days_data, '__len__') else 'No len'}")
             
             # 장소명으로 PlaceData 매핑 생성
             place_map = {place.name: place for place in places}
