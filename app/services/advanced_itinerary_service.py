@@ -1137,44 +1137,263 @@ JSON 형식으로 응답해주세요:
                     logger.error("❌ [ALL_DAYS_EMPTY] AI가 유효한 일정을 생성하지 못했습니다 (모든 날짜의 활동이 비어있음)")
                     raise ValueError("AI가 빈 일정을 반환했습니다")
                 
-                # DayPlan 객체들 생성
+                # DayPlan 객체들 생성 - 상세 로깅 추가
                 logger.info("🏗️ [BUILD_DAY_PLANS] DayPlan 객체 생성 시작")
+                print("🏗️ [BUILD_DAY_PLANS] DayPlan 객체 생성 시작")
+                
                 day_plans = []
-                for day_data in days_data:
-                    activities = []
-                    for activity_data in day_data.get("activities", []):
-                        activity = ActivityDetail(
-                            time=activity_data.get("time", "09:00"),
-                            place_name=activity_data.get("place_name", ""),
-                            category=activity_data.get("category", "관광"),
-                            duration_minutes=activity_data.get("duration_minutes", 120),
-                            description=activity_data.get("description", "")
-                        )
-                        activities.append(activity)
-                    
-                    day_plan = DayPlan(
-                        day=day_data.get("day", 1),
-                        date=day_data.get("date", "2024-01-01"),
-                        activities=activities
-                    )
-                    day_plans.append(day_plan)
+                for day_index, day_data in enumerate(days_data):
+                    try:
+                        logger.info(f"📅 [DAY_{day_index+1}_START] {day_index+1}일차 처리 시작")
+                        print(f"📅 [DAY_{day_index+1}_START] {day_index+1}일차 처리 시작")
+                        
+                        # 날짜 데이터 상세 로깅
+                        logger.info(f"📊 [DAY_{day_index+1}_DATA] 날짜 데이터: {day_data}")
+                        print(f"📊 [DAY_{day_index+1}_DATA] 날짜 데이터 키들: {list(day_data.keys())}")
+                        
+                        activities = []
+                        activities_raw = day_data.get("activities", [])
+                        logger.info(f"🎯 [DAY_{day_index+1}_ACTIVITIES] 활동 수: {len(activities_raw)}")
+                        print(f"🎯 [DAY_{day_index+1}_ACTIVITIES] 활동 수: {len(activities_raw)}")
+                        
+                        for act_index, activity_data in enumerate(activities_raw):
+                            try:
+                                logger.info(f"  🎪 [ACTIVITY_{day_index+1}_{act_index+1}_START] 활동 {act_index+1} 처리 시작")
+                                print(f"  🎪 [ACTIVITY_{day_index+1}_{act_index+1}_START] 활동 {act_index+1} 처리 시작")
+                                
+                                # 활동 데이터 상세 로깅
+                                logger.info(f"  📊 [ACTIVITY_{day_index+1}_{act_index+1}_DATA] 활동 데이터: {activity_data}")
+                                print(f"  📊 [ACTIVITY_{day_index+1}_{act_index+1}_DATA] 활동 데이터 키들: {list(activity_data.keys()) if isinstance(activity_data, dict) else 'Not a dict'}")
+                                
+                                # 각 필드 개별 추출 및 타입 변환
+                                time_value = activity_data.get("time", "09:00")
+                                place_name_value = activity_data.get("place_name", "")
+                                category_value = activity_data.get("category", "관광")
+                                duration_value = activity_data.get("duration_minutes", 120)
+                                description_value = activity_data.get("description", "")
+                                
+                                # 타입 변환 및 검증
+                                try:
+                                    # duration_minutes는 반드시 정수여야 함
+                                    if isinstance(duration_value, str):
+                                        duration_value = int(duration_value)
+                                    elif not isinstance(duration_value, int):
+                                        duration_value = 120  # 기본값
+                                    
+                                    logger.info(f"  ✅ [ACTIVITY_{day_index+1}_{act_index+1}_FIELDS] 필드 추출 성공 - time: {time_value}, place: {place_name_value}, duration: {duration_value}")
+                                    print(f"  ✅ [ACTIVITY_{day_index+1}_{act_index+1}_FIELDS] 필드 추출 성공")
+                                    
+                                except Exception as field_error:
+                                    logger.error(f"  ❌ [ACTIVITY_{day_index+1}_{act_index+1}_FIELD_ERROR] 필드 변환 실패: {field_error}")
+                                    print(f"  ❌ [ACTIVITY_{day_index+1}_{act_index+1}_FIELD_ERROR] 필드 변환 실패: {field_error}")
+                                    # 기본값으로 설정
+                                    time_value = "09:00"
+                                    place_name_value = f"장소_{act_index+1}"
+                                    category_value = "관광"
+                                    duration_value = 120
+                                    description_value = "활동 설명"
+                                
+                                # ActivityDetail 객체 생성 시도
+                                try:
+                                    logger.info(f"  🏗️ [ACTIVITY_{day_index+1}_{act_index+1}_CREATE] ActivityDetail 객체 생성 시도")
+                                    print(f"  🏗️ [ACTIVITY_{day_index+1}_{act_index+1}_CREATE] ActivityDetail 객체 생성 시도")
+                                    
+                                    activity = ActivityDetail(
+                                        time=str(time_value),
+                                        place_name=str(place_name_value),
+                                        category=str(category_value),
+                                        duration_minutes=int(duration_value),
+                                        description=str(description_value)
+                                    )
+                                    activities.append(activity)
+                                    
+                                    logger.info(f"  ✅ [ACTIVITY_{day_index+1}_{act_index+1}_SUCCESS] ActivityDetail 객체 생성 성공")
+                                    print(f"  ✅ [ACTIVITY_{day_index+1}_{act_index+1}_SUCCESS] ActivityDetail 객체 생성 성공")
+                                    
+                                except Exception as activity_create_error:
+                                    logger.error(f"  ❌ [ACTIVITY_{day_index+1}_{act_index+1}_CREATE_ERROR] ActivityDetail 생성 실패: {activity_create_error}")
+                                    logger.error(f"  📊 [ACTIVITY_ERROR_TYPE] 에러 타입: {type(activity_create_error).__name__}")
+                                    logger.error(f"  📊 [ACTIVITY_ERROR_MSG] 에러 메시지: {str(activity_create_error)}")
+                                    logger.error(f"  📊 [ACTIVITY_ERROR_TRACEBACK]", exc_info=True)
+                                    print(f"  ❌ [ACTIVITY_{day_index+1}_{act_index+1}_CREATE_ERROR] ActivityDetail 생성 실패: {activity_create_error}")
+                                    
+                                    # 실패한 경우 기본 활동 생성
+                                    try:
+                                        fallback_activity = ActivityDetail(
+                                            time="09:00",
+                                            place_name=f"장소_{act_index+1}",
+                                            category="관광",
+                                            duration_minutes=120,
+                                            description="기본 활동"
+                                        )
+                                        activities.append(fallback_activity)
+                                        logger.info(f"  🔄 [ACTIVITY_{day_index+1}_{act_index+1}_FALLBACK] 기본 활동으로 대체")
+                                        print(f"  🔄 [ACTIVITY_{day_index+1}_{act_index+1}_FALLBACK] 기본 활동으로 대체")
+                                    except Exception as fallback_error:
+                                        logger.error(f"  ❌❌❌ [ACTIVITY_{day_index+1}_{act_index+1}_FALLBACK_FAIL] 기본 활동 생성도 실패: {fallback_error}")
+                                        print(f"  ❌❌❌ [ACTIVITY_{day_index+1}_{act_index+1}_FALLBACK_FAIL] 기본 활동 생성도 실패")
+                                        # 이 경우 해당 활동은 건너뛰기
+                                        continue
+                                        
+                            except Exception as activity_error:
+                                logger.error(f"  ❌ [ACTIVITY_{day_index+1}_{act_index+1}_GENERAL_ERROR] 활동 처리 중 일반 오류: {activity_error}")
+                                logger.error(f"  📊 [ACTIVITY_GENERAL_ERROR_TRACEBACK]", exc_info=True)
+                                print(f"  ❌ [ACTIVITY_{day_index+1}_{act_index+1}_GENERAL_ERROR] 활동 처리 중 일반 오류: {activity_error}")
+                                continue
+                        
+                        # DayPlan 객체 생성 시도
+                        try:
+                            logger.info(f"📅 [DAY_{day_index+1}_CREATE] DayPlan 객체 생성 시도 - 활동 수: {len(activities)}")
+                            print(f"📅 [DAY_{day_index+1}_CREATE] DayPlan 객체 생성 시도 - 활동 수: {len(activities)}")
+                            
+                            # 날짜 필드 추출 및 변환
+                            day_number = day_data.get("day", day_index + 1)
+                            day_date = day_data.get("date", "2024-01-01")
+                            
+                            # 타입 변환
+                            if isinstance(day_number, str):
+                                day_number = int(day_number)
+                            
+                            day_plan = DayPlan(
+                                day=int(day_number),
+                                date=str(day_date),
+                                activities=activities
+                            )
+                            day_plans.append(day_plan)
+                            
+                            logger.info(f"✅ [DAY_{day_index+1}_SUCCESS] DayPlan 객체 생성 성공")
+                            print(f"✅ [DAY_{day_index+1}_SUCCESS] DayPlan 객체 생성 성공")
+                            
+                        except Exception as day_create_error:
+                            logger.error(f"❌ [DAY_{day_index+1}_CREATE_ERROR] DayPlan 생성 실패: {day_create_error}")
+                            logger.error(f"📊 [DAY_ERROR_TYPE] 에러 타입: {type(day_create_error).__name__}")
+                            logger.error(f"📊 [DAY_ERROR_MSG] 에러 메시지: {str(day_create_error)}")
+                            logger.error(f"📊 [DAY_ERROR_TRACEBACK]", exc_info=True)
+                            print(f"❌ [DAY_{day_index+1}_CREATE_ERROR] DayPlan 생성 실패: {day_create_error}")
+                            
+                            # 실패한 경우 기본 DayPlan 생성
+                            try:
+                                fallback_day_plan = DayPlan(
+                                    day=day_index + 1,
+                                    date="2024-01-01",
+                                    activities=activities if activities else []
+                                )
+                                day_plans.append(fallback_day_plan)
+                                logger.info(f"🔄 [DAY_{day_index+1}_FALLBACK] 기본 DayPlan으로 대체")
+                                print(f"🔄 [DAY_{day_index+1}_FALLBACK] 기본 DayPlan으로 대체")
+                            except Exception as day_fallback_error:
+                                logger.error(f"❌❌❌ [DAY_{day_index+1}_FALLBACK_FAIL] 기본 DayPlan 생성도 실패: {day_fallback_error}")
+                                print(f"❌❌❌ [DAY_{day_index+1}_FALLBACK_FAIL] 기본 DayPlan 생성도 실패")
+                                continue
+                                
+                    except Exception as day_error:
+                        logger.error(f"❌ [DAY_{day_index+1}_GENERAL_ERROR] 날짜 처리 중 일반 오류: {day_error}")
+                        logger.error(f"📊 [DAY_GENERAL_ERROR_TRACEBACK]", exc_info=True)
+                        print(f"❌ [DAY_{day_index+1}_GENERAL_ERROR] 날짜 처리 중 일반 오류: {day_error}")
+                        continue
                 
                 logger.info(f"✅ [BUILD_DAY_PLANS_SUCCESS] {len(day_plans)}개 DayPlan 객체 생성 완료")
+                print(f"✅ [BUILD_DAY_PLANS_SUCCESS] {len(day_plans)}개 DayPlan 객체 생성 완료")
                 
                 # ===== 🚗 실제 이동 시간 계산 추가 =====
                 logger.info("🚗 [DIRECTIONS_API_START] Google Directions API로 이동 시간 재계산 시작")
-                day_plans = await self._calculate_real_travel_times(day_plans, places)
-                logger.info("🚗 [DIRECTIONS_API_SUCCESS] 실제 이동 시간 계산 완료")
+                print("🚗 [DIRECTIONS_API_START] Google Directions API로 이동 시간 재계산 시작")
                 
-                final_plan = TravelPlan(
-                    total_days=travel_plan.get("total_days", duration),
-                    daily_start_time=travel_plan.get("daily_start_time", daily_start),
-                    daily_end_time=travel_plan.get("daily_end_time", daily_end),
-                    days=day_plans
-                )
+                try:
+                    day_plans = await self._calculate_real_travel_times(day_plans, places)
+                    logger.info("🚗 [DIRECTIONS_API_SUCCESS] 실제 이동 시간 계산 완료")
+                    print("🚗 [DIRECTIONS_API_SUCCESS] 실제 이동 시간 계산 완료")
+                except Exception as directions_error:
+                    logger.error(f"❌ [DIRECTIONS_API_ERROR] 이동 시간 계산 실패: {directions_error}")
+                    print(f"❌ [DIRECTIONS_API_ERROR] 이동 시간 계산 실패: {directions_error}")
+                    # 이동 시간 계산 실패해도 계속 진행
                 
-                logger.info(f"✅ [AI_ITINERARY_SUCCESS] AI 일정 생성 성공: {len(day_plans)}일 일정, 총 {total_activities}개 활동")
-                return OptimizeResponse(travel_plan=final_plan)
+                # TravelPlan 객체 생성 - 상세 로깅 추가
+                try:
+                    logger.info("🏗️ [TRAVEL_PLAN_CREATE] TravelPlan 객체 생성 시도")
+                    print("🏗️ [TRAVEL_PLAN_CREATE] TravelPlan 객체 생성 시도")
+                    
+                    # 필드 값 추출 및 검증
+                    total_days_value = travel_plan.get("total_days", duration)
+                    daily_start_value = travel_plan.get("daily_start_time", daily_start)
+                    daily_end_value = travel_plan.get("daily_end_time", daily_end)
+                    
+                    # 타입 변환
+                    if isinstance(total_days_value, str):
+                        total_days_value = int(total_days_value)
+                    
+                    logger.info(f"📊 [TRAVEL_PLAN_FIELDS] total_days: {total_days_value}, start: {daily_start_value}, end: {daily_end_value}, days_count: {len(day_plans)}")
+                    print(f"📊 [TRAVEL_PLAN_FIELDS] total_days: {total_days_value}, start: {daily_start_value}, end: {daily_end_value}, days_count: {len(day_plans)}")
+                    
+                    final_plan = TravelPlan(
+                        total_days=int(total_days_value),
+                        daily_start_time=str(daily_start_value),
+                        daily_end_time=str(daily_end_value),
+                        days=day_plans
+                    )
+                    
+                    logger.info("✅ [TRAVEL_PLAN_SUCCESS] TravelPlan 객체 생성 성공")
+                    print("✅ [TRAVEL_PLAN_SUCCESS] TravelPlan 객체 생성 성공")
+                    
+                except Exception as travel_plan_error:
+                    logger.error(f"❌ [TRAVEL_PLAN_CREATE_ERROR] TravelPlan 생성 실패: {travel_plan_error}")
+                    logger.error(f"📊 [TRAVEL_PLAN_ERROR_TYPE] 에러 타입: {type(travel_plan_error).__name__}")
+                    logger.error(f"📊 [TRAVEL_PLAN_ERROR_MSG] 에러 메시지: {str(travel_plan_error)}")
+                    logger.error(f"📊 [TRAVEL_PLAN_ERROR_TRACEBACK]", exc_info=True)
+                    print(f"❌ [TRAVEL_PLAN_CREATE_ERROR] TravelPlan 생성 실패: {travel_plan_error}")
+                    
+                    # TravelPlan 생성 실패 시 기본값으로 재시도
+                    try:
+                        logger.info("🔄 [TRAVEL_PLAN_FALLBACK] 기본값으로 TravelPlan 재생성 시도")
+                        print("🔄 [TRAVEL_PLAN_FALLBACK] 기본값으로 TravelPlan 재생성 시도")
+                        
+                        final_plan = TravelPlan(
+                            total_days=len(day_plans) if day_plans else 1,
+                            daily_start_time="09:00",
+                            daily_end_time="22:00",
+                            days=day_plans if day_plans else []
+                        )
+                        
+                        logger.info("✅ [TRAVEL_PLAN_FALLBACK_SUCCESS] 기본값으로 TravelPlan 생성 성공")
+                        print("✅ [TRAVEL_PLAN_FALLBACK_SUCCESS] 기본값으로 TravelPlan 생성 성공")
+                        
+                    except Exception as fallback_error:
+                        logger.error(f"❌❌❌ [TRAVEL_PLAN_FALLBACK_FAIL] 기본값 TravelPlan 생성도 실패: {fallback_error}")
+                        print(f"❌❌❌ [TRAVEL_PLAN_FALLBACK_FAIL] 기본값 TravelPlan 생성도 실패: {fallback_error}")
+                        raise ValueError(f"TravelPlan 객체 생성 완전 실패: {fallback_error}")
+                
+                # OptimizeResponse 객체 생성
+                try:
+                    logger.info("🏗️ [OPTIMIZE_RESPONSE_CREATE] OptimizeResponse 객체 생성 시도")
+                    print("🏗️ [OPTIMIZE_RESPONSE_CREATE] OptimizeResponse 객체 생성 시도")
+                    
+                    optimize_response = OptimizeResponse(travel_plan=final_plan)
+                    
+                    logger.info("✅ [OPTIMIZE_RESPONSE_SUCCESS] OptimizeResponse 객체 생성 성공")
+                    print("✅ [OPTIMIZE_RESPONSE_SUCCESS] OptimizeResponse 객체 생성 성공")
+                    
+                    # 최종 검증
+                    if optimize_response.travel_plan and optimize_response.travel_plan.days:
+                        final_activity_count = sum(len(day.activities) for day in optimize_response.travel_plan.days)
+                        logger.info(f"✅ [AI_ITINERARY_SUCCESS] AI 일정 생성 성공: {len(day_plans)}일 일정, 총 {final_activity_count}개 활동")
+                        print(f"✅ [AI_ITINERARY_SUCCESS] AI 일정 생성 성공: {len(day_plans)}일 일정, 총 {final_activity_count}개 활동")
+                        
+                        if final_activity_count == 0:
+                            logger.error("❌ [FINAL_VALIDATION_FAIL] 최종 검증 실패: 활동이 0개")
+                            print("❌ [FINAL_VALIDATION_FAIL] 최종 검증 실패: 활동이 0개")
+                            raise ValueError("최종 일정에 활동이 없습니다")
+                        
+                        return optimize_response
+                    else:
+                        logger.error("❌ [FINAL_VALIDATION_FAIL] 최종 검증 실패: travel_plan 또는 days가 없음")
+                        print("❌ [FINAL_VALIDATION_FAIL] 최종 검증 실패: travel_plan 또는 days가 없음")
+                        raise ValueError("최종 일정 구조가 올바르지 않습니다")
+                        
+                except Exception as response_error:
+                    logger.error(f"❌ [OPTIMIZE_RESPONSE_ERROR] OptimizeResponse 생성 실패: {response_error}")
+                    logger.error(f"📊 [RESPONSE_ERROR_TRACEBACK]", exc_info=True)
+                    print(f"❌ [OPTIMIZE_RESPONSE_ERROR] OptimizeResponse 생성 실패: {response_error}")
+                    raise ValueError(f"OptimizeResponse 생성 실패: {response_error}")
                         
             except (json.JSONDecodeError, ValueError) as parse_error:
                 logger.error(f"❌ [AI_PARSE_FAIL] AI 응답 파싱 또는 구조 검증 실패: {parse_error}")
@@ -2194,7 +2413,7 @@ $places_list
                 # AI 응답을 TravelPlan으로 변환
                 logger.info("🔄 [CONVERSION_START] AI 응답을 TravelPlan으로 변환 시작")
                 optimized_plan = self._convert_ai_response_to_travel_plan(ai_response, places)
-                logger.info(f"✅ [CONVERSION_SUCCESS] TravelPlan 변환 완료: {len(optimized_plan.daily_plans) if optimized_plan and optimized_plan.daily_plans else 0}일 일정")
+                logger.info(f"✅ [CONVERSION_SUCCESS] TravelPlan 변환 완료: {len(optimized_plan.days) if optimized_plan and optimized_plan.days else 0}일 일정")
                 
             except Exception as ai_error:
                 logger.error(f"❌ [AI_ERROR] AI 기반 일정 생성 실패: {ai_error}")
@@ -2204,7 +2423,7 @@ $places_list
                 # 폴백으로 간단한 일정 생성
                 try:
                     optimized_plan = self._create_time_constrained_plan(places, duration, daily_start_time, daily_end_time)
-                    logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 일정 생성 완료: {len(optimized_plan.daily_plans) if optimized_plan and optimized_plan.daily_plans else 0}일 일정")
+                    logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 일정 생성 완료: {len(optimized_plan.days) if optimized_plan and optimized_plan.days else 0}일 일정")
                 except Exception as fallback_error:
                     logger.error(f"❌ [FALLBACK_ERROR] 폴백 일정 생성도 실패: {fallback_error}")
                     # 최후 수단: 기본 일정 생성
@@ -2691,15 +2910,25 @@ $places_list
             logger.info(f"✅ [STAGE2_SUCCESS] 2단계 변환 완료: {len(final_daily_plans)}일 일정")
             
             # 5단계: 최종 TravelPlan 객체 생성
-            final_travel_plan = TravelPlan(
-                title=ai_data.get("title", "AI 생성 여행 일정"),
-                concept="AI가 최적화한 맞춤형 여행 계획",
-                total_days=len(final_daily_plans),
-                daily_start_time="09:00",
-                daily_end_time="21:00",
-                days=final_daily_plans,
-                places=places
-            )
+            logger.info("🔧 [TRAVEL_PLAN_CREATE] TravelPlan 객체 생성 시작")
+            logger.info(f"📊 [TRAVEL_PLAN_PARAMS] total_days={len(final_daily_plans)}, days_count={len(final_daily_plans)}, places_count={len(places)}")
+            
+            try:
+                final_travel_plan = TravelPlan(
+                    title=ai_data.get("title", "AI 생성 여행 일정"),
+                    concept="AI가 최적화한 맞춤형 여행 계획",
+                    total_days=len(final_daily_plans),
+                    daily_start_time="09:00",
+                    daily_end_time="21:00",
+                    days=final_daily_plans,
+                    places=places if isinstance(places, list) else []
+                )
+                logger.info("✅ [TRAVEL_PLAN_SUCCESS] TravelPlan 객체 생성 성공")
+            except Exception as travel_plan_error:
+                logger.error(f"❌ [TRAVEL_PLAN_ERROR] TravelPlan 생성 실패: {travel_plan_error}")
+                logger.error(f"📊 [TRAVEL_PLAN_DEBUG] places 타입: {type(places)}, 길이: {len(places) if hasattr(places, '__len__') else 'No len'}")
+                logger.error(f"📊 [TRAVEL_PLAN_DEBUG] final_daily_plans 타입: {type(final_daily_plans)}, 길이: {len(final_daily_plans)}")
+                raise
             
             logger.info("✅ [CONVERT_SUCCESS] TravelPlan 객체 생성 완료!")
             return final_travel_plan
