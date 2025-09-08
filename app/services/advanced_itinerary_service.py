@@ -2686,8 +2686,7 @@ $places_list
                             # 활동 생성 실패 시 건너뛰기
                             continue
                 
-                # [핵심] DayPlan 생성 - 여기서도 ValidationError 발생 가능
-                try:
+                    # [핵심] DayPlan 생성 - 여기서도 ValidationError 발생 가능
                     logger.info(f"🔧 [DAY_{i+1}_CREATE] DayPlan 객체 생성 시작")
                     logger.info(f"🔧 [DAY_{i+1}_PARAMS] day={day_data.get('day', i+1)}, date={day_data.get('date', f'2024-01-{i+1:02d}')}, activities={len(activities)}")
                     print(f"🔧 [DAY_{i+1}_CREATE] DayPlan 객체 생성 시작")
@@ -2703,24 +2702,14 @@ $places_list
                     logger.info(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
                     print(f"✅ [DAY_{i+1}_COMPLETE] {i+1}일차 계획 완성: {len(activities)}개 활동")
                     
-                except Exception as day_error:
-                    logger.error(f"❌ [DAY_{i+1}_ERROR] {i+1}일차 DayPlan 생성 실패: {day_error}")
-                    logger.error(f"📊 [DAY_{i+1}_ERROR_TYPE] 에러 타입: {type(day_error).__name__}")
-                    logger.error(f"📊 [DAY_{i+1}_ERROR_DATA] 실패한 일차 데이터: {day_data}")
-                    logger.error(f"📊 [DAY_{i+1}_TRACEBACK] 상세 트레이스백:", exc_info=True)
-                    print(f"❌ [DAY_{i+1}_ERROR] {i+1}일차 DayPlan 생성 실패: {day_error}")
-                    print(f"📊 [DAY_{i+1}_ERROR_TYPE] 에러 타입: {type(day_error).__name__}")
-                    # DayPlan 생성 실패 시 건너뛰기
+                except Exception as day_loop_error:
+                    logger.error(f"❌ [DAY_LOOP_ERROR] {i+1}일차 전체 처리에서 심각한 오류: {day_loop_error}")
+                    logger.error(f"📊 [DAY_LOOP_ERROR_TYPE] 에러 타입: {type(day_loop_error).__name__}")
+                    logger.error(f"📊 [DAY_LOOP_ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
+                    print(f"❌ [DAY_LOOP_ERROR] {i+1}일차 전체 처리에서 심각한 오류: {day_loop_error}")
+                    print(f"📊 [DAY_LOOP_ERROR_TYPE] 에러 타입: {type(day_loop_error).__name__}")
+                    # 해당 일차 처리 실패 시 다음 일차로 넘어가기
                     continue
-                    
-            except Exception as loop_error:
-                logger.error(f"❌ [CONVERSION_LOOP_ERROR] 일정 변환 루프에서 심각한 오류: {loop_error}")
-                logger.error(f"📊 [LOOP_ERROR_TYPE] 에러 타입: {type(loop_error).__name__}")
-                logger.error(f"📊 [LOOP_ERROR_TRACEBACK] 상세 트레이스백:", exc_info=True)
-                print(f"❌ [CONVERSION_LOOP_ERROR] 일정 변환 루프에서 심각한 오류: {loop_error}")
-                print(f"📊 [LOOP_ERROR_TYPE] 에러 타입: {type(loop_error).__name__}")
-                # 루프 에러 시 빈 daily_plans로 계속 진행
-                daily_plans = []
             
             # [핵심] TravelPlan 생성 - 최종 단계에서 ValidationError 발생 가능
             logger.info("🔧 [TRAVEL_PLAN_CREATE] TravelPlan 객체 생성 시작")
