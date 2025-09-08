@@ -2666,44 +2666,6 @@ $places_list
             
             logger.info(f"✅ [CONVERT_SUCCESS] TravelPlan 변환 완료: {len(daily_plans)}일 일정")
             return travel_plan
-                
-                if not days_data:
-                    logger.error("❌ [NO_DAYS_DATA] 일정 데이터를 찾을 수 없음")
-                    raise ValueError("AI 응답에서 일정 데이터를 찾을 수 없습니다")
-                
-                # 폴백 처리
-                daily_plans = []
-                for i, day_data in enumerate(days_data):
-                    activities = []
-                    activities_data = day_data.get('activities', day_data.get('schedule', []))
-                    
-                    for activity_data in activities_data:
-                        activity = ActivityDetail(
-                            time=activity_data.get("time", activity_data.get("start_time", "09:00")),
-                            place_name=activity_data.get("place_name", activity_data.get("location", {}).get("name", "장소")),
-                            category=activity_data.get("category", "관광"),
-                            duration_minutes=activity_data.get("duration_minutes", 120),
-                            description=activity_data.get("description", "활동"),
-                            travel_time_minutes=15
-                        )
-                        activities.append(activity)
-                    
-                    day_plan = DayPlan(
-                        day=i + 1,
-                        date=f"2024-01-{i+1:02d}",
-                        activities=activities
-                    )
-                    daily_plans.append(day_plan)
-                
-                return TravelPlan(
-                    total_days=len(daily_plans),
-                    daily_start_time="09:00",
-                    daily_end_time="21:00",
-                    days=daily_plans,
-                    title="AI 생성 여행 일정",
-                    concept="AI가 최적화한 맞춤형 여행 계획",
-                    places=places
-                )
             
         except Exception as e:
             logger.error(f"❌ [CONVERT_ERROR] AI 응답 변환 실패: {e}")
