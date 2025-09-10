@@ -146,15 +146,21 @@ class GeocodingService:
             lng = result.get("lng")
             
             if lat is not None and lng is not None:
-                # 좌표를 소수점 2자리로 반올림하여 근접한 위치를 동일하게 처리
-                location_key = (round(lat, 2), round(lng, 2))
+                # 좌표를 소수점 1자리로 반올림하여 더 관대하게 근접한 위치를 동일하게 처리
+                # 0.1도는 약 10km 정도의 범위로, 같은 도시 내 다른 지점들을 하나로 묶음
+                location_key = (round(lat, 1), round(lng, 1))
                 
-                if location_key not in seen_locations:
-                    seen_locations.add(location_key)
+                # 추가로 행정구역명도 확인하여 동일한 도시면 중복으로 처리
+                address = result.get("formatted_address", "")
+                city_name = self._extract_city_name(address)
+                combined_key = (location_key, city_name)
+                
+                if combined_key not in seen_locations:
+                    seen_locations.add(combined_key)
                     unique_results.append(result)
-                    logger.info(f"  ✅ [UNIQUE_LOCATION] 고유 위치 추가: {result.get('formatted_address')} ({lat:.2f}, {lng:.2f})")
+                    logger.info(f"  ✅ [UNIQUE_LOCATION] 고유 위치 추가: {result.get('formatted_address')} ({lat:.1f}, {lng:.1f}) - {city_name}")
                 else:
-                    logger.info(f"  🔄 [DUPLICATE_LOCATION] 중복 위치 제거: {result.get('formatted_address')} ({lat:.2f}, {lng:.2f})")
+                    logger.info(f"  🔄 [DUPLICATE_LOCATION] 중복 위치 제거: {result.get('formatted_address')} ({lat:.1f}, {lng:.1f}) - {city_name}")
             else:
                 # 좌표가 없는 경우 formatted_address로 중복 확인
                 address = result.get("formatted_address", "")
@@ -226,3 +232,20 @@ class GeocodingService:
             options.append(option)
         
         return options
+
+    def _extract_city_name(self, formatted_address: str) -> str:
+        """
+        formatted_address에서 도시명을 추출합니다.
+        """
+        if not formatted_address:
+            return ""
+        
+        # 한국 주소 패턴: "대한민국 서울특별시" 또는 "대한민국 부산광역시"
+        parts = formatted_address.split()
+        
+        for part in parts:
+            if any(suffix in part for suffix in ["특별시", "광역시", "시", "도", "군", "구"]):
+                return part
+        
+        # 패턴이 맞지 않으면 전체 주소 반환
+        return formatted_address
