@@ -178,7 +178,7 @@ async def test_places_new_api(api_key: str) -> Dict[str, Any]:
     return result
 
 async def test_directions_api(api_key: str) -> Dict[str, Any]:
-    """Directions API 테스트"""
+    """Directions API 테스트 (HTTP 직접 호출)"""
     result = {
         "api_name": "Directions API",
         "success": False,
@@ -214,9 +214,13 @@ async def test_directions_api(api_key: str) -> Dict[str, Any]:
                     route = data["routes"][0]
                     leg = route["legs"][0]
                     result["sample_result"] = f"{leg['duration']['text']}, {leg['distance']['text']}"
+                elif data.get("status") == "REQUEST_DENIED":
+                    result["error_message"] = f"REQUEST_DENIED: {data.get('error_message', 'API 키 제한 또는 권한 문제')}"
+                else:
+                    result["error_message"] = f"API Status: {data.get('status')}, Message: {data.get('error_message', 'N/A')}"
                 
             else:
-                result["error_message"] = f"HTTP {response.status_code}"
+                result["error_message"] = f"HTTP {response.status_code}: {response.text[:200]}"
                 
     except Exception as e:
         result["error_message"] = str(e)

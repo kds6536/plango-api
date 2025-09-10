@@ -3,7 +3,7 @@ Google Directions API 서비스
 실제 장소 간 이동 시간과 거리를 계산합니다.
 """
 
-import googlemaps
+import httpx
 from typing import Dict, Any, Optional, List
 from app.config import settings
 from app.utils.logger import get_logger
@@ -35,16 +35,9 @@ class GoogleDirectionsService:
             logger.info(f"🔑 [DIRECTIONS_API_KEY_PREFIX] 키 앞 20자: {self.api_key[:20]}...")
         else:
             logger.error("❌ [DIRECTIONS_NO_API_KEY] 사용 가능한 API 키가 없습니다")
-        self.gmaps = None
         
-        if self.api_key:
-            try:
-                self.gmaps = googlemaps.Client(key=self.api_key)
-                logger.info("✅ Google Directions API 클라이언트 초기화 성공")
-            except Exception as e:
-                logger.error(f"💥 Google Directions API 클라이언트 초기화 실패: {e}")
-        else:
-            logger.warning("⚠️ MAPS_PLATFORM_API_KEY_BACKEND가 설정되지 않았습니다.")
+        # 🚨 [핵심 수정] googlemaps 라이브러리 대신 직접 HTTP 호출 사용
+        logger.info("✅ Google Directions API 서비스 초기화 성공 (HTTP 직접 호출 방식)")
 
     async def get_directions(
         self, 
@@ -67,52 +60,80 @@ class GoogleDirectionsService:
         Returns:
             경로 정보 딕셔너리 또는 None (실패 시)
         """
-        if not self.gmaps:
-            logger.error("Google Directions API 클라이언트가 초기화되지 않았습니다.")
+        if not self.api_key:
+            logger.error("Google Directions API 키가 설정되지 않았습니다.")
             return None
             
         try:
             logger.info(f"🚗 [DIRECTIONS_API] 경로 계산: {origin} → {destination} ({mode})")
             
-            # Google Directions API 호출
-            directions_result = self.gmaps.directions(
-                origin=origin,
-                destination=destination,
-                mode=mode,
-                language=language,
-                departure_time=departure_time
-            )
-            
-            if not directions_result:
-                logger.warning(f"⚠️ 경로를 찾을 수 없습니다: {origin} → {destination}")
-                return None
-                
-            # 첫 번째 경로의 첫 번째 구간 정보 추출
-            route = directions_result[0]
-            leg = route['legs'][0]
-            
-            result = {
-                "distance": {
-                    "text": leg['distance']['text'],
-                    "value": leg['distance']['value']  # 미터 단위
-                },
-                "duration": {
-                    "text": leg['duration']['text'],
-                    "value": leg['duration']['value']  # 초 단위
-                },
-                "start_address": leg['start_address'],
-                "end_address": leg['end_address'],
-                "steps": len(leg['steps']),
-                "mode": mode
+            # 🚨 [핵심 수정] HTTP 직접 호출로 변경
+            url = "https://maps.googleapis.com/maps/api/directions/json"
+            params = {
+                "origin": origin,
+                "destination": destination,
+                "mode": mode,
+                "language": language,
+                "key": self.api_key
             }
             
-            duration_minutes = round(leg['duration']['value'] / 60)
-            distance_km = round(leg['distance']['value'] / 1000, 1)
+            if departure_time:
+                params["departure_time"] = departure_time
             
-            logger.info(f"✅ 경로 계산 완료: {distance_km}km, {duration_minutes}분")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+                
+                directions_result = response.json()
+                
+                if directions_result.get("status") != "OK":
+                    logger.warning(f"⚠️ Directions API 오류: {directions_result.get('status')}")
+                    logger.warning(f"📝 오류 메시지: {directions_result.get('error_message', 'N/A')}")
+                    return None
+                
+                routes = directions_result.get("routes", [])
+                if not routes:
+                    logger.warning(f"⚠️ 경로를 찾을 수 없습니다: {origin} → {destination}")
+                    return None
+                    
+                # 첫 번째 경로의 첫 번째 구간 정보 추출
+                route = routes[0]
+                legs = route.get("legs", [])
+                if not legs:
+                    logger.warning("⚠️ 경로 구간 정보가 없습니다")
+                    return None
+                
+                leg = legs[0]
+                
+                result = {
+                    "distance": {
+                        "text": leg.get("distance", {}).get("text", "N/A"),
+                        "value": leg.get("distance", {}).get("value", 0)  # 미터 단위
+                    },
+                    "duration": {
+                        "text": leg.get("duration", {}).get("text", "N/A"),
+                        "value": leg.get("duration", {}).get("value", 0)  # 초 단위
+                    },
+                    "start_address": leg.get("start_address", ""),
+                    "end_address": leg.get("end_address", ""),
+                    "steps": len(leg.get("steps", [])),
+                    "mode": mode
+                }
+                
+                duration_minutes = round(leg.get("duration", {}).get("value", 0) / 60)
+                distance_km = round(leg.get("distance", {}).get("value", 0) / 1000, 1)
+                
+                logger.info(f"✅ 경로 계산 완료: {distance_km}km, {duration_minutes}분")
+                
+                return result
             
-            return result
-            
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ [DIRECTIONS_HTTP_ERROR] HTTP 오류: {e.response.status_code}")
+            logger.error(f"📝 [ERROR_RESPONSE] 응답 내용: {e.response.text}")
+            return None
+        except httpx.TimeoutException:
+            logger.error("⏰ [DIRECTIONS_TIMEOUT] Directions API 요청 시간 초과")
+            return None
         except Exception as e:
             logger.error(f"💥 Directions API 호출 중 오류 발생: {e}")
             return None
@@ -136,28 +157,44 @@ class GoogleDirectionsService:
         Returns:
             거리/시간 매트릭스 또는 None (실패 시)
         """
-        if not self.gmaps:
-            logger.error("Google Directions API 클라이언트가 초기화되지 않았습니다.")
+        if not self.api_key:
+            logger.error("Google Distance Matrix API 키가 설정되지 않았습니다.")
             return None
             
         try:
             logger.info(f"🚗 [DISTANCE_MATRIX] 매트릭스 계산: {len(origins)}개 출발지 → {len(destinations)}개 도착지")
             
-            # Google Distance Matrix API 호출
-            matrix_result = self.gmaps.distance_matrix(
-                origins=origins,
-                destinations=destinations,
-                mode=mode,
-                language=language
-            )
+            # 🚨 [핵심 수정] HTTP 직접 호출로 변경
+            url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+            params = {
+                "origins": "|".join(origins),
+                "destinations": "|".join(destinations),
+                "mode": mode,
+                "language": language,
+                "key": self.api_key
+            }
             
-            if matrix_result['status'] != 'OK':
-                logger.warning(f"⚠️ Distance Matrix API 오류: {matrix_result['status']}")
-                return None
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
                 
-            logger.info("✅ Distance Matrix 계산 완료")
-            return matrix_result
+                matrix_result = response.json()
+                
+                if matrix_result.get('status') != 'OK':
+                    logger.warning(f"⚠️ Distance Matrix API 오류: {matrix_result.get('status')}")
+                    logger.warning(f"📝 오류 메시지: {matrix_result.get('error_message', 'N/A')}")
+                    return None
+                    
+                logger.info("✅ Distance Matrix 계산 완료")
+                return matrix_result
             
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ [MATRIX_HTTP_ERROR] HTTP 오류: {e.response.status_code}")
+            logger.error(f"📝 [ERROR_RESPONSE] 응답 내용: {e.response.text}")
+            return None
+        except httpx.TimeoutException:
+            logger.error("⏰ [MATRIX_TIMEOUT] Distance Matrix API 요청 시간 초과")
+            return None
         except Exception as e:
             logger.error(f"💥 Distance Matrix API 호출 중 오류 발생: {e}")
             return None

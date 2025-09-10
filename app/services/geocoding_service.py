@@ -118,6 +118,7 @@ class GeocodingService:
     def is_ambiguous_location(self, results: List[Dict[str, Any]]) -> bool:
         """
         지오코딩 결과가 동명 지역인지 판단합니다.
+        중복된 결과는 제거하고 실제 서로 다른 지역만 동명 지역으로 판단합니다.
         """
         if len(results) <= 1:
             logger.info(f"🔍 [AMBIGUOUS_CHECK] 결과 {len(results)}개 - 동명 지역 아님")
@@ -137,14 +138,43 @@ class GeocodingService:
             else:
                 logger.info(f"  🏢 [NON_ADMIN_RESULT_{i+1}] 비행정구역 결과: {result.get('formatted_address')} (타입: {types})")
         
-        is_ambiguous = len(administrative_results) >= 2
+        # 🔧 중복 제거: 동일한 지역의 중복 결과 필터링
+        unique_results = []
+        seen_locations = set()
+        
+        for result in administrative_results:
+            # 좌표 기반으로 중복 확인 (소수점 2자리까지만 비교하여 근접한 위치는 동일하게 처리)
+            lat = result.get("lat")
+            lng = result.get("lng")
+            
+            if lat is not None and lng is not None:
+                # 좌표를 소수점 2자리로 반올림하여 근접한 위치를 동일하게 처리
+                location_key = (round(lat, 2), round(lng, 2))
+                
+                if location_key not in seen_locations:
+                    seen_locations.add(location_key)
+                    unique_results.append(result)
+                    logger.info(f"  ✅ [UNIQUE_LOCATION] 고유 위치 추가: {result.get('formatted_address')} ({lat:.2f}, {lng:.2f})")
+                else:
+                    logger.info(f"  🔄 [DUPLICATE_LOCATION] 중복 위치 제거: {result.get('formatted_address')} ({lat:.2f}, {lng:.2f})")
+            else:
+                # 좌표가 없는 경우 formatted_address로 중복 확인
+                address = result.get("formatted_address", "")
+                if address not in seen_locations:
+                    seen_locations.add(address)
+                    unique_results.append(result)
+                    logger.info(f"  ✅ [UNIQUE_ADDRESS] 고유 주소 추가: {address}")
+                else:
+                    logger.info(f"  🔄 [DUPLICATE_ADDRESS] 중복 주소 제거: {address}")
+        
+        is_ambiguous = len(unique_results) >= 2
         
         if is_ambiguous:
-            logger.warning(f"⚠️ [AMBIGUOUS_DETECTED] 동명 지역 감지! 행정구역 결과 {len(administrative_results)}개")
-            for i, result in enumerate(administrative_results):
+            logger.warning(f"⚠️ [AMBIGUOUS_DETECTED] 실제 동명 지역 감지! 고유 결과 {len(unique_results)}개")
+            for i, result in enumerate(unique_results):
                 logger.warning(f"  🏛️ [OPTION_{i+1}] {result.get('formatted_address')}")
         else:
-            logger.info(f"✅ [NOT_AMBIGUOUS] 동명 지역 아님 (행정구역 결과 {len(administrative_results)}개)")
+            logger.info(f"✅ [NOT_AMBIGUOUS] 동명 지역 아님 (중복 제거 후 고유 결과 {len(unique_results)}개)")
         
         return is_ambiguous
 
