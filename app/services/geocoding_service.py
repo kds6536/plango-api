@@ -115,16 +115,14 @@ class GeocodingService:
             # 예외를 다시 발생시켜서 상위에서 폴백 처리할 수 있도록 함
             raise Exception(f"Geocoding API 실패: {str(e)}")
 
-    def is_ambiguous_location(self, results: List[Dict[str, Any]]) -> bool:
+    def remove_duplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        지오코딩 결과가 동명 지역인지 판단합니다.
-        중복된 결과는 제거하고 실제 서로 다른 지역만 동명 지역으로 판단합니다.
+        지오코딩 결과에서 중복된 결과를 제거합니다.
         """
         if len(results) <= 1:
-            logger.info(f"🔍 [AMBIGUOUS_CHECK] 결과 {len(results)}개 - 동명 지역 아님")
-            return False
+            return results
         
-        logger.info(f"🔍 [AMBIGUOUS_CHECK] 총 {len(results)}개 결과에서 동명 지역 여부 확인 중...")
+        logger.info(f"🔧 [DUPLICATE_REMOVAL] 총 {len(results)}개 결과에서 중복 제거 시작...")
         
         # 행정구역 레벨의 결과만 필터링 (도시, 구, 군 등)
         administrative_results = []
@@ -138,7 +136,7 @@ class GeocodingService:
             else:
                 logger.info(f"  🏢 [NON_ADMIN_RESULT_{i+1}] 비행정구역 결과: {result.get('formatted_address')} (타입: {types})")
         
-        # 🔧 중복 제거: 동일한 지역의 중복 결과 필터링
+        # 중복 제거: 동일한 지역의 중복 결과 필터링
         unique_results = []
         seen_locations = set()
         
@@ -166,6 +164,23 @@ class GeocodingService:
                     logger.info(f"  ✅ [UNIQUE_ADDRESS] 고유 주소 추가: {address}")
                 else:
                     logger.info(f"  🔄 [DUPLICATE_ADDRESS] 중복 주소 제거: {address}")
+        
+        logger.info(f"🔧 [DUPLICATE_REMOVAL] 중복 제거 완료: {len(results)}개 → {len(unique_results)}개")
+        return unique_results
+
+    def is_ambiguous_location(self, results: List[Dict[str, Any]]) -> bool:
+        """
+        지오코딩 결과가 동명 지역인지 판단합니다.
+        중복된 결과는 제거하고 실제 서로 다른 지역만 동명 지역으로 판단합니다.
+        """
+        if len(results) <= 1:
+            logger.info(f"🔍 [AMBIGUOUS_CHECK] 결과 {len(results)}개 - 동명 지역 아님")
+            return False
+        
+        logger.info(f"🔍 [AMBIGUOUS_CHECK] 총 {len(results)}개 결과에서 동명 지역 여부 확인 중...")
+        
+        # 중복 제거된 결과로 동명 지역 여부 판단
+        unique_results = self.remove_duplicate_results(results)
         
         is_ambiguous = len(unique_results) >= 2
         

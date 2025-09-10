@@ -165,7 +165,9 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 
                 # 🚨 [핵심] 동명 지역이 있는 경우 즉시 선택지 반환 (Plan A 실행 전에)
                 if geocoding_service.is_ambiguous_location(geocoding_results):
-                    options = geocoding_service.format_location_options(geocoding_results)
+                    # 중복 제거된 결과로 선택지 생성
+                    unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
+                    options = geocoding_service.format_location_options(unique_results)
                     logger.info(f"⚠️ [AMBIGUOUS_LOCATION] 동명 지역이 감지되어 사용자에게 선택지를 반환합니다: {request.city} - {len(options)}개 선택지")
                     
                     return JSONResponse(
@@ -437,7 +439,9 @@ async def test_ambiguous_location():
             
             # 동명 지역 확인
             if geocoding_service.is_ambiguous_location(geocoding_results):
-                options = geocoding_service.format_location_options(geocoding_results)
+                # 중복 제거된 결과로 선택지 생성
+                unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
+                options = geocoding_service.format_location_options(unique_results)
                 return JSONResponse(
                     status_code=400,
                     content={
