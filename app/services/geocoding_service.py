@@ -136,40 +136,23 @@ class GeocodingService:
             else:
                 logger.info(f"  🏢 [NON_ADMIN_RESULT_{i+1}] 비행정구역 결과: {result.get('formatted_address')} (타입: {types})")
         
-        # 중복 제거: 동일한 지역의 중복 결과 필터링
+        # 스마트 중복 제거: 주소 패턴 분석으로 동명 지역 vs 같은 지역 구분
         unique_results = []
-        seen_locations = set()
+        seen_base_cities = set()
         
         for result in administrative_results:
-            # 좌표 기반으로 중복 확인 (소수점 2자리까지만 비교하여 근접한 위치는 동일하게 처리)
-            lat = result.get("lat")
-            lng = result.get("lng")
+            address = result.get("formatted_address", "")
+            base_city = self._extract_base_city_name(address)
             
-            if lat is not None and lng is not None:
-                # 좌표를 소수점 1자리로 반올림하여 더 관대하게 근접한 위치를 동일하게 처리
-                # 0.1도는 약 10km 정도의 범위로, 같은 도시 내 다른 지점들을 하나로 묶음
-                location_key = (round(lat, 1), round(lng, 1))
-                
-                # 추가로 행정구역명도 확인하여 동일한 도시면 중복으로 처리
-                address = result.get("formatted_address", "")
-                city_name = self._extract_city_name(address)
-                combined_key = (location_key, city_name)
-                
-                if combined_key not in seen_locations:
-                    seen_locations.add(combined_key)
-                    unique_results.append(result)
-                    logger.info(f"  ✅ [UNIQUE_LOCATION] 고유 위치 추가: {result.get('formatted_address')} ({lat:.1f}, {lng:.1f}) - {city_name}")
-                else:
-                    logger.info(f"  🔄 [DUPLICATE_LOCATION] 중복 위치 제거: {result.get('formatted_address')} ({lat:.1f}, {lng:.1f}) - {city_name}")
+            logger.info(f"  🔍 [CITY_ANALYSIS] 주소: {address}")
+            logger.info(f"  🔍 [CITY_ANALYSIS] 기본 도시명: {base_city}")
+            
+            if base_city not in seen_base_cities:
+                seen_base_cities.add(base_city)
+                unique_results.append(result)
+                logger.info(f"  ✅ [UNIQUE_CITY] 고유 도시 추가: {base_city}")
             else:
-                # 좌표가 없는 경우 formatted_address로 중복 확인
-                address = result.get("formatted_address", "")
-                if address not in seen_locations:
-                    seen_locations.add(address)
-                    unique_results.append(result)
-                    logger.info(f"  ✅ [UNIQUE_ADDRESS] 고유 주소 추가: {address}")
-                else:
-                    logger.info(f"  🔄 [DUPLICATE_ADDRESS] 중복 주소 제거: {address}")
+                logger.info(f"  🔄 [DUPLICATE_CITY] 중복 도시 제거: {base_city}")
         
         logger.info(f"🔧 [DUPLICATE_REMOVAL] 중복 제거 완료: {len(results)}개 → {len(unique_results)}개")
         return unique_results
@@ -248,4 +231,77 @@ class GeocodingService:
                 return part
         
         # 패턴이 맞지 않으면 전체 주소 반환
+        return formatted_address
+
+    def _extract_base_city_name(self, formatted_address: str) -> str:
+        """
+        formatted_address에서 기본 도시명을 추출합니다.
+        동명 지역 판단을 위한 핵심 로직:
+        - "광주광역시" → "광주" 
+        - "경기도 광주시" → "광주"
+        - "서울특별시" → "서울"
+        - "서울특별시 서울특별시" → "서울" (중복 제거)
+        """
+        if not formatted_address:
+            return ""
+        
+        logger.info(f"    🔍 [BASE_CITY_EXTRACT] 원본 주소: {formatted_address}")
+        
+        # 한국 주소 패턴 처리
+        if "대한민국" in formatted_address:
+            return self._extract_korean_base_city(formatted_address)
+        
+        # 해외 주소 패턴 처리
+        return self._extract_international_base_city(formatted_address)
+
+    def _extract_korean_base_city(self, formatted_address: str) -> str:
+        """
+        한국 주소에서 기본 도시명 추출
+        """
+        parts = formatted_address.split()
+        
+        for part in parts:
+            # 행정구역 접미사 제거하여 기본 도시명 추출
+            if "특별시" in part:
+                base_name = part.replace("특별시", "")
+                logger.info(f"    🏛️ [KOREAN_CITY] 특별시 감지: {part} → {base_name}")
+                return base_name
+            elif "광역시" in part:
+                base_name = part.replace("광역시", "")
+                logger.info(f"    🏛️ [KOREAN_CITY] 광역시 감지: {part} → {base_name}")
+                return base_name
+            elif part.endswith("시"):
+                # "광주시", "수원시" 등
+                base_name = part.replace("시", "")
+                logger.info(f"    🏛️ [KOREAN_CITY] 시 감지: {part} → {base_name}")
+                return base_name
+            elif part.endswith("도"):
+                # "경기도" 등은 건너뛰고 다음 도시명 찾기
+                continue
+        
+        # 패턴을 찾지 못한 경우 전체 주소 반환
+        logger.info(f"    ⚠️ [KOREAN_CITY] 패턴 미발견, 전체 주소 사용: {formatted_address}")
+        return formatted_address
+
+    def _extract_international_base_city(self, formatted_address: str) -> str:
+        """
+        해외 주소에서 기본 도시명 추출
+        예: "Paris, France" → "Paris"
+        예: "Springfield, IL, USA" → "Springfield"
+        """
+        # 쉼표로 분리된 첫 번째 부분이 보통 도시명
+        parts = formatted_address.split(",")
+        if parts:
+            base_city = parts[0].strip()
+            logger.info(f"    🌍 [INTERNATIONAL_CITY] 해외 도시 감지: {formatted_address} → {base_city}")
+            return base_city
+        
+        # 쉼표가 없는 경우 공백으로 분리된 첫 번째 단어
+        words = formatted_address.split()
+        if words:
+            base_city = words[0]
+            logger.info(f"    🌍 [INTERNATIONAL_CITY] 해외 도시 (단어): {formatted_address} → {base_city}")
+            return base_city
+        
+        logger.info(f"    ⚠️ [INTERNATIONAL_CITY] 패턴 미발견: {formatted_address}")
         return formatted_address
