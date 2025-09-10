@@ -373,8 +373,8 @@ async def test_geocoding_failure():
             budget_level="중간"
         )
         
-        # 실제 추천 생성 호출 (Geocoding 실패 예상)
-        response = await generate_place_recommendations(test_request)
+        # 실제 추천 생성 호출 (Geocoding 실패 예상) - 순환 참조 방지를 위해 직접 폴백 호출
+        response = await generate_fallback_recommendations(test_request)
         
         return {
             "status": "success",
@@ -406,7 +406,39 @@ async def test_ambiguous_location():
             budget_level="중간"
         )
         
-        response = await generate_place_recommendations(test_request)
+        # Geocoding 서비스 직접 테스트
+        geocoding_service = GeocodingService()
+        location_query = f"{test_request.city}, {test_request.country}"
+        
+        try:
+            geocoding_results = await geocoding_service.get_geocode_results(location_query)
+            
+            # 동명 지역 확인
+            if geocoding_service.is_ambiguous_location(geocoding_results):
+                options = geocoding_service.format_location_options(geocoding_results)
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error_code": "AMBIGUOUS_LOCATION",
+                        "message": f"'{test_request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
+                        "options": options
+                    }
+                )
+            else:
+                return {
+                    "status": "success",
+                    "message": "동명 지역이 아닙니다.",
+                    "results_count": len(geocoding_results),
+                    "results": geocoding_results
+                }
+                
+        except Exception as e:
+            logger.error(f"Geocoding 테스트 실패: {e}")
+            return {
+                "status": "geocoding_failed",
+                "message": "Geocoding API 호출 실패",
+                "error": str(e)
+            }
         
         return {
             "status": "success",

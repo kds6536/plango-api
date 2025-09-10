@@ -13,19 +13,26 @@ logger = logging.getLogger(__name__)
 class GeocodingService:
     def __init__(self, api_key: Optional[str] = None):
         """GeocodingService 초기화"""
-        backend_key = getattr(settings, "MAPS_PLATFORM_API_KEY_BACKEND", None)
-        google_key = getattr(settings, "GOOGLE_MAPS_API_KEY", None)
+        from app.services.api_key_manager import api_key_manager
         
-        self.api_key = api_key or backend_key or google_key
+        # API 키 매니저를 통해 최적의 키 선택
+        if api_key:
+            self.api_key = api_key
+            key_source = "provided"
+        else:
+            self.api_key = api_key_manager.get_best_key_for_service("geocoding")
+            key_source = "api_key_manager"
         
         # 🚨 디버깅: 실제 사용되는 키 로깅
         if self.api_key:
-            key_source = "provided" if api_key else ("BACKEND" if backend_key else "GOOGLE")
             logger.info(f"🔑 [GEOCODING_API_KEY_SOURCE] 사용 중인 키 소스: {key_source}")
             logger.info(f"🔑 [GEOCODING_API_KEY_PREFIX] 키 앞 20자: {self.api_key[:20]}...")
         else:
             logger.error("❌ [GEOCODING_NO_API_KEY] 사용 가능한 API 키가 없습니다")
+        
         self.gmaps = None
+        self.api_key_manager = api_key_manager
+        
         if self.api_key:
             try:
                 self.gmaps = googlemaps.Client(key=self.api_key)
@@ -33,7 +40,7 @@ class GeocodingService:
             except Exception as e:
                 logger.error(f"💥 Google Geocoding 클라이언트 초기화 실패: {e}")
         else:
-            logger.warning("⚠️ MAPS_PLATFORM_API_KEY_BACKEND가 설정되지 않았습니다.")
+            logger.warning("⚠️ 사용 가능한 API 키가 없습니다.")
 
     async def get_geocode_results(self, location_query: str) -> List[Dict[str, Any]]:
         """

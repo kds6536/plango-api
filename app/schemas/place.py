@@ -87,8 +87,9 @@ class PlaceRecommendationRequest(BaseModel):
     region: Optional[str] = Field(None, description="지역/주/도/광역시 (선택)")
     total_duration: int = Field(..., description="총 여행 기간 (일)")
     travelers_count: int = Field(..., description="여행자 수")
-    budget_range: str = Field(..., description="예산 범위")
-    travel_style: List[str] = Field(default_factory=list, description="여행 스타일 목록")
+    budget_range: Optional[str] = Field(None, description="예산 범위")
+    budget_level: Optional[str] = Field("중간", description="예산 수준 (낮음/중간/높음)")
+    travel_style: Union[List[str], str] = Field(default="관광", description="여행 스타일")
     special_requests: Optional[str] = Field(None, description="특별 요청사항")
     language_code: Optional[str] = Field("ko", description="검색/결과 언어 코드 (예: ko, ja, en, zh-CN, id, vi)")
     

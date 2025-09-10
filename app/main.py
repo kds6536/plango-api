@@ -94,6 +94,10 @@ app.include_router(diagnosis.router)
 from app.routers import admin_dashboard
 app.include_router(admin_dashboard.router)
 
+# API 진단 라우터 추가
+from app.routers import api_diagnosis
+app.include_router(api_diagnosis.router)
+
 # # 데이터베이스 및 테이블 생성
 # @app.on_event("startup")
 # def on_startup():
