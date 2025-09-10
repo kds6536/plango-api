@@ -42,36 +42,31 @@ FALLBACK_RECOMMENDATIONS = {
 
 async def send_admin_notification(subject: str, error_type: str, error_details: str, user_request: Dict[str, Any]):
     """
-    관리자에게 이메일 알림을 발송합니다.
+    관리자에게 실제 이메일 알림을 발송합니다.
     """
     try:
         logger.info(f"📧 [EMAIL_NOTIFICATION_START] 관리자 알림 발송 시작: {subject}")
         
-        # 이메일 내용 구성
-        email_body = f"""
-Plango 시스템 알림
-
-발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-오류 유형: {error_type}
-오류 상세: {error_details}
-
-사용자 요청 정보:
-{json.dumps(user_request, indent=2, ensure_ascii=False)}
-
-이 알림은 자동으로 발송되었습니다.
-"""
+        # 실제 이메일 서비스 사용
+        from app.services.email_service import email_service
         
-        # 실제 이메일 발송 로직 (현재는 로깅만)
-        # TODO: 실제 이메일 서비스 연동 필요
-        logger.info(f"📧 [EMAIL_CONTENT] 제목: {subject}")
-        logger.info(f"📧 [EMAIL_CONTENT] 내용: {email_body}")
+        success = await email_service.send_admin_notification(
+            subject=subject,
+            error_type=error_type,
+            error_details=error_details,
+            user_request=user_request
+        )
         
-        # 임시로 성공 처리 (실제 이메일 서비스 연동 후 수정 필요)
-        logger.info("✅ [EMAIL_NOTIFICATION_SUCCESS] 관리자 알림 발송 완료")
+        if success:
+            logger.info("✅ [EMAIL_NOTIFICATION_SUCCESS] 관리자 이메일 발송 완료")
+        else:
+            logger.error("❌ [EMAIL_NOTIFICATION_FAILED] 관리자 이메일 발송 실패")
+        
+        return success
         
     except Exception as e:
-        logger.error(f"❌ [EMAIL_NOTIFICATION_ERROR] 관리자 알림 발송 실패: {e}")
-        raise
+        logger.error(f"❌ [EMAIL_NOTIFICATION_ERROR] 관리자 알림 발송 중 예외: {e}")
+        return False
 
 async def generate_fallback_recommendations(request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
     """
@@ -94,14 +89,27 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest)
         
         logger.info(f"🔄 [FALLBACK_PLACES] {normalized_city}에 대한 폴백 장소 {len(fallback_places)}개 반환")
         
-        # PlaceRecommendationResponse 형식으로 반환
+        # 🚨 [핵심] 프론트엔드 호환성을 위해 정상 응답과 동일한 구조로 반환
+        # recommendations 필드를 카테고리별로 구성
+        recommendations_by_category = {}
+        for place in fallback_places:
+            category = place["category"]
+            if category not in recommendations_by_category:
+                recommendations_by_category[category] = []
+            recommendations_by_category[category].append(place)
+        
         response = PlaceRecommendationResponse(
+            success=True,
             city_id=0,  # 폴백 시에는 임시 ID
             city_name=request.city,
             country_name=request.country,
+            main_theme="폴백 추천",
+            recommendations=recommendations_by_category,  # 🚨 [핵심] 프론트엔드가 기대하는 구조
+            places=fallback_places,  # 추가 호환성
             previously_recommended_count=0,
             newly_recommended_count=len(fallback_places),
-            places=fallback_places,
+            status="FALLBACK_SUCCESS",  # 폴백 성공 상태
+            message="일시적인 문제로 기본 추천을 제공합니다.",
             is_fallback=True,  # 폴백 응답임을 표시
             fallback_reason="Plan A 시스템 실패로 인한 폴백 응답"
         )
@@ -142,21 +150,20 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
 
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
 
-        # --- [핵심 로그 추가] ---
+        # 🚨 [핵심 수정] 1단계: Geocoding을 가장 먼저 실행 (동명 지역 처리)
         logger.info("📍 [GEOCODING_START] 동명 지역 확인을 위해 Geocoding API 호출을 시작합니다.")
         
-        # 1. 동명 지역 확인 (place_id가 명시적으로 제공되지 않은 경우에만)
-        geocoding_success = False
+        geocoding_results = None
         if not hasattr(request, 'place_id') or not request.place_id:
-            geocoding_service = GeocodingService()
-            location_query = f"{request.city}, {request.country}"
-            logger.info(f"🌍 [GEOCODING_QUERY] 검색 쿼리: '{location_query}'")
-            
             try:
+                geocoding_service = GeocodingService()
+                location_query = f"{request.city}, {request.country}"
+                logger.info(f"🌍 [GEOCODING_QUERY] 검색 쿼리: '{location_query}'")
+                
                 geocoding_results = await geocoding_service.get_geocode_results(location_query)
                 logger.info(f"✅ [GEOCODING_SUCCESS] Geocoding 결과 {len(geocoding_results)}개를 찾았습니다.")
                 
-                # 2. 동명 지역이 있는 경우 선택지 반환
+                # 🚨 [핵심] 동명 지역이 있는 경우 즉시 선택지 반환 (Plan A 실행 전에)
                 if geocoding_service.is_ambiguous_location(geocoding_results):
                     options = geocoding_service.format_location_options(geocoding_results)
                     logger.info(f"⚠️ [AMBIGUOUS_LOCATION] 동명 지역이 감지되어 사용자에게 선택지를 반환합니다: {request.city} - {len(options)}개 선택지")
@@ -170,18 +177,15 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                         }
                     )
                 
-                logger.info("✅ [GEOCODING_PASS] 동명 지역 문제가 없어, 정상적인 추천 생성을 계속합니다.")
-                geocoding_success = True
+                logger.info("✅ [GEOCODING_PASS] 동명 지역 문제가 없어, Plan A 실행을 계속합니다.")
                 
             except Exception as geocoding_error:
                 logger.error(f"❌ [GEOCODING_FAIL] Geocoding API 호출 중 에러 발생: {geocoding_error}", exc_info=True)
-                logger.error(f"🚨 [PLAN_A_BLOCKED] Geocoding 실패로 인해 Plan A 실행이 차단됩니다.")
-                geocoding_success = False
+                logger.error(f"🚨 [GEOCODING_BLOCKED] Geocoding 실패로 인해 Plan A 실행이 차단됩니다.")
                 
-                # 🚨 [핵심] Geocoding 실패 시 즉시 폴백으로 전환
-                logger.warning("🔄 [IMMEDIATE_FALLBACK] Geocoding 실패로 즉시 폴백 시스템으로 전환합니다.")
+                # Geocoding 실패 시 즉시 폴백으로 전환 + 이메일 알림
+                logger.warning("🔄 [GEOCODING_FALLBACK] Geocoding 실패로 즉시 폴백 시스템으로 전환합니다.")
                 
-                # 관리자에게 이메일 알림 발송
                 try:
                     await send_admin_notification(
                         subject="[Plango] Geocoding API 실패 - 폴백 시스템 활성화",
@@ -192,13 +196,11 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 except Exception as email_error:
                     logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
                 
-                # 폴백 추천 생성
                 return await generate_fallback_recommendations(request)
         else:
             logger.info("ℹ️ [GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
-            geocoding_success = True
 
-        # 3. Plan A: 정상적인 장소 추천 서비스 호출
+        # 🚨 [핵심 수정] 2단계: Plan A 실행 (Geocoding 성공 후에만)
         try:
             logger.info("🚀 [PLAN_A_START] Plan A (정상 추천 시스템) 실행 시작")
             response = await place_recommendation_service.generate_place_recommendations(request)
@@ -214,7 +216,9 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         except Exception as plan_a_error:
             logger.error(f"❌ [PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
             
-            # 관리자에게 이메일 알림 발송
+            # Plan A 실패 시 폴백으로 전환 + 이메일 알림
+            logger.warning("🔄 [PLAN_A_FALLBACK] Plan A 실패로 폴백 시스템으로 전환합니다.")
+            
             try:
                 await send_admin_notification(
                     subject="[Plango] Plan A 실패 - 폴백 시스템 활성화",
@@ -225,8 +229,6 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             except Exception as email_error:
                 logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
             
-            # Plan B: 폴백 시스템으로 전환
-            logger.warning("🔄 [FALLBACK_ACTIVATION] Plan A 실패로 폴백 시스템으로 전환합니다.")
             return await generate_fallback_recommendations(request)
 
         logger.info(
@@ -321,37 +323,57 @@ async def test_prompt_generation(request: PlaceRecommendationRequest):
 @router.post("/test-email-notification")
 async def test_email_notification():
     """
-    관리자 이메일 알림 시스템 테스트
+    관리자 이메일 알림 시스템 테스트 (실제 이메일 발송)
     """
     try:
-        logger.info("📧 [EMAIL_TEST_START] 이메일 알림 시스템 테스트 시작")
+        logger.info("📧 [EMAIL_TEST_START] 실제 이메일 발송 테스트 시작")
+        
+        # 이메일 서비스 연결 테스트
+        from app.services.email_service import email_service
+        
+        connection_test = await email_service.test_email_connection()
+        if not connection_test["success"]:
+            return {
+                "status": "connection_failed",
+                "message": f"이메일 서버 연결 실패: {connection_test['error']}",
+                "timestamp": datetime.now().isoformat()
+            }
         
         # 테스트 데이터
         test_request = {
             "city": "테스트시티",
             "country": "테스트국가",
             "total_duration": 3,
-            "travelers_count": 2
+            "travelers_count": 2,
+            "test_timestamp": datetime.now().isoformat()
         }
         
-        # 이메일 발송 테스트
-        await send_admin_notification(
+        # 실제 이메일 발송 테스트
+        success = await send_admin_notification(
             subject="[Plango] 이메일 시스템 테스트",
             error_type="EMAIL_SYSTEM_TEST",
             error_details="이 메시지가 보인다면 이메일 시스템이 정상 작동하는 것입니다.",
             user_request=test_request
         )
         
-        logger.info("✅ [EMAIL_TEST_SUCCESS] 이메일 테스트 완료")
-        
-        return {
-            "status": "success",
-            "message": "이메일 알림 테스트가 완료되었습니다. 로그를 확인해주세요.",
-            "timestamp": datetime.now().isoformat()
-        }
+        if success:
+            logger.info("✅ [EMAIL_TEST_SUCCESS] 실제 이메일 발송 테스트 성공")
+            return {
+                "status": "success",
+                "message": "이메일이 성공적으로 발송되었습니다. 관리자 이메일을 확인해주세요.",
+                "admin_email": email_service.admin_email,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            logger.error("❌ [EMAIL_TEST_FAILED] 이메일 발송 실패")
+            return {
+                "status": "send_failed",
+                "message": "이메일 발송에 실패했습니다. 로그를 확인해주세요.",
+                "timestamp": datetime.now().isoformat()
+            }
         
     except Exception as e:
-        logger.error(f"❌ [EMAIL_TEST_ERROR] 이메일 테스트 실패: {e}")
+        logger.error(f"❌ [EMAIL_TEST_ERROR] 이메일 테스트 중 예외: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"이메일 테스트 실패: {str(e)}")
 
 
