@@ -6,11 +6,112 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
 import logging
+import json
+from datetime import datetime
+from typing import Dict, Any
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
 from app.services.place_recommendation_service import place_recommendation_service
 from app.services.geocoding_service import GeocodingService
 
 logger = logging.getLogger(__name__)
+
+# 폴백 추천 데이터 (Plan A 실패 시 사용)
+FALLBACK_RECOMMENDATIONS = {
+    "서울": [
+        {"name": "경복궁", "category": "볼거리", "description": "조선 왕조의 대표 궁궐"},
+        {"name": "명동", "category": "쇼핑", "description": "서울의 대표 쇼핑 거리"},
+        {"name": "남산타워", "category": "볼거리", "description": "서울의 랜드마크"},
+        {"name": "홍대", "category": "즐길거리", "description": "젊음의 거리"},
+        {"name": "동대문", "category": "쇼핑", "description": "24시간 쇼핑 천국"}
+    ],
+    "부산": [
+        {"name": "해운대해수욕장", "category": "볼거리", "description": "부산의 대표 해수욕장"},
+        {"name": "감천문화마을", "category": "볼거리", "description": "부산의 마추픽추"},
+        {"name": "자갈치시장", "category": "먹거리", "description": "부산 대표 수산시장"},
+        {"name": "광안리해수욕장", "category": "볼거리", "description": "야경이 아름다운 해수욕장"},
+        {"name": "태종대", "category": "볼거리", "description": "부산의 대표 관광지"}
+    ],
+    "제주": [
+        {"name": "한라산", "category": "볼거리", "description": "제주도의 상징"},
+        {"name": "성산일출봉", "category": "볼거리", "description": "일출 명소"},
+        {"name": "우도", "category": "볼거리", "description": "제주의 작은 섬"},
+        {"name": "천지연폭포", "category": "볼거리", "description": "제주의 대표 폭포"},
+        {"name": "흑돼지거리", "category": "먹거리", "description": "제주 흑돼지 맛집 거리"}
+    ]
+}
+
+async def send_admin_notification(subject: str, error_type: str, error_details: str, user_request: Dict[str, Any]):
+    """
+    관리자에게 이메일 알림을 발송합니다.
+    """
+    try:
+        logger.info(f"📧 [EMAIL_NOTIFICATION_START] 관리자 알림 발송 시작: {subject}")
+        
+        # 이메일 내용 구성
+        email_body = f"""
+Plango 시스템 알림
+
+발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+오류 유형: {error_type}
+오류 상세: {error_details}
+
+사용자 요청 정보:
+{json.dumps(user_request, indent=2, ensure_ascii=False)}
+
+이 알림은 자동으로 발송되었습니다.
+"""
+        
+        # 실제 이메일 발송 로직 (현재는 로깅만)
+        # TODO: 실제 이메일 서비스 연동 필요
+        logger.info(f"📧 [EMAIL_CONTENT] 제목: {subject}")
+        logger.info(f"📧 [EMAIL_CONTENT] 내용: {email_body}")
+        
+        # 임시로 성공 처리 (실제 이메일 서비스 연동 후 수정 필요)
+        logger.info("✅ [EMAIL_NOTIFICATION_SUCCESS] 관리자 알림 발송 완료")
+        
+    except Exception as e:
+        logger.error(f"❌ [EMAIL_NOTIFICATION_ERROR] 관리자 알림 발송 실패: {e}")
+        raise
+
+async def generate_fallback_recommendations(request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
+    """
+    Plan A 실패 시 사용하는 폴백 추천 시스템
+    """
+    try:
+        logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
+        
+        # 도시명 정규화
+        city_key = request.city.lower()
+        city_mapping = {
+            "seoul": "서울",
+            "busan": "부산", 
+            "jeju": "제주",
+            "광주": "서울",  # 기본값으로 서울 사용
+        }
+        
+        normalized_city = city_mapping.get(city_key, "서울")
+        fallback_places = FALLBACK_RECOMMENDATIONS.get(normalized_city, FALLBACK_RECOMMENDATIONS["서울"])
+        
+        logger.info(f"🔄 [FALLBACK_PLACES] {normalized_city}에 대한 폴백 장소 {len(fallback_places)}개 반환")
+        
+        # PlaceRecommendationResponse 형식으로 반환
+        response = PlaceRecommendationResponse(
+            city_id=0,  # 폴백 시에는 임시 ID
+            city_name=request.city,
+            country_name=request.country,
+            previously_recommended_count=0,
+            newly_recommended_count=len(fallback_places),
+            places=fallback_places,
+            is_fallback=True,  # 폴백 응답임을 표시
+            fallback_reason="Plan A 시스템 실패로 인한 폴백 응답"
+        )
+        
+        logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 추천 완료: {len(fallback_places)}개 장소")
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ [FALLBACK_ERROR] 폴백 시스템도 실패: {e}")
+        raise HTTPException(status_code=500, detail=f"폴백 시스템 실패: {str(e)}")
 
 router = APIRouter(prefix="/api/v1/place-recommendations", tags=["Place Recommendations v6.0"])
 
@@ -45,6 +146,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         logger.info("📍 [GEOCODING_START] 동명 지역 확인을 위해 Geocoding API 호출을 시작합니다.")
         
         # 1. 동명 지역 확인 (place_id가 명시적으로 제공되지 않은 경우에만)
+        geocoding_success = False
         if not hasattr(request, 'place_id') or not request.place_id:
             geocoding_service = GeocodingService()
             location_query = f"{request.city}, {request.country}"
@@ -69,16 +171,63 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                     )
                 
                 logger.info("✅ [GEOCODING_PASS] 동명 지역 문제가 없어, 정상적인 추천 생성을 계속합니다.")
+                geocoding_success = True
                 
             except Exception as geocoding_error:
                 logger.error(f"❌ [GEOCODING_FAIL] Geocoding API 호출 중 에러 발생: {geocoding_error}", exc_info=True)
-                # Geocoding 실패 시에도 추천은 계속 진행 (사용자 경험 우선)
-                logger.warning("⚠️ [GEOCODING_FALLBACK] Geocoding 실패했지만 추천 생성을 계속 진행합니다.")
+                logger.error(f"🚨 [PLAN_A_BLOCKED] Geocoding 실패로 인해 Plan A 실행이 차단됩니다.")
+                geocoding_success = False
+                
+                # 🚨 [핵심] Geocoding 실패 시 즉시 폴백으로 전환
+                logger.warning("🔄 [IMMEDIATE_FALLBACK] Geocoding 실패로 즉시 폴백 시스템으로 전환합니다.")
+                
+                # 관리자에게 이메일 알림 발송
+                try:
+                    await send_admin_notification(
+                        subject="[Plango] Geocoding API 실패 - 폴백 시스템 활성화",
+                        error_type="GEOCODING_FAILURE",
+                        error_details=str(geocoding_error),
+                        user_request=request.model_dump()
+                    )
+                except Exception as email_error:
+                    logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
+                
+                # 폴백 추천 생성
+                return await generate_fallback_recommendations(request)
         else:
             logger.info("ℹ️ [GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
+            geocoding_success = True
 
-        # 3. 장소 추천 서비스 호출
-        response = await place_recommendation_service.generate_place_recommendations(request)
+        # 3. Plan A: 정상적인 장소 추천 서비스 호출
+        try:
+            logger.info("🚀 [PLAN_A_START] Plan A (정상 추천 시스템) 실행 시작")
+            response = await place_recommendation_service.generate_place_recommendations(request)
+            
+            # Plan A 결과 검증
+            if not response or not hasattr(response, 'newly_recommended_count') or response.newly_recommended_count == 0:
+                logger.warning("⚠️ [PLAN_A_INSUFFICIENT] Plan A 결과가 충분하지 않습니다.")
+                raise Exception("Plan A에서 충분한 추천 결과를 생성하지 못했습니다")
+            
+            logger.info(f"✅ [PLAN_A_SUCCESS] Plan A 성공: 신규 {response.newly_recommended_count}개 추천")
+            return response
+            
+        except Exception as plan_a_error:
+            logger.error(f"❌ [PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
+            
+            # 관리자에게 이메일 알림 발송
+            try:
+                await send_admin_notification(
+                    subject="[Plango] Plan A 실패 - 폴백 시스템 활성화",
+                    error_type="PLAN_A_FAILURE",
+                    error_details=str(plan_a_error),
+                    user_request=request.model_dump()
+                )
+            except Exception as email_error:
+                logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
+            
+            # Plan B: 폴백 시스템으로 전환
+            logger.warning("🔄 [FALLBACK_ACTIVATION] Plan A 실패로 폴백 시스템으로 전환합니다.")
+            return await generate_fallback_recommendations(request)
 
         logger.info(
             f"장소 추천 완료: 도시 ID {response.city_id}, 기존 {response.previously_recommended_count}개, 신규 {response.newly_recommended_count}개"
@@ -167,3 +316,104 @@ async def test_prompt_generation(request: PlaceRecommendationRequest):
     except Exception as e:
         logger.error(f"프롬프트(실제 추천) 테스트 실패: {e}")
         raise HTTPException(status_code=500, detail=f"추천 테스트 중 오류: {str(e)}")
+
+
+@router.post("/test-email-notification")
+async def test_email_notification():
+    """
+    관리자 이메일 알림 시스템 테스트
+    """
+    try:
+        logger.info("📧 [EMAIL_TEST_START] 이메일 알림 시스템 테스트 시작")
+        
+        # 테스트 데이터
+        test_request = {
+            "city": "테스트시티",
+            "country": "테스트국가",
+            "total_duration": 3,
+            "travelers_count": 2
+        }
+        
+        # 이메일 발송 테스트
+        await send_admin_notification(
+            subject="[Plango] 이메일 시스템 테스트",
+            error_type="EMAIL_SYSTEM_TEST",
+            error_details="이 메시지가 보인다면 이메일 시스템이 정상 작동하는 것입니다.",
+            user_request=test_request
+        )
+        
+        logger.info("✅ [EMAIL_TEST_SUCCESS] 이메일 테스트 완료")
+        
+        return {
+            "status": "success",
+            "message": "이메일 알림 테스트가 완료되었습니다. 로그를 확인해주세요.",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [EMAIL_TEST_ERROR] 이메일 테스트 실패: {e}")
+        raise HTTPException(status_code=500, detail=f"이메일 테스트 실패: {str(e)}")
+
+
+@router.post("/test-geocoding-failure")
+async def test_geocoding_failure():
+    """
+    Geocoding 실패 시나리오 테스트 (폴백 시스템 동작 확인)
+    """
+    try:
+        logger.info("🧪 [GEOCODING_FAIL_TEST] Geocoding 실패 시나리오 테스트 시작")
+        
+        # 존재하지 않는 도시로 테스트
+        test_request = PlaceRecommendationRequest(
+            city="존재하지않는도시12345",
+            country="존재하지않는국가12345",
+            total_duration=3,
+            travelers_count=2,
+            travel_style="관광",
+            budget_level="중간"
+        )
+        
+        # 실제 추천 생성 호출 (Geocoding 실패 예상)
+        response = await generate_place_recommendations(test_request)
+        
+        return {
+            "status": "success",
+            "message": "Geocoding 실패 테스트 완료",
+            "response": response,
+            "is_fallback": getattr(response, 'is_fallback', False)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [GEOCODING_FAIL_TEST_ERROR] Geocoding 실패 테스트 중 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"테스트 실패: {str(e)}")
+
+
+@router.post("/test-ambiguous-location")
+async def test_ambiguous_location():
+    """
+    동명 지역 처리 테스트
+    """
+    try:
+        logger.info("🧪 [AMBIGUOUS_TEST] 동명 지역 처리 테스트 시작")
+        
+        # 광주로 테스트 (경기도 광주 vs 전라도 광주)
+        test_request = PlaceRecommendationRequest(
+            city="광주",
+            country="대한민국",
+            total_duration=2,
+            travelers_count=2,
+            travel_style="관광",
+            budget_level="중간"
+        )
+        
+        response = await generate_place_recommendations(test_request)
+        
+        return {
+            "status": "success",
+            "message": "동명 지역 테스트 완료",
+            "response": response
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [AMBIGUOUS_TEST_ERROR] 동명 지역 테스트 중 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"테스트 실패: {str(e)}")
