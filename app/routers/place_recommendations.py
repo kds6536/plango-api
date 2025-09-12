@@ -54,9 +54,17 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
         from app.services.email_service import email_service
         
         # 이메일 서비스 연결 테스트 먼저 수행
+        logger.info("🧪 [EMAIL_TEST_START] 이메일 서버 연결 테스트 시작")
         test_result = await email_service.test_email_connection()
+        logger.info(f"🧪 [EMAIL_TEST_RESULT] 연결 테스트 결과: {test_result}")
+        
         if not test_result["success"]:
             logger.error(f"❌ [EMAIL_CONNECTION_FAIL] 이메일 서버 연결 실패: {test_result.get('error', 'Unknown')}")
+            logger.error("📧 [EMAIL_ENV_CHECK] 환경 변수 확인 필요:")
+            logger.error(f"    - MAIL_SERVER: {'설정됨' if email_service.smtp_server else '미설정'}")
+            logger.error(f"    - MAIL_USERNAME: {'설정됨' if email_service.username else '미설정'}")
+            logger.error(f"    - MAIL_PASSWORD: {'설정됨' if email_service.password else '미설정'}")
+            logger.error(f"    - ADMIN_EMAIL: {'설정됨' if email_service.admin_email else '미설정'}")
             return False
         
         logger.info("✅ [EMAIL_CONNECTION_OK] 이메일 서버 연결 확인됨")
@@ -91,18 +99,21 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest,
         logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
         
         # Geocoding 결과가 없으면 새로 호출 (Plan A가 Geocoding 이외 이유로 실패한 경우)
-        logger.info(f"🔍 [FALLBACK_DEBUG] geocoding_results is None: {geocoding_results is None}")
-        logger.info(f"🔍 [FALLBACK_DEBUG] hasattr place_id: {hasattr(request, 'place_id')}")
-        logger.info(f"🔍 [FALLBACK_DEBUG] place_id value: {getattr(request, 'place_id', 'NOT_FOUND')}")
+        logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] geocoding_results is None: {geocoding_results is None}")
+        logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] hasattr place_id: {hasattr(request, 'place_id')}")
+        logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] place_id value: {getattr(request, 'place_id', 'NOT_FOUND')}")
         
-        if geocoding_results is None and (not hasattr(request, 'place_id') or not request.place_id):
+        geocoding_condition = geocoding_results is None and (not hasattr(request, 'place_id') or not request.place_id)
+        logger.info(f"🔍 [FALLBACK_GEOCODING_CONDITION] 폴백에서 Geocoding 호출 조건: {geocoding_condition}")
+        
+        if geocoding_condition:
             try:
-                logger.info("📍 [FALLBACK_GEOCODING] 폴백에서 Geocoding API 호출 시작")
+                logger.info("📍 [FALLBACK_GEOCODING_CALL] 폴백에서 실제 Geocoding API 호출 시작")
                 geocoding_service = GeocodingService()
                 location_query = f"{request.city}, {request.country}"
-                logger.info(f"📍 [FALLBACK_GEOCODING] 쿼리: {location_query}")
+                logger.info(f"📍 [FALLBACK_GEOCODING_QUERY] 폴백 검색 쿼리: '{location_query}'")
                 geocoding_results = await geocoding_service.get_geocode_results(location_query)
-                logger.info(f"📍 [FALLBACK_GEOCODING] 결과 수: {len(geocoding_results) if geocoding_results else 0}")
+                logger.info(f"📍 [FALLBACK_GEOCODING_SUCCESS] 폴백 Geocoding 결과 수: {len(geocoding_results) if geocoding_results else 0}")
                 
                 # 폴백에서도 동명 지역 감지
                 logger.info(f"🔍 [FALLBACK_AMBIGUOUS_CHECK] 동명 지역 감지 확인 중...")
@@ -135,7 +146,10 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest,
                 logger.error(f"❌ [FALLBACK_GEOCODING_FAIL] 폴백에서도 Geocoding 실패: {geocoding_error}")
                 # Geocoding 실패해도 폴백 데이터는 제공
         else:
-            logger.info(f"🔍 [FALLBACK_SKIP_GEOCODING] Geocoding 건너뜀 - geocoding_results: {geocoding_results is not None}, place_id: {getattr(request, 'place_id', None)}")
+            logger.info(f"🔍 [FALLBACK_GEOCODING_SKIP] 폴백에서 Geocoding 건너뜀")
+            logger.info(f"    - geocoding_results 존재: {geocoding_results is not None}")
+            logger.info(f"    - place_id 값: {getattr(request, 'place_id', None)}")
+            logger.info(f"    - 건너뛰는 이유: {'기존 Geocoding 결과 있음' if geocoding_results is not None else 'place_id 제공됨'}")
         
         logger.info("🔄 [FALLBACK_CONTINUE] 폴백 추천 데이터 생성 시작")
         
@@ -256,17 +270,19 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
 
         # 🚨 [핵심 수정] 1단계: Geocoding을 가장 먼저 실행 (동명 지역 처리) - 서비스 초기화 이전에 실행
-        logger.info("📍 [GEOCODING_START] 동명 지역 확인을 위해 Geocoding API 호출을 시작합니다.")
+        logger.info("📍 [PLAN_A_GEOCODING_START] Plan A에서 동명 지역 확인을 위해 Geocoding API 호출을 시작합니다.")
         
         geocoding_results = None
         if not hasattr(request, 'place_id') or not request.place_id:
+            logger.info("📍 [PLAN_A_GEOCODING_CONDITION] place_id가 없으므로 Geocoding API 호출 진행")
             try:
+                logger.info("📍 [PLAN_A_GEOCODING_CALL] Plan A에서 실제 Geocoding API 호출 시작")
                 geocoding_service = GeocodingService()
                 location_query = f"{request.city}, {request.country}"
-                logger.info(f"🌍 [GEOCODING_QUERY] 검색 쿼리: '{location_query}'")
+                logger.info(f"🌍 [PLAN_A_GEOCODING_QUERY] Plan A 검색 쿼리: '{location_query}'")
                 
                 geocoding_results = await geocoding_service.get_geocode_results(location_query)
-                logger.info(f"✅ [GEOCODING_SUCCESS] Geocoding 결과 {len(geocoding_results)}개를 찾았습니다.")
+                logger.info(f"✅ [PLAN_A_GEOCODING_SUCCESS] Plan A Geocoding 결과 {len(geocoding_results)}개를 찾았습니다.")
                 
                 # 🚨 [핵심] 동명 지역이 있는 경우 즉시 선택지 반환 (Plan A 실행 전에)
                 if geocoding_service.is_ambiguous_location(geocoding_results):
@@ -284,11 +300,11 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                         }
                     )
                 
-                logger.info("✅ [GEOCODING_PASS] 동명 지역 문제가 없어, Plan A 실행을 계속합니다.")
+                logger.info("✅ [PLAN_A_GEOCODING_PASS] Plan A에서 동명 지역 문제가 없어, Plan A 실행을 계속합니다.")
                 
             except Exception as geocoding_error:
-                logger.error(f"❌ [GEOCODING_FAIL] Geocoding API 호출 중 에러 발생: {geocoding_error}", exc_info=True)
-                logger.error(f"🚨 [GEOCODING_BLOCKED] Geocoding 실패로 인해 Plan A 실행이 차단됩니다.")
+                logger.error(f"❌ [PLAN_A_GEOCODING_FAIL] Plan A에서 Geocoding API 호출 중 에러 발생: {geocoding_error}", exc_info=True)
+                logger.error(f"🚨 [PLAN_A_GEOCODING_BLOCKED] Plan A에서 Geocoding 실패로 인해 Plan A 실행이 차단됩니다.")
                 
                 # Geocoding 실패 시 즉시 폴백으로 전환 + 이메일 알림
                 logger.warning("🔄 [GEOCODING_FALLBACK] Geocoding 실패로 즉시 폴백 시스템으로 전환합니다.")
@@ -309,7 +325,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 
                 return await generate_fallback_recommendations(request, geocoding_results=None)
         else:
-            logger.info("ℹ️ [GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
+            logger.info("ℹ️ [PLAN_A_GEOCODING_SKIP] Plan A에서 place_id가 제공되어 Geocoding을 건너뜁니다.")
 
         # 2단계: 서비스 초기화 확인 (Geocoding 통과 후)
         service = get_place_recommendation_service()
