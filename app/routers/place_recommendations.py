@@ -124,13 +124,22 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest)
                     
                     logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS] 하드코딩된 동명 지역 감지: {request.city} - {len(options)}개 선택지")
                     
-                    raise HTTPException(
-                        status_code=400,
-                        detail={
-                            "error_code": "AMBIGUOUS_LOCATION",
-                            "message": f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
-                            "options": options
-                        }
+                    # 폴백에서는 HTTPException 대신 특별한 응답 반환
+                    return PlaceRecommendationResponse(
+                        success=False,
+                        city_id=0,
+                        city_name=request.city,
+                        country_name=request.country,
+                        main_theme="AMBIGUOUS_LOCATION",
+                        recommendations={},
+                        places=[],
+                        previously_recommended_count=0,
+                        newly_recommended_count=0,
+                        status="AMBIGUOUS_LOCATION",
+                        options=options,
+                        message=f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
+                        is_fallback=False,  # 동명 지역 감지는 폴백이 아님
+                        fallback_reason=None
                     )
             
             logger.info("✅ [FALLBACK_AMBIGUOUS_CHECK] 동명 지역 아님, 폴백 추천 진행")
@@ -268,7 +277,21 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         # 이메일 알림은 임시로 비활성화 (이메일 서비스 문제)
         logger.info("📧 [EMAIL_DISABLED] 이메일 알림 임시 비활성화")
         
-        return await generate_fallback_recommendations(request)
+        fallback_response = await generate_fallback_recommendations(request)
+        
+        # 폴백에서 동명 지역이 감지된 경우 400 에러로 반환
+        if fallback_response.status == "AMBIGUOUS_LOCATION":
+            logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS_RETURN] 폴백에서 동명 지역 감지, 400 에러 반환")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "AMBIGUOUS_LOCATION",
+                    "message": fallback_response.message,
+                    "options": fallback_response.options
+                }
+            )
+        
+        return fallback_response
 
         logger.info(
             f"장소 추천 완료: 도시 ID {response.city_id}, 기존 {response.previously_recommended_count}개, 신규 {response.newly_recommended_count}개"
