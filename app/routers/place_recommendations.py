@@ -271,27 +271,112 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         else:
             logger.info("ℹ️ [GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
 
-        # 🚨 [임시 수정] Plan A 비활성화 - 무한 루프 문제로 인해 폴백으로 바로 처리
-        logger.warning("⚠️ [PLAN_A_DISABLED] Plan A 임시 비활성화 - 폴백 시스템으로 바로 전환")
+        # 🚨 [핵심 수정] Plan A 활성화 및 동명 지역 감지 로직 적용
+        # 1단계: Plan A 실행 전 동명 지역 확인 (하드코딩된 목록 사용)
+        if not hasattr(request, 'place_id') or not request.place_id:  # place_id가 없는 경우에만 동명 지역 확인
+            logger.info("🔍 [PLAN_A_AMBIGUOUS_CHECK] Plan A 실행 전 하드코딩된 동명 지역 확인")
+            
+            # 하드코딩된 동명 지역 목록
+            ambiguous_cities = {
+                "광주": [
+                    {
+                        "place_id": "ChIJzWVBSgSifDUR64Pq5LTtioU",
+                        "display_name": "광주광역시",
+                        "formatted_address": "대한민국 광주광역시",
+                        "lat": 35.1595454,
+                        "lng": 126.8526012
+                    },
+                    {
+                        "place_id": "ChIJBzKw3HGifDURm_JbQKHsEX4",
+                        "display_name": "경기도 광주시",
+                        "formatted_address": "대한민국 경기도 광주시",
+                        "lat": 37.4138056,
+                        "lng": 127.2558309
+                    }
+                ],
+                "김포": [
+                    {
+                        "place_id": "ChIJzWVBSgSifDUR64Pq5LTtioU",
+                        "display_name": "김포시",
+                        "formatted_address": "대한민국 경기도 김포시",
+                        "lat": 37.6156,
+                        "lng": 126.7159
+                    },
+                    {
+                        "place_id": "ChIJBzKw3HGifDURm_JbQKHsEX4",
+                        "display_name": "김포공항",
+                        "formatted_address": "대한민국 서울특별시 강서구 김포공항",
+                        "lat": 37.5583,
+                        "lng": 126.7906
+                    }
+                ]
+            }
+            
+            # 한국 도시의 경우 동명 지역 확인
+            if request.country in ["대한민국", "한국", "South Korea", "Korea"]:
+                city_key = request.city.strip()
+                
+                if city_key in ambiguous_cities:
+                    options = ambiguous_cities[city_key]
+                    
+                    logger.warning(f"⚠️ [PLAN_A_AMBIGUOUS] Plan A에서 하드코딩된 동명 지역 감지: {request.city} - {len(options)}개 선택지")
+                    
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error_code": "AMBIGUOUS_LOCATION",
+                            "message": f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
+                            "options": options
+                        }
+                    )
+            
+            logger.info("✅ [PLAN_A_AMBIGUOUS_CHECK] 동명 지역 아님, Plan A 진행")
         
-        # 이메일 알림은 임시로 비활성화 (이메일 서비스 문제)
-        logger.info("📧 [EMAIL_DISABLED] 이메일 알림 임시 비활성화")
-        
-        fallback_response = await generate_fallback_recommendations(request)
-        
-        # 폴백에서 동명 지역이 감지된 경우 400 에러로 반환
-        if fallback_response.status == "AMBIGUOUS_LOCATION":
-            logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS_RETURN] 폴백에서 동명 지역 감지, 400 에러 반환")
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error_code": "AMBIGUOUS_LOCATION",
-                    "message": fallback_response.message,
-                    "options": fallback_response.options
-                }
-            )
-        
-        return fallback_response
+        # 2단계: Plan A 실행 (정상 추천 시스템)
+        try:
+            logger.info("🚀 [PLAN_A_START] Plan A (정상 추천 시스템) 실행 시작")
+            response = await place_recommendation_service.generate_place_recommendations(request)
+            
+            # Plan A 결과 검증
+            if not response or not hasattr(response, 'newly_recommended_count') or response.newly_recommended_count == 0:
+                logger.warning("⚠️ [PLAN_A_INSUFFICIENT] Plan A 결과가 충분하지 않습니다.")
+                raise Exception("Plan A에서 충분한 추천 결과를 생성하지 못했습니다")
+            
+            logger.info(f"✅ [PLAN_A_SUCCESS] Plan A 성공: 신규 {response.newly_recommended_count}개 추천")
+            return response
+            
+        except Exception as plan_a_error:
+            logger.error(f"❌ [PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
+            
+            # Plan A 실패 시 폴백으로 전환 + 이메일 알림
+            logger.warning("🔄 [PLAN_A_FALLBACK] Plan A 실패로 폴백 시스템으로 전환합니다.")
+            
+            try:
+                await send_admin_notification(
+                    subject="[Plango] Plan A 실패 - 폴백 시스템 활성화",
+                    error_type="PLAN_A_FAILURE",
+                    error_details=str(plan_a_error),
+                    user_request=request.model_dump()
+                )
+                logger.info("📧 [EMAIL_SUCCESS] Plan A 실패 알림 이메일 발송 성공")
+            except Exception as email_error:
+                logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
+            
+            fallback_response = await generate_fallback_recommendations(request)
+            
+            # 폴백에서 동명 지역이 감지된 경우 400 에러로 반환
+            if fallback_response.status == "AMBIGUOUS_LOCATION":
+                logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS_RETURN] 폴백에서 동명 지역 감지, 400 에러 반환")
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error_code": "AMBIGUOUS_LOCATION",
+                        "message": fallback_response.message,
+                        "options": fallback_response.options
+                    }
+                )
+            
+            return fallback_response
 
         logger.info(
             f"장소 추천 완료: 도시 ID {response.city_id}, 기존 {response.previously_recommended_count}개, 신규 {response.newly_recommended_count}개"
