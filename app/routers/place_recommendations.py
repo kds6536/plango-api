@@ -134,37 +134,45 @@ def get_place_recommendation_service():
     """PlaceRecommendationService 인스턴스를 반환하는 의존성 함수"""
     global place_recommendation_service
     if place_recommendation_service is None:
-        # 필요한 서비스들 초기화
-        from app.config import settings
-        from supabase import create_client
-        
-        # Supabase 클라이언트 생성
-        supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-        supabase_service = SupabaseService(supabase_client)
-        
-        # AI 서비스 초기화
-        ai_service = AIService()
-        
-        # Google Places 서비스 초기화  
-        google_places_service = GooglePlacesService()
-        
-        # PlaceRecommendationService 초기화
-        place_recommendation_service = PlaceRecommendationService(
-            supabase=supabase_service,
-            ai_service=ai_service,
-            google_places_service=google_places_service
-        )
-        
-        logger.info("✅ PlaceRecommendationService 초기화 완료")
+        try:
+            # 필요한 서비스들 초기화
+            from app.config import settings
+            from supabase import create_client
+            
+            logger.info("🔧 PlaceRecommendationService 초기화 시작")
+            
+            # Supabase 클라이언트 생성
+            supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+            supabase_service = SupabaseService(supabase_client)
+            logger.info("✅ Supabase 서비스 초기화 완료")
+            
+            # AI 서비스 초기화
+            ai_service = AIService()
+            logger.info("✅ AI 서비스 초기화 완료")
+            
+            # Google Places 서비스 초기화  
+            google_places_service = GooglePlacesService()
+            logger.info("✅ Google Places 서비스 초기화 완료")
+            
+            # PlaceRecommendationService 초기화
+            place_recommendation_service = PlaceRecommendationService(
+                supabase=supabase_service,
+                ai_service=ai_service,
+                google_places_service=google_places_service
+            )
+            
+            logger.info("✅ PlaceRecommendationService 초기화 완료")
+            
+        except Exception as e:
+            logger.error(f"❌ PlaceRecommendationService 초기화 실패: {e}")
+            # 폴백: None 반환하여 에러 처리
+            return None
     
     return place_recommendation_service
 
 
 @router.post("/generate", response_model=PlaceRecommendationResponse)
-async def generate_place_recommendations(
-    request: PlaceRecommendationRequest,
-    service: PlaceRecommendationService = Depends(get_place_recommendation_service)
-):
+async def generate_place_recommendations(request: PlaceRecommendationRequest):
     """
     새로운 장소 추천 생성 (v6.0)
     
@@ -188,6 +196,12 @@ async def generate_place_recommendations(
             raise HTTPException(status_code=400, detail="여행자 수는 1명 이상이어야 합니다.")
 
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
+
+        # 서비스 초기화 확인
+        service = get_place_recommendation_service()
+        if service is None:
+            logger.error("❌ [SERVICE_INIT_FAIL] PlaceRecommendationService 초기화 실패")
+            return await generate_fallback_recommendations(request)
 
         # 🚨 [핵심 수정] 1단계: Geocoding을 가장 먼저 실행 (동명 지역 처리)
         logger.info("📍 [GEOCODING_START] 동명 지역 확인을 위해 Geocoding API 호출을 시작합니다.")
@@ -304,16 +318,34 @@ async def generate_place_recommendations(
 
 
 @router.get("/health")
-async def place_recommendations_health_check(
-    service: PlaceRecommendationService = Depends(get_place_recommendation_service)
-):
+async def place_recommendations_health_check():
     """
     장소 추천 서비스 상태 확인
     """
     try:
+        # 서비스 초기화 시도
+        service = get_place_recommendation_service()
+        
+        if service is None:
+            return {
+                "status": "degraded",
+                "service": "Place Recommendations v6.0",
+                "supabase_connected": False,
+                "error": "Service initialization failed",
+                "features": {
+                    "duplicate_prevention": False,
+                    "dynamic_prompts": False,
+                    "db_caching": False,
+                    "google_places_enrichment": False
+                }
+            }
+        
         # Supabase 연결 상태 확인
-        supabase_connected = service.supabase.supabase.table('countries').select('id').limit(1).execute()
-        supabase_connected = True
+        try:
+            test_query = service.supabase.supabase.table('countries').select('id').limit(1).execute()
+            supabase_connected = True
+        except:
+            supabase_connected = False
         
         return {
             "status": "healthy",
@@ -329,7 +361,12 @@ async def place_recommendations_health_check(
         
     except Exception as e:
         logger.error(f"헬스체크 실패: {e}")
-        raise HTTPException(status_code=500, detail=f"헬스체크 실패: {str(e)}")
+        return {
+            "status": "unhealthy",
+            "service": "Place Recommendations v6.0",
+            "error": str(e),
+            "supabase_connected": False
+        }
 
 
 @router.get("/stats/{city_id}")
