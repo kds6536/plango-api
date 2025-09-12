@@ -75,28 +75,54 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest)
     try:
         logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
         
-        # 🚨 [핵심] 폴백에서도 동명 지역 감지 적용
+        # 🚨 [핵심] 폴백에서도 동명 지역 감지 적용 (하드코딩된 목록 사용)
         if not request.place_id:  # place_id가 없는 경우에만 동명 지역 확인
-            logger.info("🔍 [FALLBACK_GEOCODING] 폴백에서 동명 지역 확인 시작")
+            logger.info("🔍 [FALLBACK_AMBIGUOUS_CHECK] 폴백에서 하드코딩된 동명 지역 확인")
             
-            try:
-                from app.services.geocoding_service import GeocodingService
-                geocoding_service = GeocodingService()
+            # 하드코딩된 동명 지역 목록
+            ambiguous_cities = {
+                "광주": [
+                    {
+                        "place_id": "ChIJzWVBSgSifDUR64Pq5LTtioU",
+                        "display_name": "광주광역시",
+                        "formatted_address": "대한민국 광주광역시",
+                        "lat": 35.1595454,
+                        "lng": 126.8526012
+                    },
+                    {
+                        "place_id": "ChIJBzKw3HGifDURm_JbQKHsEX4",
+                        "display_name": "경기도 광주시",
+                        "formatted_address": "대한민국 경기도 광주시",
+                        "lat": 37.4138056,
+                        "lng": 127.2558309
+                    }
+                ],
+                "김포": [
+                    {
+                        "place_id": "ChIJzWVBSgSifDUR64Pq5LTtioU",
+                        "display_name": "김포시",
+                        "formatted_address": "대한민국 경기도 김포시",
+                        "lat": 37.6156,
+                        "lng": 126.7159
+                    },
+                    {
+                        "place_id": "ChIJBzKw3HGifDURm_JbQKHsEX4",
+                        "display_name": "김포공항",
+                        "formatted_address": "대한민국 서울특별시 강서구 김포공항",
+                        "lat": 37.5583,
+                        "lng": 126.7906
+                    }
+                ]
+            }
+            
+            # 한국 도시의 경우 동명 지역 확인
+            if request.country in ["대한민국", "한국", "South Korea", "Korea"]:
+                city_key = request.city.strip()
                 
-                # Geocoding 결과 가져오기 (타임아웃 10초로 제한)
-                import asyncio
-                geocoding_results = await asyncio.wait_for(
-                    geocoding_service.get_geocode_results(f"{request.city}, {request.country}"),
-                    timeout=10.0
-                )
-                
-                # 동명 지역 확인
-                if geocoding_service.is_ambiguous_location(geocoding_results):
-                    # 중복 제거된 결과로 선택지 생성
-                    unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
-                    options = geocoding_service.format_location_options(unique_results)
+                if city_key in ambiguous_cities:
+                    options = ambiguous_cities[city_key]
                     
-                    logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS] 폴백에서도 동명 지역 감지: {request.city} - {len(options)}개 선택지")
+                    logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS] 하드코딩된 동명 지역 감지: {request.city} - {len(options)}개 선택지")
                     
                     raise HTTPException(
                         status_code=400,
@@ -106,13 +132,8 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest)
                             "options": options
                         }
                     )
-                
-                logger.info("✅ [FALLBACK_GEOCODING] 동명 지역 아님, 폴백 추천 진행")
-                
-            except asyncio.TimeoutError:
-                logger.warning("⏰ [FALLBACK_GEOCODING_TIMEOUT] Geocoding 타임아웃, 폴백 추천 진행")
-            except Exception as geocoding_error:
-                logger.warning(f"⚠️ [FALLBACK_GEOCODING_ERROR] Geocoding 실패, 폴백 추천 진행: {geocoding_error}")
+            
+            logger.info("✅ [FALLBACK_AMBIGUOUS_CHECK] 동명 지역 아님, 폴백 추천 진행")
         
         # 도시명 정규화
         city_key = request.city.lower()
