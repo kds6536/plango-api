@@ -99,17 +99,12 @@ class PlaceRecommendationService:
             
             logger.info(f"📊 [CACHE_INSUFFICIENT] 기존 데이터 부족: {len(existing_recommendations) if existing_recommendations else 0}개, 새로운 추천 진행")
             
-            # === 2단계: Plan A 시도 ===
-            logger.info("🧠 [PLAN_A_START] Plan A 시작: search_strategy_v1")
-            try:
-                return await self._execute_plan_a(request, normalized_country, normalized_city, city_id)
-            except Exception as e:
-                logger.error(f"❌ [PLAN_A_FAIL] Plan A 실패: {e}")
-                await self._notify_admin_plan_a_failure("Plan A 전체 실패", str(e))
-                
-                # === 3단계: Plan B 폴백 ===
-                logger.info("🔄 [PLAN_B_START] Plan A 실패로 인한 Plan B 전환")
-                return await self._fallback_to_legacy_recommendation(request)
+            # === 2단계: Plan A 임시 비활성화 (성능 문제로 인해) ===
+            logger.warning("⚠️ [PLAN_A_DISABLED] Plan A 임시 비활성화 - 성능 문제로 인해 바로 폴백으로 진행")
+            
+            # === 3단계: Plan B 폴백 ===
+            logger.info("🔄 [PLAN_B_START] Plan A 비활성화로 인한 Plan B 진행")
+            return await self._fallback_to_legacy_recommendation(request)
 
             template = Template(prompt_template)
             ai_prompt = template.safe_substitute(
