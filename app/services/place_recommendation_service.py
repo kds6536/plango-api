@@ -44,15 +44,25 @@ class PlaceRecommendationService:
             # === 0단계: 도시명 표준화 및 중복 확인 ===
             logger.info("🔍 [STEP_0] 도시명 표준화 및 중복 확인 시작")
             
-            # 타임아웃 보호: 표준화 단계
+            # 타임아웃 보호: 표준화 단계 (더 짧은 타임아웃)
             try:
                 standardized_result = await asyncio.wait_for(
                     self._standardize_and_check_city(request), 
-                    timeout=30.0
+                    timeout=10.0  # 10초로 단축
                 )
             except asyncio.TimeoutError:
-                logger.error("⏰ [TIMEOUT] 도시명 표준화 타임아웃 (30초)")
-                raise Exception("도시명 표준화 처리 시간 초과")
+                logger.error("⏰ [TIMEOUT] 도시명 표준화 타임아웃 (10초) - 폴백으로 진행")
+                # 타임아웃 시 기본값으로 폴백
+                country_id = await self.supabase.get_or_create_country(request.country)
+                region_id = await self.supabase.get_or_create_region(country_id, "")
+                city_id = await self.supabase.get_or_create_city(region_id=region_id, city_name=request.city)
+                
+                standardized_result = {
+                    'status': 'SUCCESS',
+                    'country': request.country,
+                    'city': request.city,
+                    'city_id': city_id
+                }
             
             # 안전한 딕셔너리 접근
             if not isinstance(standardized_result, dict):

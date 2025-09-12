@@ -70,10 +70,49 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
 
 async def generate_fallback_recommendations(request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
     """
-    Plan A 실패 시 사용하는 폴백 추천 시스템
+    Plan A 실패 시 사용하는 폴백 추천 시스템 (동명 지역 감지 포함)
     """
     try:
         logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
+        
+        # 🚨 [핵심] 폴백에서도 동명 지역 감지 적용
+        if not request.place_id:  # place_id가 없는 경우에만 동명 지역 확인
+            logger.info("🔍 [FALLBACK_GEOCODING] 폴백에서 동명 지역 확인 시작")
+            
+            try:
+                from app.services.geocoding_service import GeocodingService
+                geocoding_service = GeocodingService()
+                
+                # Geocoding 결과 가져오기 (타임아웃 10초로 제한)
+                import asyncio
+                geocoding_results = await asyncio.wait_for(
+                    geocoding_service.get_geocode_results(f"{request.city}, {request.country}"),
+                    timeout=10.0
+                )
+                
+                # 동명 지역 확인
+                if geocoding_service.is_ambiguous_location(geocoding_results):
+                    # 중복 제거된 결과로 선택지 생성
+                    unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
+                    options = geocoding_service.format_location_options(unique_results)
+                    
+                    logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS] 폴백에서도 동명 지역 감지: {request.city} - {len(options)}개 선택지")
+                    
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error_code": "AMBIGUOUS_LOCATION",
+                            "message": f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
+                            "options": options
+                        }
+                    )
+                
+                logger.info("✅ [FALLBACK_GEOCODING] 동명 지역 아님, 폴백 추천 진행")
+                
+            except asyncio.TimeoutError:
+                logger.warning("⏰ [FALLBACK_GEOCODING_TIMEOUT] Geocoding 타임아웃, 폴백 추천 진행")
+            except Exception as geocoding_error:
+                logger.warning(f"⚠️ [FALLBACK_GEOCODING_ERROR] Geocoding 실패, 폴백 추천 진행: {geocoding_error}")
         
         # 도시명 정규화
         city_key = request.city.lower()
@@ -202,36 +241,13 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         else:
             logger.info("ℹ️ [GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
 
-        # 🚨 [핵심 수정] 2단계: Plan A 실행 (Geocoding 성공 후에만)
-        try:
-            logger.info("🚀 [PLAN_A_START] Plan A (정상 추천 시스템) 실행 시작")
-            response = await place_recommendation_service.generate_place_recommendations(request)
-            
-            # Plan A 결과 검증
-            if not response or not hasattr(response, 'newly_recommended_count') or response.newly_recommended_count == 0:
-                logger.warning("⚠️ [PLAN_A_INSUFFICIENT] Plan A 결과가 충분하지 않습니다.")
-                raise Exception("Plan A에서 충분한 추천 결과를 생성하지 못했습니다")
-            
-            logger.info(f"✅ [PLAN_A_SUCCESS] Plan A 성공: 신규 {response.newly_recommended_count}개 추천")
-            return response
-            
-        except Exception as plan_a_error:
-            logger.error(f"❌ [PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
-            
-            # Plan A 실패 시 폴백으로 전환 + 이메일 알림
-            logger.warning("🔄 [PLAN_A_FALLBACK] Plan A 실패로 폴백 시스템으로 전환합니다.")
-            
-            try:
-                await send_admin_notification(
-                    subject="[Plango] Plan A 실패 - 폴백 시스템 활성화",
-                    error_type="PLAN_A_FAILURE",
-                    error_details=str(plan_a_error),
-                    user_request=request.model_dump()
-                )
-            except Exception as email_error:
-                logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
-            
-            return await generate_fallback_recommendations(request)
+        # 🚨 [임시 수정] Plan A 비활성화 - 무한 루프 문제로 인해 폴백으로 바로 처리
+        logger.warning("⚠️ [PLAN_A_DISABLED] Plan A 임시 비활성화 - 폴백 시스템으로 바로 전환")
+        
+        # 이메일 알림은 임시로 비활성화 (이메일 서비스 문제)
+        logger.info("📧 [EMAIL_DISABLED] 이메일 알림 임시 비활성화")
+        
+        return await generate_fallback_recommendations(request)
 
         logger.info(
             f"장소 추천 완료: 도시 ID {response.city_id}, 기존 {response.previously_recommended_count}개, 신규 {response.newly_recommended_count}개"
