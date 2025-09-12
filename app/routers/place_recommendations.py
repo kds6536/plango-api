@@ -75,74 +75,8 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest)
     try:
         logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
         
-        # 🚨 [핵심] 폴백에서도 동명 지역 감지 적용 (하드코딩된 목록 사용)
-        if not request.place_id:  # place_id가 없는 경우에만 동명 지역 확인
-            logger.info("🔍 [FALLBACK_AMBIGUOUS_CHECK] 폴백에서 하드코딩된 동명 지역 확인")
-            
-            # 하드코딩된 동명 지역 목록
-            ambiguous_cities = {
-                "광주": [
-                    {
-                        "place_id": "ChIJzWVBSgSifDUR64Pq5LTtioU",
-                        "display_name": "광주광역시",
-                        "formatted_address": "대한민국 광주광역시",
-                        "lat": 35.1595454,
-                        "lng": 126.8526012
-                    },
-                    {
-                        "place_id": "ChIJBzKw3HGifDURm_JbQKHsEX4",
-                        "display_name": "경기도 광주시",
-                        "formatted_address": "대한민국 경기도 광주시",
-                        "lat": 37.4138056,
-                        "lng": 127.2558309
-                    }
-                ],
-                "김포": [
-                    {
-                        "place_id": "ChIJzWVBSgSifDUR64Pq5LTtioU",
-                        "display_name": "김포시",
-                        "formatted_address": "대한민국 경기도 김포시",
-                        "lat": 37.6156,
-                        "lng": 126.7159
-                    },
-                    {
-                        "place_id": "ChIJBzKw3HGifDURm_JbQKHsEX4",
-                        "display_name": "김포공항",
-                        "formatted_address": "대한민국 서울특별시 강서구 김포공항",
-                        "lat": 37.5583,
-                        "lng": 126.7906
-                    }
-                ]
-            }
-            
-            # 한국 도시의 경우 동명 지역 확인
-            if request.country in ["대한민국", "한국", "South Korea", "Korea"]:
-                city_key = request.city.strip()
-                
-                if city_key in ambiguous_cities:
-                    options = ambiguous_cities[city_key]
-                    
-                    logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS] 하드코딩된 동명 지역 감지: {request.city} - {len(options)}개 선택지")
-                    
-                    # 폴백에서는 HTTPException 대신 특별한 응답 반환
-                    return PlaceRecommendationResponse(
-                        success=False,
-                        city_id=0,
-                        city_name=request.city,
-                        country_name=request.country,
-                        main_theme="AMBIGUOUS_LOCATION",
-                        recommendations={},
-                        places=[],
-                        previously_recommended_count=0,
-                        newly_recommended_count=0,
-                        status="AMBIGUOUS_LOCATION",
-                        options=options,
-                        message=f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
-                        is_fallback=False,  # 동명 지역 감지는 폴백이 아님
-                        fallback_reason=None
-                    )
-            
-            logger.info("✅ [FALLBACK_AMBIGUOUS_CHECK] 동명 지역 아님, 폴백 추천 진행")
+        # 폴백에서는 동명 지역 처리를 하지 않음 (이미 Geocoding에서 처리됨)
+        logger.info("🔄 [FALLBACK_START] 폴백 추천 시작 (동명 지역은 이미 처리됨)")
         
         # 도시명 정규화
         city_key = request.city.lower()
@@ -271,68 +205,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         else:
             logger.info("ℹ️ [GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
 
-        # 🚨 [핵심 수정] Plan A 활성화 및 동명 지역 감지 로직 적용
-        # 1단계: Plan A 실행 전 동명 지역 확인 (하드코딩된 목록 사용)
-        if not hasattr(request, 'place_id') or not request.place_id:  # place_id가 없는 경우에만 동명 지역 확인
-            logger.info("🔍 [PLAN_A_AMBIGUOUS_CHECK] Plan A 실행 전 하드코딩된 동명 지역 확인")
-            
-            # 하드코딩된 동명 지역 목록
-            ambiguous_cities = {
-                "광주": [
-                    {
-                        "place_id": "ChIJzWVBSgSifDUR64Pq5LTtioU",
-                        "display_name": "광주광역시",
-                        "formatted_address": "대한민국 광주광역시",
-                        "lat": 35.1595454,
-                        "lng": 126.8526012
-                    },
-                    {
-                        "place_id": "ChIJBzKw3HGifDURm_JbQKHsEX4",
-                        "display_name": "경기도 광주시",
-                        "formatted_address": "대한민국 경기도 광주시",
-                        "lat": 37.4138056,
-                        "lng": 127.2558309
-                    }
-                ],
-                "김포": [
-                    {
-                        "place_id": "ChIJzWVBSgSifDUR64Pq5LTtioU",
-                        "display_name": "김포시",
-                        "formatted_address": "대한민국 경기도 김포시",
-                        "lat": 37.6156,
-                        "lng": 126.7159
-                    },
-                    {
-                        "place_id": "ChIJBzKw3HGifDURm_JbQKHsEX4",
-                        "display_name": "김포공항",
-                        "formatted_address": "대한민국 서울특별시 강서구 김포공항",
-                        "lat": 37.5583,
-                        "lng": 126.7906
-                    }
-                ]
-            }
-            
-            # 한국 도시의 경우 동명 지역 확인
-            if request.country in ["대한민국", "한국", "South Korea", "Korea"]:
-                city_key = request.city.strip()
-                
-                if city_key in ambiguous_cities:
-                    options = ambiguous_cities[city_key]
-                    
-                    logger.warning(f"⚠️ [PLAN_A_AMBIGUOUS] Plan A에서 하드코딩된 동명 지역 감지: {request.city} - {len(options)}개 선택지")
-                    
-                    raise HTTPException(
-                        status_code=400,
-                        detail={
-                            "error_code": "AMBIGUOUS_LOCATION",
-                            "message": f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
-                            "options": options
-                        }
-                    )
-            
-            logger.info("✅ [PLAN_A_AMBIGUOUS_CHECK] 동명 지역 아님, Plan A 진행")
-        
-        # 2단계: Plan A 실행 (정상 추천 시스템)
+        # 🚨 [핵심 수정] Plan A 실행 (Geocoding API에서 이미 동명 지역 처리 완료)
         try:
             logger.info("🚀 [PLAN_A_START] Plan A (정상 추천 시스템) 실행 시작")
             response = await place_recommendation_service.generate_place_recommendations(request)
