@@ -8,6 +8,15 @@ from typing import List, Dict, Any, Optional
 import googlemaps
 from app.config import settings
 
+# 커스텀 예외 클래스
+class UserInputError(Exception):
+    """사용자 입력 오류 (400 에러로 처리)"""
+    pass
+
+class SystemError(Exception):
+    """시스템 오류 (폴백으로 처리)"""
+    pass
+
 logger = logging.getLogger(__name__)
 
 class GeocodingService:
@@ -46,11 +55,15 @@ class GeocodingService:
         """
         지역명으로 지오코딩 결과를 가져옵니다.
         동명 지역이 있는 경우 여러 결과를 반환합니다.
+        
+        예외 처리:
+        - UserInputError: 사용자 입력 오류 (ZERO_RESULTS)
+        - SystemError: 시스템 오류 (API 키, 네트워크 등)
         """
         try:
             if not self.gmaps:
                 logger.error("❌ [GEOCODING_CLIENT_ERROR] Google Maps 클라이언트가 초기화되지 않았습니다.")
-                raise Exception("Google Maps 클라이언트 초기화 실패")
+                raise SystemError("Google Maps 클라이언트 초기화 실패")
 
             logger.info(f"🌍 [GEOCODING_API_CALL] Geocoding API 호출 시작: '{location_query}'")
             
@@ -59,9 +72,10 @@ class GeocodingService:
             
             logger.info(f"📊 [GEOCODING_RAW_RESULTS] 원본 결과 수: {len(geocode_results)}")
             
+            # 🚨 중요: 결과가 없는 경우 사용자 입력 오류로 처리
             if not geocode_results:
-                logger.warning(f"⚠️ [GEOCODING_NO_RESULTS] 지오코딩 결과가 없습니다: {location_query}")
-                raise Exception(f"'{location_query}'에 대한 지오코딩 결과가 없습니다")
+                logger.warning(f"⚠️ [GEOCODING_ZERO_RESULTS] 지역을 찾을 수 없습니다: {location_query}")
+                raise UserInputError(f"'{location_query}' 지역을 찾을 수 없습니다. 정확한 도시 이름을 입력해주세요.")
 
             # 결과를 표준화된 형태로 변환
             standardized_results = []
@@ -110,10 +124,13 @@ class GeocodingService:
                 
             return standardized_results
 
+        except UserInputError:
+            # 사용자 입력 오류는 그대로 전파 (400 에러로 처리)
+            raise
         except Exception as e:
-            logger.error(f"❌ [GEOCODING_API_ERROR] 지오코딩 API 호출 실패: {e}")
-            # 예외를 다시 발생시켜서 상위에서 폴백 처리할 수 있도록 함
-            raise Exception(f"Geocoding API 실패: {str(e)}")
+            logger.error(f"❌ [GEOCODING_SYSTEM_ERROR] 지오코딩 시스템 오류: {e}")
+            # 시스템 오류는 SystemError로 변환하여 폴백 처리 유도
+            raise SystemError(f"Geocoding 시스템 오류: {str(e)}")
 
     def remove_duplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """

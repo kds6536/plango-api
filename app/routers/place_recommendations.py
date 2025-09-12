@@ -15,8 +15,71 @@ from app.services.supabase_service import SupabaseService
 from app.services.ai_service import AIService
 from app.services.google_places_service import GooglePlacesService
 from app.services.geocoding_service import GeocodingService
+from app.services.email_service import email_service
 
 logger = logging.getLogger(__name__)
+
+async def send_admin_notification(subject: str, error_type: str, error_details: str, user_request: dict) -> bool:
+    """관리자 알림 이메일 발송"""
+    try:
+        return await email_service.send_admin_notification(subject, error_type, error_details, user_request)
+    except Exception as e:
+        logger.warning(f"⚠️ [EMAIL_FAIL] 알림 이메일 발송 실패: {e}")
+        return False
+
+async def execute_fallback_system(request) -> JSONResponse:
+    """
+    Geocoding 실패 시 직접 폴백 시스템 실행
+    Supabase 캐시나 Plan A를 건너뛰고 바로 기본 추천 제공
+    """
+    logger.info("🔄 [FALLBACK_START] 폴백 시스템 시작 - 기본 추천 생성")
+    
+    try:
+        from app.services.place_recommendation_service import PlaceRecommendationService
+        service = PlaceRecommendationService()
+        
+        # 폴백용 기본 추천 생성 (Geocoding 없이)
+        fallback_result = await service.generate_fallback_recommendations(
+            city=request.city,
+            country=request.country,
+            total_duration=request.total_duration,
+            travelers_count=request.travelers_count,
+            travel_style=request.travel_style,
+            budget_level=request.budget_level
+        )
+        
+        logger.info("✅ [FALLBACK_SUCCESS] 폴백 시스템으로 기본 추천 생성 완료")
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "is_fallback": True,
+                "message": "AI 추천이 일시적으로 어려워 기본 추천을 제공합니다.",
+                "recommendations": fallback_result
+            }
+        )
+        
+    except Exception as fallback_error:
+        logger.error(f"💥 [FALLBACK_FAIL] 폴백 시스템도 실패: {fallback_error}")
+        
+        # 최후의 수단: 하드코딩된 기본 응답
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "is_fallback": True,
+                "message": "서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.",
+                "recommendations": {
+                    "categories": [
+                        {
+                            "name": "관광명소",
+                            "places": [{"name": "추천 준비 중", "description": "잠시 후 다시 시도해주세요."}]
+                        }
+                    ]
+                }
+            }
+        )
 
 # 폴백 추천 데이터 (Plan A 실패 시 사용)
 FALLBACK_RECOMMENDATIONS = {
@@ -284,6 +347,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             logger.info("📍 [PLAN_A_GEOCODING_CONDITION] place_id가 없으므로 Geocoding API 호출 진행")
             try:
                 logger.info("📍 [PLAN_A_GEOCODING_CALL] Plan A에서 실제 Geocoding API 호출 시작")
+                from app.services.geocoding_service import GeocodingService, UserInputError, SystemError
                 geocoding_service = GeocodingService()
                 location_query = f"{request.city}, {request.country}"
                 logger.info(f"🌍 [PLAN_A_GEOCODING_QUERY] Plan A 검색 쿼리: '{location_query}'")
@@ -309,28 +373,36 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 
                 logger.info("✅ [PLAN_A_GEOCODING_PASS] Plan A에서 동명 지역 문제가 없어, Plan A 실행을 계속합니다.")
                 
-            except Exception as geocoding_error:
-                logger.error(f"❌ [PLAN_A_GEOCODING_FAIL] Plan A에서 Geocoding API 호출 중 에러 발생: {geocoding_error}", exc_info=True)
-                logger.error(f"🚨 [PLAN_A_GEOCODING_BLOCKED] Plan A에서 Geocoding 실패로 인해 Plan A 실행이 차단됩니다.")
+            except UserInputError as user_error:
+                # 🚨 사용자 입력 오류 - 400 에러로 즉시 반환
+                logger.warning(f"👤 [USER_INPUT_ERROR] 사용자 입력 오류: {user_error}")
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error_code": "LOCATION_NOT_FOUND",
+                        "message": str(user_error)
+                    }
+                )
                 
-                # Geocoding 실패 시 즉시 폴백으로 전환 + 이메일 알림
-                logger.warning("🔄 [GEOCODING_FALLBACK] Geocoding 실패로 즉시 폴백 시스템으로 전환합니다.")
+            except SystemError as system_error:
+                # 🚨 시스템 오류 - 폴백으로 즉시 전환 (Supabase 건너뛰기)
+                logger.error(f"💥 [SYSTEM_ERROR] 시스템 오류로 폴백 전환: {system_error}")
+                logger.warning("🔄 [SKIP_TO_FALLBACK] Geocoding 시스템 오류로 캐시 확인을 건너뛰고 즉시 폴백으로 전환합니다.")
                 
+                # 관리자 알림 (이메일 실패해도 서비스는 계속)
                 try:
-                    email_success = await send_admin_notification(
-                        subject="[Plango] Geocoding API 실패 - 폴백 시스템 활성화",
-                        error_type="GEOCODING_FAILURE",
-                        error_details=str(geocoding_error),
+                    await send_admin_notification(
+                        subject="[Plango] Geocoding 시스템 오류 - 폴백 활성화",
+                        error_type="GEOCODING_SYSTEM_ERROR",
+                        error_details=str(system_error),
                         user_request=request.model_dump()
                     )
-                    if email_success:
-                        logger.info("📧 [EMAIL_SUCCESS] Geocoding 실패 알림 이메일 발송 성공")
-                    else:
-                        logger.warning("⚠️ [EMAIL_FAIL] Geocoding 실패 알림 이메일 발송 실패 (시스템은 계속 작동)")
                 except Exception as email_error:
-                    logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 중 예외: {email_error}", exc_info=True)
+                    logger.warning(f"⚠️ [EMAIL_FAIL] 알림 이메일 실패: {email_error}")
                 
-                return await generate_fallback_recommendations(request, geocoding_results=None)
+                # 🚀 즉시 폴백 시스템으로 전환 (Supabase 건너뛰기)
+                logger.info("🔄 [DIRECT_FALLBACK] Geocoding 실패로 캐시/Plan A를 건너뛰고 직접 폴백 실행")
+                return await execute_fallback_system(request)
         else:
             logger.info("ℹ️ [STEP_1_GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
 
