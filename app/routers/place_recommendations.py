@@ -98,7 +98,8 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest,
     try:
         logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
         
-        # Geocoding 결과가 없으면 새로 호출 (Plan A가 Geocoding 이외 이유로 실패한 경우)
+        # ✅ 폴백 1단계: 위치 표준화 (Geocoding) - Plan A에서 실패한 경우만
+        logger.info("📍 [FALLBACK_STEP_1] 폴백 1단계: 위치 표준화 확인")
         logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] geocoding_results is None: {geocoding_results is None}")
         logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] hasattr place_id: {hasattr(request, 'place_id')}")
         logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] place_id value: {getattr(request, 'place_id', 'NOT_FOUND')}")
@@ -151,7 +152,11 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest,
             logger.info(f"    - place_id 값: {getattr(request, 'place_id', None)}")
             logger.info(f"    - 건너뛰는 이유: {'기존 Geocoding 결과 있음' if geocoding_results is not None else 'place_id 제공됨'}")
         
-        logger.info("🔄 [FALLBACK_CONTINUE] 폴백 추천 데이터 생성 시작")
+        # ✅ 폴백 2단계: 캐시 확인 생략 (이미 실패했으므로)
+        logger.info("🗄️ [FALLBACK_STEP_2] 폴백 2단계: 캐시 확인 생략 (이미 실패)")
+        
+        # ✅ 폴백 3단계: 하드코딩된 추천 데이터 사용
+        logger.info("🔄 [FALLBACK_STEP_3] 폴백 3단계: 하드코딩된 추천 데이터 생성 시작")
         
         # 도시명 정규화
         city_key = request.city.lower()
@@ -193,6 +198,9 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest,
         )
         
         logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 추천 완료: {len(fallback_places)}개 장소")
+        
+        # ✅ 폴백 4단계: 응답 반환
+        logger.info("📤 [FALLBACK_STEP_4] 폴백 4단계: 최종 응답 반환")
         return response
         
     except Exception as e:
@@ -213,9 +221,8 @@ def get_place_recommendation_service():
             
             logger.info("🔧 PlaceRecommendationService 초기화 시작")
             
-            # Supabase 클라이언트 생성
-            supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-            supabase_service = SupabaseService(supabase_client)
+            # Supabase 서비스 초기화 (자체적으로 클라이언트 생성)
+            supabase_service = SupabaseService()
             logger.info("✅ Supabase 서비스 초기화 완료")
             
             # AI 서비스 초기화
@@ -269,8 +276,8 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
 
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
 
-        # 🚨 [핵심 수정] 1단계: Geocoding을 가장 먼저 실행 (동명 지역 처리) - 서비스 초기화 이전에 실행
-        logger.info("📍 [PLAN_A_GEOCODING_START] Plan A에서 동명 지역 확인을 위해 Geocoding API 호출을 시작합니다.")
+        # ✅ 1단계: 위치 표준화 (Geocoding) - 동명 지역 감지
+        logger.info("📍 [STEP_1_GEOCODING] 1단계: 위치 표준화 및 동명 지역 감지 시작")
         
         geocoding_results = None
         if not hasattr(request, 'place_id') or not request.place_id:
@@ -325,32 +332,37 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 
                 return await generate_fallback_recommendations(request, geocoding_results=None)
         else:
-            logger.info("ℹ️ [PLAN_A_GEOCODING_SKIP] Plan A에서 place_id가 제공되어 Geocoding을 건너뜁니다.")
+            logger.info("ℹ️ [STEP_1_GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
 
-        # 2단계: 서비스 초기화 확인 (Geocoding 통과 후)
+        # ✅ 2단계: 캐시 확인 (Supabase) - 기존 데이터 확인
+        logger.info("🗄️ [STEP_2_CACHE] 2단계: 캐시 확인 및 서비스 초기화 시작")
         service = get_place_recommendation_service()
         if service is None:
-            logger.error("❌ [SERVICE_INIT_FAIL] PlaceRecommendationService 초기화 실패 - 폴백으로 전환")
+            logger.error("❌ [STEP_2_CACHE_FAIL] 서비스 초기화 실패 - 폴백으로 전환")
             return await generate_fallback_recommendations(request, geocoding_results)
+        logger.info("✅ [STEP_2_CACHE_SUCCESS] 서비스 초기화 완료")
 
-        # 🚨 [핵심 수정] Plan A 실행 (Geocoding API에서 이미 동명 지역 처리 완료)
+        # ✅ 3단계: Plan A (신규 생성) - AI + Google Places
+        logger.info("🚀 [STEP_3_PLAN_A] 3단계: Plan A (신규 추천 생성) 시작")
         try:
-            logger.info("🚀 [PLAN_A_START] Plan A (정상 추천 시스템) 실행 시작")
             response = await service.generate_place_recommendations(request)
             
             # Plan A 결과 검증
             if not response or not hasattr(response, 'newly_recommended_count') or response.newly_recommended_count == 0:
-                logger.warning("⚠️ [PLAN_A_INSUFFICIENT] Plan A 결과가 충분하지 않습니다.")
+                logger.warning("⚠️ [STEP_3_PLAN_A_INSUFFICIENT] Plan A 결과가 충분하지 않습니다.")
                 raise Exception("Plan A에서 충분한 추천 결과를 생성하지 못했습니다")
             
-            logger.info(f"✅ [PLAN_A_SUCCESS] Plan A 성공: 신규 {response.newly_recommended_count}개 추천")
+            logger.info(f"✅ [STEP_3_PLAN_A_SUCCESS] Plan A 성공: 신규 {response.newly_recommended_count}개 추천")
+            
+            # ✅ 4단계: 응답 반환
+            logger.info("📤 [STEP_4_RESPONSE] 4단계: 최종 응답 반환")
             return response
             
         except Exception as plan_a_error:
-            logger.error(f"❌ [PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
+            logger.error(f"❌ [STEP_3_PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
             
             # Plan A 실패 시 폴백으로 전환 + 이메일 알림
-            logger.warning("🔄 [PLAN_A_FALLBACK] Plan A 실패로 폴백 시스템으로 전환합니다.")
+            logger.warning("🔄 [STEP_3_FALLBACK] Plan A 실패로 폴백 시스템으로 전환합니다.")
             
             try:
                 email_success = await send_admin_notification(
