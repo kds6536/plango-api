@@ -112,13 +112,14 @@ class PlaceRecommendationService:
             # === 2단계: Plan A 활성화 및 실행 ===
             logger.info("🚀 [PLAN_A_START] Plan A (search_strategy_v1) 실행 시작")
             
-            # Plan A 실행 (기존 코드 활용)
-            # search_strategy_v1 프롬프트 로드
-            prompt_template = await self.supabase.get_master_prompt('search_strategy_v1')
-            logger.info("✅ [PLAN_A_PROMPT] search_strategy_v1 프롬프트 로드 성공")
-            
-            # 기존 장소 목록 조회
-            existing_place_names = await self.supabase.get_existing_place_names(city_id)
+            try:
+                # Plan A 실행 (기존 코드 활용)
+                # search_strategy_v1 프롬프트 로드
+                prompt_template = await self.supabase.get_master_prompt('search_strategy_v1')
+                logger.info("✅ [PLAN_A_PROMPT] search_strategy_v1 프롬프트 로드 성공")
+                
+                # 기존 장소 목록 조회
+                existing_place_names = await self.supabase.get_existing_place_names(city_id)
 
             template = Template(prompt_template)
             ai_prompt = template.safe_substitute(
@@ -350,6 +351,19 @@ class PlaceRecommendationService:
 
             # === 1-C. 그 외: 예외 처리 ===
             raise HTTPException(status_code=500, detail="AI 응답 상태가 올바르지 않습니다")
+            
+            except Exception as plan_a_error:
+                logger.error(f"❌ [PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
+                
+                # Plan A 실패 시 관리자 알림
+                try:
+                    await self._notify_admin_plan_a_failure("Plan A 실행 실패", str(plan_a_error))
+                except Exception as notify_error:
+                    logger.error(f"❌ [NOTIFY_FAIL] 관리자 알림 실패: {notify_error}")
+                
+                # === 3단계: Plan B 폴백 ===
+                logger.info("🔄 [PLAN_B_START] Plan A 실패로 인한 Plan B 폴백 진행")
+                return await self._fallback_to_legacy_recommendation(request)
             
         except Exception as e:
             logger.error(f"❌ [SYSTEM_ERROR] 전체 시스템 오류: {e}")

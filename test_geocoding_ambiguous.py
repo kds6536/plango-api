@@ -104,6 +104,8 @@ async def test_geocoding_ambiguous():
                     
             except Exception as e:
                 print(f"   💥 요청 실패: {e}")
+                import traceback
+                print(f"   상세: {traceback.format_exc()}")
 
 async def test_specific_geocoding():
     """특정 도시의 Geocoding 결과 확인"""
