@@ -71,15 +71,52 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
         logger.error(f"❌ [EMAIL_NOTIFICATION_ERROR] 관리자 알림 발송 중 예외: {e}")
         return False
 
-async def generate_fallback_recommendations(request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
+async def generate_fallback_recommendations(request: PlaceRecommendationRequest, geocoding_results=None) -> PlaceRecommendationResponse:
     """
     Plan A 실패 시 사용하는 폴백 추천 시스템 (동명 지역 감지 포함)
+    
+    Args:
+        request: 사용자 요청
+        geocoding_results: 이미 호출된 Geocoding 결과 (중복 호출 방지)
     """
     try:
         logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
         
-        # 폴백에서는 동명 지역 처리를 하지 않음 (이미 Geocoding에서 처리됨)
-        logger.info("🔄 [FALLBACK_START] 폴백 추천 시작 (동명 지역은 이미 처리됨)")
+        # Geocoding 결과가 없으면 새로 호출 (Plan A가 Geocoding 이외 이유로 실패한 경우)
+        if geocoding_results is None and (not hasattr(request, 'place_id') or not request.place_id):
+            try:
+                logger.info("📍 [FALLBACK_GEOCODING] 폴백에서 Geocoding API 호출")
+                geocoding_service = GeocodingService()
+                location_query = f"{request.city}, {request.country}"
+                geocoding_results = await geocoding_service.get_geocode_results(location_query)
+                
+                # 폴백에서도 동명 지역 감지
+                if geocoding_service.is_ambiguous_location(geocoding_results):
+                    unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
+                    options = geocoding_service.format_location_options(unique_results)
+                    logger.info(f"⚠️ [FALLBACK_AMBIGUOUS] 폴백에서 동명 지역 감지: {len(options)}개 선택지")
+                    
+                    # 동명 지역 응답을 PlaceRecommendationResponse 형태로 반환
+                    return PlaceRecommendationResponse(
+                        success=False,
+                        city_id=0,
+                        city_name=request.city,
+                        country_name=request.country,
+                        main_theme="동명 지역 선택 필요",
+                        recommendations={},
+                        places=[],
+                        previously_recommended_count=0,
+                        newly_recommended_count=0,
+                        status="AMBIGUOUS_LOCATION",
+                        options=options,
+                        message=f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요."
+                    )
+                    
+            except Exception as geocoding_error:
+                logger.error(f"❌ [FALLBACK_GEOCODING_FAIL] 폴백에서도 Geocoding 실패: {geocoding_error}")
+                # Geocoding 실패해도 폴백 데이터는 제공
+        
+        logger.info("🔄 [FALLBACK_CONTINUE] 폴백 추천 데이터 생성 시작")
         
         # 도시명 정규화
         city_key = request.city.lower()
@@ -197,13 +234,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
 
         logger.info(f"새로운 장소 추천 요청: {request.model_dump_json(indent=2)}")
 
-        # 서비스 초기화 확인
-        service = get_place_recommendation_service()
-        if service is None:
-            logger.error("❌ [SERVICE_INIT_FAIL] PlaceRecommendationService 초기화 실패")
-            return await generate_fallback_recommendations(request)
-
-        # 🚨 [핵심 수정] 1단계: Geocoding을 가장 먼저 실행 (동명 지역 처리)
+        # 🚨 [핵심 수정] 1단계: Geocoding을 가장 먼저 실행 (동명 지역 처리) - 서비스 초기화 이전에 실행
         logger.info("📍 [GEOCODING_START] 동명 지역 확인을 위해 Geocoding API 호출을 시작합니다.")
         
         geocoding_results = None
@@ -251,9 +282,15 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 except Exception as email_error:
                     logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
                 
-                return await generate_fallback_recommendations(request)
+                return await generate_fallback_recommendations(request, geocoding_results=None)
         else:
             logger.info("ℹ️ [GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
+
+        # 2단계: 서비스 초기화 확인 (Geocoding 통과 후)
+        service = get_place_recommendation_service()
+        if service is None:
+            logger.error("❌ [SERVICE_INIT_FAIL] PlaceRecommendationService 초기화 실패 - 폴백으로 전환")
+            return await generate_fallback_recommendations(request, geocoding_results)
 
         # 🚨 [핵심 수정] Plan A 실행 (Geocoding API에서 이미 동명 지역 처리 완료)
         try:
@@ -285,7 +322,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             except Exception as email_error:
                 logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
             
-            fallback_response = await generate_fallback_recommendations(request)
+            fallback_response = await generate_fallback_recommendations(request, geocoding_results)
             
             # 폴백에서 동명 지역이 감지된 경우 400 에러로 반환
             if fallback_response.status == "AMBIGUOUS_LOCATION":
