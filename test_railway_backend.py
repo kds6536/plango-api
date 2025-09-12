@@ -17,7 +17,7 @@ def test_railway_health():
     try:
         # 헬스체크
         print("🏥 헬스체크 테스트...")
-        response = requests.get(f"{RAILWAY_URL}/health", timeout=10)
+        response = requests.get(f"{RAILWAY_URL}/api/v1/health", timeout=10)
         print(f"   상태 코드: {response.status_code}")
         
         if response.status_code == 200:

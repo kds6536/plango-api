@@ -10,7 +10,10 @@ import json
 from datetime import datetime
 from typing import Dict, Any
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
-from app.services.place_recommendation_service import place_recommendation_service
+from app.services.place_recommendation_service import place_recommendation_service, PlaceRecommendationService
+from app.services.supabase_service import SupabaseService
+from app.services.ai_service import AIService
+from app.services.google_places_service import GooglePlacesService
 from app.services.geocoding_service import GeocodingService
 
 logger = logging.getLogger(__name__)
@@ -126,9 +129,42 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest)
 
 router = APIRouter(prefix="/api/v1/place-recommendations", tags=["Place Recommendations v6.0"])
 
+# 서비스 인스턴스 초기화
+def get_place_recommendation_service():
+    """PlaceRecommendationService 인스턴스를 반환하는 의존성 함수"""
+    global place_recommendation_service
+    if place_recommendation_service is None:
+        # 필요한 서비스들 초기화
+        from app.config import settings
+        from supabase import create_client
+        
+        # Supabase 클라이언트 생성
+        supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        supabase_service = SupabaseService(supabase_client)
+        
+        # AI 서비스 초기화
+        ai_service = AIService()
+        
+        # Google Places 서비스 초기화  
+        google_places_service = GooglePlacesService()
+        
+        # PlaceRecommendationService 초기화
+        place_recommendation_service = PlaceRecommendationService(
+            supabase=supabase_service,
+            ai_service=ai_service,
+            google_places_service=google_places_service
+        )
+        
+        logger.info("✅ PlaceRecommendationService 초기화 완료")
+    
+    return place_recommendation_service
+
 
 @router.post("/generate", response_model=PlaceRecommendationResponse)
-async def generate_place_recommendations(request: PlaceRecommendationRequest):
+async def generate_place_recommendations(
+    request: PlaceRecommendationRequest,
+    service: PlaceRecommendationService = Depends(get_place_recommendation_service)
+):
     """
     새로운 장소 추천 생성 (v6.0)
     
@@ -208,7 +244,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         # 🚨 [핵심 수정] Plan A 실행 (Geocoding API에서 이미 동명 지역 처리 완료)
         try:
             logger.info("🚀 [PLAN_A_START] Plan A (정상 추천 시스템) 실행 시작")
-            response = await place_recommendation_service.generate_place_recommendations(request)
+            response = await service.generate_place_recommendations(request)
             
             # Plan A 결과 검증
             if not response or not hasattr(response, 'newly_recommended_count') or response.newly_recommended_count == 0:
@@ -268,13 +304,16 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
 
 
 @router.get("/health")
-async def place_recommendations_health_check():
+async def place_recommendations_health_check(
+    service: PlaceRecommendationService = Depends(get_place_recommendation_service)
+):
     """
     장소 추천 서비스 상태 확인
     """
     try:
         # Supabase 연결 상태 확인
-        supabase_connected = place_recommendation_service.supabase.is_connected()
+        supabase_connected = service.supabase.supabase.table('countries').select('id').limit(1).execute()
+        supabase_connected = True
         
         return {
             "status": "healthy",
@@ -294,13 +333,16 @@ async def place_recommendations_health_check():
 
 
 @router.get("/stats/{city_id}")
-async def get_city_recommendation_stats(city_id: int):
+async def get_city_recommendation_stats(
+    city_id: int,
+    service: PlaceRecommendationService = Depends(get_place_recommendation_service)
+):
     """
     특정 도시의 추천 통계 조회
     """
     try:
         # 도시의 기존 장소 수 조회
-        existing_places = await place_recommendation_service.supabase.get_existing_place_names(city_id)
+        existing_places = await service.supabase.get_existing_place_names(city_id)
         
         # 카테고리별 분포 계산 (cached_places에서 직접 조회하는 것이 더 정확하지만, 
         # 현재는 간단히 이름 기반으로 계산)
@@ -328,12 +370,15 @@ async def get_city_recommendation_stats(city_id: int):
 
 
 @router.post("/test-prompt-generation")
-async def test_prompt_generation(request: PlaceRecommendationRequest):
+async def test_prompt_generation(
+    request: PlaceRecommendationRequest,
+    service: PlaceRecommendationService = Depends(get_place_recommendation_service)
+):
     """
     개발용: 고도화(Plan A) → 폴백(Plan B) 흐름으로 실제 추천 결과를 테스트합니다.
     """
     try:
-        response = await place_recommendation_service.generate_place_recommendations(request)
+        response = await service.generate_place_recommendations(request)
         return response
     except Exception as e:
         logger.error(f"프롬프트(실제 추천) 테스트 실패: {e}")
