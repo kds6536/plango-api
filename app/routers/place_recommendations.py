@@ -53,6 +53,14 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
         # 실제 이메일 서비스 사용
         from app.services.email_service import email_service
         
+        # 이메일 서비스 연결 테스트 먼저 수행
+        test_result = await email_service.test_email_connection()
+        if not test_result["success"]:
+            logger.error(f"❌ [EMAIL_CONNECTION_FAIL] 이메일 서버 연결 실패: {test_result.get('error', 'Unknown')}")
+            return False
+        
+        logger.info("✅ [EMAIL_CONNECTION_OK] 이메일 서버 연결 확인됨")
+        
         success = await email_service.send_admin_notification(
             subject=subject,
             error_type=error_type,
@@ -68,7 +76,7 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
         return success
         
     except Exception as e:
-        logger.error(f"❌ [EMAIL_NOTIFICATION_ERROR] 관리자 알림 발송 중 예외: {e}")
+        logger.error(f"❌ [EMAIL_NOTIFICATION_ERROR] 관리자 알림 발송 중 예외: {e}", exc_info=True)
         return False
 
 async def generate_fallback_recommendations(request: PlaceRecommendationRequest, geocoding_results=None) -> PlaceRecommendationResponse:
@@ -83,18 +91,29 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest,
         logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
         
         # Geocoding 결과가 없으면 새로 호출 (Plan A가 Geocoding 이외 이유로 실패한 경우)
+        logger.info(f"🔍 [FALLBACK_DEBUG] geocoding_results is None: {geocoding_results is None}")
+        logger.info(f"🔍 [FALLBACK_DEBUG] hasattr place_id: {hasattr(request, 'place_id')}")
+        logger.info(f"🔍 [FALLBACK_DEBUG] place_id value: {getattr(request, 'place_id', 'NOT_FOUND')}")
+        
         if geocoding_results is None and (not hasattr(request, 'place_id') or not request.place_id):
             try:
-                logger.info("📍 [FALLBACK_GEOCODING] 폴백에서 Geocoding API 호출")
+                logger.info("📍 [FALLBACK_GEOCODING] 폴백에서 Geocoding API 호출 시작")
                 geocoding_service = GeocodingService()
                 location_query = f"{request.city}, {request.country}"
+                logger.info(f"📍 [FALLBACK_GEOCODING] 쿼리: {location_query}")
                 geocoding_results = await geocoding_service.get_geocode_results(location_query)
+                logger.info(f"📍 [FALLBACK_GEOCODING] 결과 수: {len(geocoding_results) if geocoding_results else 0}")
                 
                 # 폴백에서도 동명 지역 감지
-                if geocoding_service.is_ambiguous_location(geocoding_results):
+                logger.info(f"🔍 [FALLBACK_AMBIGUOUS_CHECK] 동명 지역 감지 확인 중...")
+                is_ambiguous = geocoding_service.is_ambiguous_location(geocoding_results)
+                logger.info(f"🔍 [FALLBACK_AMBIGUOUS_CHECK] is_ambiguous: {is_ambiguous}")
+                
+                if is_ambiguous:
                     unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
                     options = geocoding_service.format_location_options(unique_results)
                     logger.info(f"⚠️ [FALLBACK_AMBIGUOUS] 폴백에서 동명 지역 감지: {len(options)}개 선택지")
+                    logger.info(f"⚠️ [FALLBACK_AMBIGUOUS] 옵션들: {[opt.get('display_name', 'Unknown') for opt in options]}")
                     
                     # 동명 지역 응답을 PlaceRecommendationResponse 형태로 반환
                     return PlaceRecommendationResponse(
@@ -115,6 +134,8 @@ async def generate_fallback_recommendations(request: PlaceRecommendationRequest,
             except Exception as geocoding_error:
                 logger.error(f"❌ [FALLBACK_GEOCODING_FAIL] 폴백에서도 Geocoding 실패: {geocoding_error}")
                 # Geocoding 실패해도 폴백 데이터는 제공
+        else:
+            logger.info(f"🔍 [FALLBACK_SKIP_GEOCODING] Geocoding 건너뜀 - geocoding_results: {geocoding_results is not None}, place_id: {getattr(request, 'place_id', None)}")
         
         logger.info("🔄 [FALLBACK_CONTINUE] 폴백 추천 데이터 생성 시작")
         
@@ -273,14 +294,18 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 logger.warning("🔄 [GEOCODING_FALLBACK] Geocoding 실패로 즉시 폴백 시스템으로 전환합니다.")
                 
                 try:
-                    await send_admin_notification(
+                    email_success = await send_admin_notification(
                         subject="[Plango] Geocoding API 실패 - 폴백 시스템 활성화",
                         error_type="GEOCODING_FAILURE",
                         error_details=str(geocoding_error),
                         user_request=request.model_dump()
                     )
+                    if email_success:
+                        logger.info("📧 [EMAIL_SUCCESS] Geocoding 실패 알림 이메일 발송 성공")
+                    else:
+                        logger.warning("⚠️ [EMAIL_FAIL] Geocoding 실패 알림 이메일 발송 실패 (시스템은 계속 작동)")
                 except Exception as email_error:
-                    logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
+                    logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 중 예외: {email_error}", exc_info=True)
                 
                 return await generate_fallback_recommendations(request, geocoding_results=None)
         else:
@@ -312,15 +337,18 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             logger.warning("🔄 [PLAN_A_FALLBACK] Plan A 실패로 폴백 시스템으로 전환합니다.")
             
             try:
-                await send_admin_notification(
+                email_success = await send_admin_notification(
                     subject="[Plango] Plan A 실패 - 폴백 시스템 활성화",
                     error_type="PLAN_A_FAILURE",
                     error_details=str(plan_a_error),
                     user_request=request.model_dump()
                 )
-                logger.info("📧 [EMAIL_SUCCESS] Plan A 실패 알림 이메일 발송 성공")
+                if email_success:
+                    logger.info("📧 [EMAIL_SUCCESS] Plan A 실패 알림 이메일 발송 성공")
+                else:
+                    logger.warning("⚠️ [EMAIL_FAIL] Plan A 실패 알림 이메일 발송 실패 (시스템은 계속 작동)")
             except Exception as email_error:
-                logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 실패: {email_error}")
+                logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 중 예외: {email_error}", exc_info=True)
             
             fallback_response = await generate_fallback_recommendations(request, geocoding_results)
             
