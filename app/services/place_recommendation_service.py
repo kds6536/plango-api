@@ -5,6 +5,7 @@
 
 import json
 import logging
+import asyncio
 from typing import Dict, List, Any, Optional
 from string import Template
 from app.services.supabase_service import supabase_service
@@ -42,8 +43,22 @@ class PlaceRecommendationService:
             
             # === 0단계: 도시명 표준화 및 중복 확인 ===
             logger.info("🔍 [STEP_0] 도시명 표준화 및 중복 확인 시작")
-            standardized_result = await self._standardize_and_check_city(request)
             
+            # 타임아웃 보호: 표준화 단계
+            try:
+                standardized_result = await asyncio.wait_for(
+                    self._standardize_and_check_city(request), 
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                logger.error("⏰ [TIMEOUT] 도시명 표준화 타임아웃 (30초)")
+                raise Exception("도시명 표준화 처리 시간 초과")
+            
+            # 안전한 딕셔너리 접근
+            if not isinstance(standardized_result, dict):
+                logger.error(f"❌ [STANDARDIZE_ERROR] 예상치 못한 반환 타입: {type(standardized_result)}")
+                raise Exception("표준화 결과가 올바르지 않습니다")
+                
             if standardized_result.get('status') == 'AMBIGUOUS':
                 logger.info("⚠️ [AMBIGUOUS_CITY] 동일 이름 도시 발견, 사용자 선택 필요")
                 return PlaceRecommendationResponse(
@@ -114,7 +129,15 @@ class PlaceRecommendationService:
             except Exception:
                 pass
 
-            ai_raw = await self.ai_service.generate_text(ai_prompt, max_tokens=1200)
+            # 타임아웃 보호: AI 서비스 호출 (첫 번째)
+            try:
+                ai_raw = await asyncio.wait_for(
+                    self.ai_service.generate_text(ai_prompt, max_tokens=1200),
+                    timeout=60.0
+                )
+            except asyncio.TimeoutError:
+                logger.error("⏰ [AI_TIMEOUT_1] AI 서비스 호출 타임아웃 (60초)")
+                raise Exception("AI 서비스 응답 시간 초과")
             logger.info("🤖 [AI] search_strategy_v1 응답 수신")
             
             # AI 응답 검증
@@ -502,7 +525,15 @@ class PlaceRecommendationService:
             )
             
             logger.info("🤖 [PLAN_A_AI] AI 호출 시작")
-            ai_raw = await self.ai_service.generate_text(ai_prompt, max_tokens=1200)
+            # 타임아웃 보호: AI 서비스 호출 (두 번째)
+            try:
+                ai_raw = await asyncio.wait_for(
+                    self.ai_service.generate_text(ai_prompt, max_tokens=1200),
+                    timeout=60.0
+                )
+            except asyncio.TimeoutError:
+                logger.error("⏰ [AI_TIMEOUT_2] AI 서비스 호출 타임아웃 (60초)")
+                raise Exception("AI 서비스 응답 시간 초과")
             
             # AI 응답 검증 강화
             if not ai_raw or not isinstance(ai_raw, str) or not ai_raw.strip():
