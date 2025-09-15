@@ -423,8 +423,10 @@ class PlaceRecommendationService:
     async def _get_standardized_location(self, city: str, country: str) -> Optional[Dict[str, str]]:
         """Google Geocoding API로 표준화된 영문 지명 획득"""
         try:
-            # Google Places API의 geocoding 기능 활용
-            geocode_result = await self.google_places_service.geocode_location(f"{city}, {country}")
+            # 새로운 Geocoding 서비스 사용
+            from app.services.geocoding_service import GeocodingService
+            geocoding_service = GeocodingService()
+            geocode_result = await geocoding_service.get_geocode_results(f"{city}, {country}")
             
             if geocode_result and len(geocode_result) > 0:
                 result = geocode_result[0]
@@ -446,12 +448,14 @@ class PlaceRecommendationService:
                     elif any(t in types for t in ['locality', 'administrative_area_level_1']):
                         standardized['city'] = long_name
                 
+                logger.info(f"✅ [GEOCODING_SUCCESS] 표준화 성공: {standardized}")
                 return standardized
             
             return None
             
         except Exception as e:
-            logger.error(f"❌ [GEOCODE_ERROR] Geocoding 실패: {e}")
+            logger.error(f"❌ [GEOCODE_ERROR] Geocoding 실패: {len(geocode_result) if 'geocode_result' in locals() else 0}")
+            logger.error(f"❌ [GEOCODE_ERROR_DETAIL] Geocoding 실패 상세: {e}")
             return None
 
     async def _check_duplicate_cities(self, city_name: str) -> List[Dict[str, Any]]:
