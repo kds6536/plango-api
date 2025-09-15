@@ -180,8 +180,10 @@ class PlaceRecommendationService:
                 logger.info(f"🧠 [AI] 상태 판별: {status}")
 
                 # 모달에서 선택된 옵션인지 확인 (region 정보가 명확하게 포함된 경우)
-                has_explicit_region = bool(getattr(request, 'region', '').strip())
-                logger.info(f"🔍 [FORCE_RESOLVE_CHECK] 명시적 region 존재: {has_explicit_region} (region: '{getattr(request, 'region', '')}')")
+                region_value = getattr(request, 'region', None)
+                region_stripped = region_value.strip() if isinstance(region_value, str) else ''
+                has_explicit_region = bool(region_stripped)
+                logger.info(f"🔍 [FORCE_RESOLVE_CHECK] 명시적 region 존재: {has_explicit_region} (region: '{region_value}')")
                 
                 # region이 명확하게 포함된 요청이면 AI가 AMBIGUOUS라고 해도 강제로 SUCCESS 처리
                 if has_explicit_region and status == 'AMBIGUOUS':

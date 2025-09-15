@@ -290,6 +290,22 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"장소 추천 중 예상치 못한 오류: {e}", exc_info=True)
+        
+        # Plan A 실패 시 관리자 알림 발송
+        try:
+            email_success = await send_admin_notification(
+                subject="[PLANGO 긴급] Plan A 추천 시스템 실패",
+                error_type="PLAN_A_FAILURE",
+                error_details=str(e),
+                user_request=request.model_dump()
+            )
+            if email_success:
+                logger.info("📧 [EMAIL_SUCCESS] Plan A 실패 알림 이메일 발송 성공")
+            else:
+                logger.error("📧 [EMAIL_FAIL] Plan A 실패 알림 이메일 발송 실패")
+        except Exception as email_error:
+            logger.error(f"💥 [EMAIL_ERROR] 이메일 발송 중 예외: {email_error}")
+        
         raise HTTPException(status_code=500, detail=f"장소 추천 처리 중 오류가 발생했습니다: {str(e)}")
 
 
