@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
 from app.services.supabase_service import SupabaseService
-from app.services.ai_service import AIService
+from app.services.enhanced_ai_service import EnhancedAIService
 from app.services.google_places_service import GooglePlacesService
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class PlaceRecommendationService:
     폴백 시스템 없음 - Plan A 실패 시 에러 발생
     """
     
-    def __init__(self, supabase: SupabaseService, ai_service: AIService, google_places_service: GooglePlacesService):
+    def __init__(self, supabase: SupabaseService, ai_service: EnhancedAIService, google_places_service: GooglePlacesService):
         self.supabase = supabase
         self.ai_service = ai_service
         self.google_places_service = google_places_service
@@ -132,7 +132,7 @@ class PlaceRecommendationService:
                 # 타임아웃 보호: AI 서비스 호출 (첫 번째)
                 try:
                     ai_raw = await asyncio.wait_for(
-                        self.ai_service.generate_text(ai_prompt, max_tokens=1200),
+                        self.ai_service.generate_response(ai_prompt, max_tokens=1200),
                         timeout=60.0
                     )
                 except asyncio.TimeoutError:

@@ -95,9 +95,10 @@ def get_place_recommendation_service():
             supabase_service = SupabaseService()
             logger.info("✅ Supabase 서비스 초기화 완료")
             
-            # AI 서비스 초기화
-            ai_service = AIService()
-            logger.info("✅ AI 서비스 초기화 완료")
+            # AI 서비스 초기화 (EnhancedAIService 사용)
+            from app.services.enhanced_ai_service import EnhancedAIService
+            ai_service = EnhancedAIService()
+            logger.info("✅ Enhanced AI 서비스 초기화 완료")
             
             # Google Places 서비스 초기화  
             google_places_service = GooglePlacesService()
