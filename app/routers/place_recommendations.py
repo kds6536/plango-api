@@ -27,59 +27,32 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
         logger.warning(f"⚠️ [EMAIL_FAIL] 알림 이메일 발송 실패: {e}")
         return False
 
-async def execute_fallback_system(request) -> JSONResponse:
-    """
-    Geocoding 실패 시 직접 폴백 시스템 실행
-    Supabase 캐시나 Plan A를 건너뛰고 바로 기본 추천 제공
-    """
-    logger.info("🔄 [FALLBACK_START] 폴백 시스템 시작 - 기본 추천 생성")
-    
-    try:
-        from app.services.place_recommendation_service import PlaceRecommendationService
-        service = PlaceRecommendationService()
-        
-        # 폴백용 기본 추천 생성 (Geocoding 없이)
-        fallback_result = await service.generate_fallback_recommendations(
-            city=request.city,
-            country=request.country,
-            total_duration=request.total_duration,
-            travelers_count=request.travelers_count,
-            travel_style=request.travel_style,
-            budget_level=request.budget_level
-        )
-        
-        logger.info("✅ [FALLBACK_SUCCESS] 폴백 시스템으로 기본 추천 생성 완료")
-        
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "is_fallback": True,
-                "message": "AI 추천이 일시적으로 어려워 기본 추천을 제공합니다.",
-                "recommendations": fallback_result
-            }
-        )
-        
-    except Exception as fallback_error:
-        logger.error(f"💥 [FALLBACK_FAIL] 폴백 시스템도 실패: {fallback_error}")
-        
-        # 최후의 수단: 하드코딩된 기본 응답
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "is_fallback": True,
-                "message": "서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.",
-                "recommendations": {
-                    "categories": [
-                        {
-                            "name": "관광명소",
-                            "places": [{"name": "추천 준비 중", "description": "잠시 후 다시 시도해주세요."}]
-                        }
+# 🚫 폴백 시스템 완전 제거 - 모든 실패는 에러로 처리
+        recommendations = {
+            "categories": [
+                {
+                    "name": "일반 추천",
+                    "places": [
+                        {"name": "관광 명소 탐방", "description": f"{request.city}의 주요 관광지를 방문해보세요"},
+                        {"name": "현지 음식 체험", "description": f"{request.city}의 특색 있는 음식을 맛보세요"},
+                        {"name": "문화 체험", "description": f"{request.city}의 문화를 경험해보세요"}
                     ]
                 }
-            }
-        )
+            ]
+        }
+        logger.info(f"✅ [FALLBACK_GENERIC] {request.city}에 대한 일반 추천 제공")
+    
+    logger.info("✅ [FALLBACK_SUCCESS] 폴백 시스템 완료 - Geocoding 재시도 없이 성공")
+    
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "is_fallback": True,
+            "message": f"AI 추천이 일시적으로 어려워 {request.city}의 기본 추천을 제공합니다.",
+            "recommendations": recommendations
+        }
+    )
 
 # 폴백 추천 데이터 (Plan A 실패 시 사용)
 FALLBACK_RECOMMENDATIONS = {
@@ -385,24 +358,33 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 )
                 
             except SystemError as system_error:
-                # 🚨 시스템 오류 - 폴백으로 즉시 전환 (Supabase 건너뛰기)
-                logger.error(f"💥 [SYSTEM_ERROR] 시스템 오류로 폴백 전환: {system_error}")
-                logger.warning("🔄 [SKIP_TO_FALLBACK] Geocoding 시스템 오류로 캐시 확인을 건너뛰고 즉시 폴백으로 전환합니다.")
+                # 🚨 시스템 오류 - 에러 반환 + 관리자 알림
+                logger.error(f"💥 [GEOCODING_SYSTEM_ERROR] Geocoding 시스템 오류: {system_error}")
                 
-                # 관리자 알림 (이메일 실패해도 서비스는 계속)
+                # 관리자 알림 발송
                 try:
-                    await send_admin_notification(
-                        subject="[Plango] Geocoding 시스템 오류 - 폴백 활성화",
-                        error_type="GEOCODING_SYSTEM_ERROR",
+                    email_success = await send_admin_notification(
+                        subject="[PLANGO 긴급] Geocoding API 완전 실패",
+                        error_type="GEOCODING_SYSTEM_ERROR", 
                         error_details=str(system_error),
                         user_request=request.model_dump()
                     )
+                    if email_success:
+                        logger.info("📧 [EMAIL_SUCCESS] Geocoding 실패 알림 이메일 발송 성공")
+                    else:
+                        logger.error("📧 [EMAIL_FAIL] Geocoding 실패 알림 이메일 발송 실패")
                 except Exception as email_error:
-                    logger.warning(f"⚠️ [EMAIL_FAIL] 알림 이메일 실패: {email_error}")
+                    logger.error(f"💥 [EMAIL_ERROR] 이메일 발송 중 예외: {email_error}")
                 
-                # 🚀 즉시 폴백 시스템으로 전환 (Supabase 건너뛰기)
-                logger.info("🔄 [DIRECT_FALLBACK] Geocoding 실패로 캐시/Plan A를 건너뛰고 직접 폴백 실행")
-                return await execute_fallback_system(request)
+                # 🚨 사용자에게 500 에러 반환 (폴백 없음)
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "error_code": "GEOCODING_SERVICE_ERROR",
+                        "message": "위치 정보 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.",
+                        "technical_details": "Geocoding API 시스템 오류"
+                    }
+                )
         else:
             logger.info("ℹ️ [STEP_1_GEOCODING_SKIP] place_id가 제공되어 Geocoding을 건너뜁니다.")
 
@@ -433,12 +415,12 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         except Exception as plan_a_error:
             logger.error(f"❌ [STEP_3_PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
             
-            # Plan A 실패 시 폴백으로 전환 + 이메일 알림
-            logger.warning("🔄 [STEP_3_FALLBACK] Plan A 실패로 폴백 시스템으로 전환합니다.")
+            # Plan A 실패 시 관리자 알림 + 에러 반환 (폴백 없음)
+            logger.error("🚨 [NO_FALLBACK] Plan A 실패 - 폴백 시스템 비활성화됨, 에러 반환")
             
             try:
                 email_success = await send_admin_notification(
-                    subject="[Plango] Plan A 실패 - 폴백 시스템 활성화",
+                    subject="[PLANGO 긴급] Plan A 추천 시스템 완전 실패",
                     error_type="PLAN_A_FAILURE",
                     error_details=str(plan_a_error),
                     user_request=request.model_dump()
@@ -446,25 +428,19 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 if email_success:
                     logger.info("📧 [EMAIL_SUCCESS] Plan A 실패 알림 이메일 발송 성공")
                 else:
-                    logger.warning("⚠️ [EMAIL_FAIL] Plan A 실패 알림 이메일 발송 실패 (시스템은 계속 작동)")
+                    logger.error("📧 [EMAIL_FAIL] Plan A 실패 알림 이메일 발송 실패")
             except Exception as email_error:
-                logger.error(f"❌ [EMAIL_NOTIFICATION_FAIL] 관리자 이메일 발송 중 예외: {email_error}", exc_info=True)
+                logger.error(f"💥 [EMAIL_ERROR] 이메일 발송 중 예외: {email_error}")
             
-            fallback_response = await generate_fallback_recommendations(request, geocoding_results)
-            
-            # 폴백에서 동명 지역이 감지된 경우 400 에러로 반환
-            if fallback_response.status == "AMBIGUOUS_LOCATION":
-                logger.warning(f"⚠️ [FALLBACK_AMBIGUOUS_RETURN] 폴백에서 동명 지역 감지, 400 에러 반환")
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error_code": "AMBIGUOUS_LOCATION",
-                        "message": fallback_response.message,
-                        "options": fallback_response.options
-                    }
-                )
-            
-            return fallback_response
+            # 🚨 사용자에게 500 에러 반환 (폴백 없음)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "RECOMMENDATION_SERVICE_ERROR",
+                    "message": "추천 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.",
+                    "technical_details": "Plan A 추천 시스템 오류"
+                }
+            )
 
         logger.info(
             f"장소 추천 완료: 도시 ID {response.city_id}, 기존 {response.previously_recommended_count}개, 신규 {response.newly_recommended_count}개"
