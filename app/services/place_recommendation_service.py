@@ -157,7 +157,7 @@ class PlaceRecommendationService:
                 
                 try:
                     cleaned = self._extract_json_from_response(ai_raw)
-                    if not cleaned or not cleaned.strip():
+                    if not cleaned or not (cleaned or '').strip():
                         raise ValueError("정제된 응답이 비어있습니다.")
                     ai_result = json.loads(cleaned)
                 except Exception as parse_err:
@@ -223,7 +223,7 @@ class PlaceRecommendationService:
                         std.get('country_en') or 
                         std.get('country_english') or 
                         std.get('country') or 
-                        getattr(request, 'country', '')
+                        getattr(request, 'country', '') or ''
                     ).strip()
                     
                     normalized_region = (
@@ -238,7 +238,7 @@ class PlaceRecommendationService:
                         std.get('city_en') or 
                         std.get('city_english') or 
                         std.get('city') or 
-                        getattr(request, 'city', '')
+                        getattr(request, 'city', '') or ''
                     ).strip()
                     
                     logger.info(f"🌐 [STANDARDIZED] Country: {normalized_country}, Region: {normalized_region}, City: {normalized_city}")
