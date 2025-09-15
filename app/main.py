@@ -10,7 +10,7 @@ import logging
 import os
 from supabase import create_client
 
-from app.routers import health, admin, new_itinerary, places, setup, place_recommendations, setup_v6
+from app.routers import health, admin, new_itinerary, places, setup, place_recommendations, setup_v6, api_diagnosis
 from app.config import settings
 # from app.database import create_db_and_tables
 from app.utils.logger import get_logger
