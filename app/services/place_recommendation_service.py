@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
 from app.services.supabase_service import SupabaseService
+from app.services.ai_service import AIService
 from app.services.enhanced_ai_service import EnhancedAIService
 from app.services.google_places_service import GooglePlacesService
 
@@ -717,7 +718,7 @@ class PlaceRecommendationService:
 # 전역 서비스 인스턴스
 place_recommendation_service: Optional[PlaceRecommendationService] = None
 
-def initialize_place_recommendation_service(supabase: SupabaseService, ai_service: AIService, google_places_service: GooglePlacesService):
+def initialize_place_recommendation_service(supabase: SupabaseService, ai_service: EnhancedAIService, google_places_service: GooglePlacesService):
     """서비스 초기화"""
     global place_recommendation_service
     place_recommendation_service = PlaceRecommendationService(supabase, ai_service, google_places_service)

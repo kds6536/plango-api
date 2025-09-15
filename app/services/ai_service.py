@@ -1,6 +1,6 @@
 """AI 서비스"""
 
-import openai
+import google.generativeai as genai
 from typing import Dict, Any, List
 import json
 import asyncio
@@ -12,13 +12,16 @@ logger = get_logger(__name__)
 
 
 class AIService:
-    """AI 기반 여행 일정 생성 서비스"""
+    """AI 기반 여행 일정 생성 서비스 (Gemini 사용)"""
     
     def __init__(self):
-        api_key = getattr(settings, 'openai_api_key', None) or getattr(settings, 'OPENAI_API_KEY', None)
+        api_key = getattr(settings, 'GEMINI_API_KEY', None)
         if not api_key:
-            logger.warning("OpenAI API key not found in settings")
-        self.client = openai.AsyncOpenAI(api_key=api_key)
+            logger.warning("Gemini API key not found in settings")
+        else:
+            genai.configure(api_key=api_key)
+            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            logger.info("Gemini AI 서비스 초기화 완료")
     
     async def generate_travel_plans(self, request: ItineraryRequest) -> Dict[str, ItineraryPlan]:
         """여행 계획 A와 B를 생성합니다"""
@@ -50,20 +53,20 @@ class AIService:
         prompt = self._build_prompt(request, plan_type, concept)
         
         try:
-            response = await self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": "당신은 전문 여행 플래너입니다. 사용자의 요청에 따라 상세하고 실용적인 여행 일정을 JSON 형태로 제공해주세요."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=2000
+            full_prompt = f"""당신은 전문 여행 플래너입니다. 사용자의 요청에 따라 상세하고 실용적인 여행 일정을 JSON 형태로 제공해주세요.
+
+{prompt}"""
+            
+            response = await asyncio.to_thread(
+                self.model.generate_content,
+                full_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=2000
+                )
             )
             
-            content = response.choices[0].message.content
+            content = response.text
             
             # === Markdown 코드 블록 제거 로직 ===
             clean_content = content
@@ -78,7 +81,7 @@ class AIService:
             return self._parse_ai_response(clean_content, plan_type, concept)
             
         except Exception as e:
-            logger.error(f"OpenAI API 호출 실패: {str(e)}")
+            logger.error(f"Gemini API 호출 실패: {str(e)}")
             return await self._generate_fallback_single_plan(request, plan_type, concept)
     
     def _build_prompt(self, request: ItineraryRequest, plan_type: str, concept: str) -> str:
@@ -205,30 +208,30 @@ class AIService:
         return self._create_fallback_plan(plan_type, concept)
     
     async def generate_response(self, prompt: str, max_tokens: int = 1200) -> str:
-        """장소 추천용 AI 응답 생성"""
+        """장소 추천용 AI 응답 생성 (Gemini 사용)"""
         try:
-            logger.info("AI 장소 추천 응답 생성 시작")
+            logger.info("Gemini AI 장소 추천 응답 생성 시작")
             
-            response = await self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": "당신은 전문 여행 플래너입니다. 사용자의 요청에 따라 장소 추천을 JSON 형태로 제공해주세요."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=max_tokens
+            full_prompt = f"""당신은 전문 여행 플래너입니다. 사용자의 요청에 따라 장소 추천을 JSON 형태로 제공해주세요.
+
+{prompt}"""
+            
+            response = await asyncio.to_thread(
+                self.model.generate_content,
+                full_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=max_tokens
+                )
             )
             
-            content = response.choices[0].message.content
-            logger.info("AI 장소 추천 응답 생성 완료")
+            content = response.text
+            logger.info("Gemini AI 장소 추천 응답 생성 완료")
             return content
             
         except Exception as e:
-            logger.error(f"AI 장소 추천 응답 생성 실패: {str(e)}")
-            raise Exception(f"AI 서비스 오류: {str(e)}")
+            logger.error(f"Gemini AI 장소 추천 응답 생성 실패: {str(e)}")
+            raise Exception(f"Gemini AI 서비스 오류: {str(e)}")
 
     def _create_fallback_plan(self, plan_type: str, concept: str) -> ItineraryPlan:
         """기본 계획을 생성합니다"""
