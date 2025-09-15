@@ -27,57 +27,9 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
         logger.warning(f"⚠️ [EMAIL_FAIL] 알림 이메일 발송 실패: {e}")
         return False
 
-# 🚫 폴백 시스템 완전 제거 - 모든 실패는 에러로 처리
-        recommendations = {
-            "categories": [
-                {
-                    "name": "일반 추천",
-                    "places": [
-                        {"name": "관광 명소 탐방", "description": f"{request.city}의 주요 관광지를 방문해보세요"},
-                        {"name": "현지 음식 체험", "description": f"{request.city}의 특색 있는 음식을 맛보세요"},
-                        {"name": "문화 체험", "description": f"{request.city}의 문화를 경험해보세요"}
-                    ]
-                }
-            ]
-        }
-        logger.info(f"✅ [FALLBACK_GENERIC] {request.city}에 대한 일반 추천 제공")
-    
-    logger.info("✅ [FALLBACK_SUCCESS] 폴백 시스템 완료 - Geocoding 재시도 없이 성공")
-    
-    return JSONResponse(
-        status_code=200,
-        content={
-            "success": True,
-            "is_fallback": True,
-            "message": f"AI 추천이 일시적으로 어려워 {request.city}의 기본 추천을 제공합니다.",
-            "recommendations": recommendations
-        }
-    )
+# 폴백 시스템 완전 제거됨
 
-# 폴백 추천 데이터 (Plan A 실패 시 사용)
-FALLBACK_RECOMMENDATIONS = {
-    "서울": [
-        {"name": "경복궁", "category": "볼거리", "description": "조선 왕조의 대표 궁궐"},
-        {"name": "명동", "category": "쇼핑", "description": "서울의 대표 쇼핑 거리"},
-        {"name": "남산타워", "category": "볼거리", "description": "서울의 랜드마크"},
-        {"name": "홍대", "category": "즐길거리", "description": "젊음의 거리"},
-        {"name": "동대문", "category": "쇼핑", "description": "24시간 쇼핑 천국"}
-    ],
-    "부산": [
-        {"name": "해운대해수욕장", "category": "볼거리", "description": "부산의 대표 해수욕장"},
-        {"name": "감천문화마을", "category": "볼거리", "description": "부산의 마추픽추"},
-        {"name": "자갈치시장", "category": "먹거리", "description": "부산 대표 수산시장"},
-        {"name": "광안리해수욕장", "category": "볼거리", "description": "야경이 아름다운 해수욕장"},
-        {"name": "태종대", "category": "볼거리", "description": "부산의 대표 관광지"}
-    ],
-    "제주": [
-        {"name": "한라산", "category": "볼거리", "description": "제주도의 상징"},
-        {"name": "성산일출봉", "category": "볼거리", "description": "일출 명소"},
-        {"name": "우도", "category": "볼거리", "description": "제주의 작은 섬"},
-        {"name": "천지연폭포", "category": "볼거리", "description": "제주의 대표 폭포"},
-        {"name": "흑돼지거리", "category": "먹거리", "description": "제주 흑돼지 맛집 거리"}
-    ]
-}
+# 폴백 추천 데이터 제거됨
 
 async def send_admin_notification(subject: str, error_type: str, error_details: str, user_request: Dict[str, Any]):
     """
@@ -123,125 +75,7 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
         logger.error(f"❌ [EMAIL_NOTIFICATION_ERROR] 관리자 알림 발송 중 예외: {e}", exc_info=True)
         return False
 
-async def generate_fallback_recommendations(request: PlaceRecommendationRequest, geocoding_results=None) -> PlaceRecommendationResponse:
-    """
-    Plan A 실패 시 사용하는 폴백 추천 시스템 (동명 지역 감지 포함)
-    
-    Args:
-        request: 사용자 요청
-        geocoding_results: 이미 호출된 Geocoding 결과 (중복 호출 방지)
-    """
-    try:
-        logger.info(f"🔄 [FALLBACK_START] 폴백 추천 시스템 시작: {request.city}")
-        
-        # ✅ 폴백 1단계: 위치 표준화 (Geocoding) - Plan A에서 실패한 경우만
-        logger.info("📍 [FALLBACK_STEP_1] 폴백 1단계: 위치 표준화 확인")
-        logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] geocoding_results is None: {geocoding_results is None}")
-        logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] hasattr place_id: {hasattr(request, 'place_id')}")
-        logger.info(f"🔍 [FALLBACK_GEOCODING_DEBUG] place_id value: {getattr(request, 'place_id', 'NOT_FOUND')}")
-        
-        geocoding_condition = geocoding_results is None and (not hasattr(request, 'place_id') or not request.place_id)
-        logger.info(f"🔍 [FALLBACK_GEOCODING_CONDITION] 폴백에서 Geocoding 호출 조건: {geocoding_condition}")
-        
-        if geocoding_condition:
-            try:
-                logger.info("📍 [FALLBACK_GEOCODING_CALL] 폴백에서 실제 Geocoding API 호출 시작")
-                geocoding_service = GeocodingService()
-                location_query = f"{request.city}, {request.country}"
-                logger.info(f"📍 [FALLBACK_GEOCODING_QUERY] 폴백 검색 쿼리: '{location_query}'")
-                geocoding_results = await geocoding_service.get_geocode_results(location_query)
-                logger.info(f"📍 [FALLBACK_GEOCODING_SUCCESS] 폴백 Geocoding 결과 수: {len(geocoding_results) if geocoding_results else 0}")
-                
-                # 폴백에서도 동명 지역 감지
-                logger.info(f"🔍 [FALLBACK_AMBIGUOUS_CHECK] 동명 지역 감지 확인 중...")
-                is_ambiguous = geocoding_service.is_ambiguous_location(geocoding_results)
-                logger.info(f"🔍 [FALLBACK_AMBIGUOUS_CHECK] is_ambiguous: {is_ambiguous}")
-                
-                if is_ambiguous:
-                    unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
-                    options = geocoding_service.format_location_options(unique_results)
-                    logger.info(f"⚠️ [FALLBACK_AMBIGUOUS] 폴백에서 동명 지역 감지: {len(options)}개 선택지")
-                    logger.info(f"⚠️ [FALLBACK_AMBIGUOUS] 옵션들: {[opt.get('display_name', 'Unknown') for opt in options]}")
-                    
-                    # 동명 지역 응답을 PlaceRecommendationResponse 형태로 반환
-                    return PlaceRecommendationResponse(
-                        success=False,
-                        city_id=0,
-                        city_name=request.city,
-                        country_name=request.country,
-                        main_theme="동명 지역 선택 필요",
-                        recommendations={},
-                        places=[],
-                        previously_recommended_count=0,
-                        newly_recommended_count=0,
-                        status="AMBIGUOUS_LOCATION",
-                        options=options,
-                        message=f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요."
-                    )
-                    
-            except Exception as geocoding_error:
-                logger.error(f"❌ [FALLBACK_GEOCODING_FAIL] 폴백에서도 Geocoding 실패: {geocoding_error}")
-                # Geocoding 실패해도 폴백 데이터는 제공
-        else:
-            logger.info(f"🔍 [FALLBACK_GEOCODING_SKIP] 폴백에서 Geocoding 건너뜀")
-            logger.info(f"    - geocoding_results 존재: {geocoding_results is not None}")
-            logger.info(f"    - place_id 값: {getattr(request, 'place_id', None)}")
-            logger.info(f"    - 건너뛰는 이유: {'기존 Geocoding 결과 있음' if geocoding_results is not None else 'place_id 제공됨'}")
-        
-        # ✅ 폴백 2단계: 캐시 확인 생략 (이미 실패했으므로)
-        logger.info("🗄️ [FALLBACK_STEP_2] 폴백 2단계: 캐시 확인 생략 (이미 실패)")
-        
-        # ✅ 폴백 3단계: 하드코딩된 추천 데이터 사용
-        logger.info("🔄 [FALLBACK_STEP_3] 폴백 3단계: 하드코딩된 추천 데이터 생성 시작")
-        
-        # 도시명 정규화
-        city_key = request.city.lower()
-        city_mapping = {
-            "seoul": "서울",
-            "busan": "부산", 
-            "jeju": "제주",
-            "광주": "서울",  # 기본값으로 서울 사용
-        }
-        
-        normalized_city = city_mapping.get(city_key, "서울")
-        fallback_places = FALLBACK_RECOMMENDATIONS.get(normalized_city, FALLBACK_RECOMMENDATIONS["서울"])
-        
-        logger.info(f"🔄 [FALLBACK_PLACES] {normalized_city}에 대한 폴백 장소 {len(fallback_places)}개 반환")
-        
-        # 🚨 [핵심] 프론트엔드 호환성을 위해 정상 응답과 동일한 구조로 반환
-        # recommendations 필드를 카테고리별로 구성
-        recommendations_by_category = {}
-        for place in fallback_places:
-            category = place["category"]
-            if category not in recommendations_by_category:
-                recommendations_by_category[category] = []
-            recommendations_by_category[category].append(place)
-        
-        response = PlaceRecommendationResponse(
-            success=True,
-            city_id=0,  # 폴백 시에는 임시 ID
-            city_name=request.city,
-            country_name=request.country,
-            main_theme="폴백 추천",
-            recommendations=recommendations_by_category,  # 🚨 [핵심] 프론트엔드가 기대하는 구조
-            places=fallback_places,  # 추가 호환성
-            previously_recommended_count=0,
-            newly_recommended_count=len(fallback_places),
-            status="FALLBACK_SUCCESS",  # 폴백 성공 상태
-            message="일시적인 문제로 기본 추천을 제공합니다.",
-            is_fallback=True,  # 폴백 응답임을 표시
-            fallback_reason="Plan A 시스템 실패로 인한 폴백 응답"
-        )
-        
-        logger.info(f"✅ [FALLBACK_SUCCESS] 폴백 추천 완료: {len(fallback_places)}개 장소")
-        
-        # ✅ 폴백 4단계: 응답 반환
-        logger.info("📤 [FALLBACK_STEP_4] 폴백 4단계: 최종 응답 반환")
-        return response
-        
-    except Exception as e:
-        logger.error(f"❌ [FALLBACK_ERROR] 폴백 시스템도 실패: {e}")
-        raise HTTPException(status_code=500, detail=f"폴백 시스템 실패: {str(e)}")
+# 폴백 추천 함수 완전 제거됨
 
 router = APIRouter(prefix="/api/v1/place-recommendations", tags=["Place Recommendations v6.0"])
 
@@ -392,8 +226,8 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         logger.info("🗄️ [STEP_2_CACHE] 2단계: 캐시 확인 및 서비스 초기화 시작")
         service = get_place_recommendation_service()
         if service is None:
-            logger.error("❌ [STEP_2_CACHE_FAIL] 서비스 초기화 실패 - 폴백으로 전환")
-            return await generate_fallback_recommendations(request, geocoding_results)
+            logger.error("❌ [STEP_2_CACHE_FAIL] 서비스 초기화 실패")
+            raise HTTPException(status_code=500, detail="추천 서비스 초기화 실패")
         logger.info("✅ [STEP_2_CACHE_SUCCESS] 서비스 초기화 완료")
 
         # ✅ 3단계: Plan A (신규 생성) - AI + Google Places
@@ -623,7 +457,7 @@ async def test_email_notification():
 @router.post("/test-geocoding-failure")
 async def test_geocoding_failure():
     """
-    Geocoding 실패 시나리오 테스트 (폴백 시스템 동작 확인)
+    Geocoding 실패 시나리오 테스트 (에러 발생 확인)
     """
     try:
         logger.info("🧪 [GEOCODING_FAIL_TEST] Geocoding 실패 시나리오 테스트 시작")
@@ -638,15 +472,21 @@ async def test_geocoding_failure():
             budget_level="중간"
         )
         
-        # 실제 추천 생성 호출 (Geocoding 실패 예상) - 순환 참조 방지를 위해 직접 폴백 호출
-        response = await generate_fallback_recommendations(test_request)
-        
-        return {
-            "status": "success",
-            "message": "Geocoding 실패 테스트 완료",
-            "response": response,
-            "is_fallback": getattr(response, 'is_fallback', False)
-        }
+        # 실제 추천 생성 호출 (Geocoding 실패 예상)
+        try:
+            response = await generate_place_recommendations(test_request)
+            return {
+                "status": "unexpected_success",
+                "message": "예상과 달리 성공했습니다",
+                "response": response
+            }
+        except HTTPException as e:
+            return {
+                "status": "expected_failure",
+                "message": "예상대로 실패했습니다",
+                "error_code": e.status_code,
+                "error_detail": e.detail
+            }
         
     except Exception as e:
         logger.error(f"❌ [GEOCODING_FAIL_TEST_ERROR] Geocoding 실패 테스트 중 오류: {e}")

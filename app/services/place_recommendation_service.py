@@ -22,7 +22,7 @@ class PlaceRecommendationService:
     새로운 장소 추천 서비스 (v6.0)
     
     Plan A: search_strategy_v1 (AI 검색 전략 + Google Places API)
-    Plan B: place_recommendation_v1 (기존 방식)
+    폴백 시스템 없음 - Plan A 실패 시 에러 발생
     """
     
     def __init__(self, supabase: SupabaseService, ai_service: AIService, google_places_service: GooglePlacesService):
@@ -35,7 +35,7 @@ class PlaceRecommendationService:
         메인 추천 생성 함수
         1순위: 캐시 확인
         2순위: Plan A (search_strategy_v1)
-        3순위: Plan B (place_recommendation_v1)
+        Plan A 실패 시 에러 발생 (폴백 없음)
         """
         try:
             logger.info(f"🚀 [REQUEST_START] 장소 추천 요청: {request.city}, {request.country}")
@@ -170,10 +170,10 @@ class PlaceRecommendationService:
                     except Exception:
                         logger.error("❌ [PLAN_A_LOG_FAIL] Plan A 로깅 중 추가 오류 발생", exc_info=True)
                     
-                    logger.info("🔄 [FALLBACK_TRIGGER] Plan A JSON 파싱 실패로 인한 Plan B 전환")
+                    # Plan A 실패 시 에러 발생 (폴백 없음)
                     await self._notify_admin_plan_a_failure("JSON 파싱 실패", 
                                                           f"파싱 에러: {str(parse_err)}, 원본 응답 길이: {len(ai_raw) if ai_raw else 0}")
-                    return await self._fallback_to_legacy_recommendation(request)
+                    raise HTTPException(status_code=500, detail=f"AI 응답 파싱 실패: {str(parse_err)}")
 
                 status = (ai_result.get('status') or '').upper()
                 logger.info(f"🧠 [AI] 상태 판별: {status}")
@@ -285,9 +285,8 @@ class PlaceRecommendationService:
                         logger.info(f"✅ [PLAN_A_GOOGLE_SUCCESS] Plan A Google API 성공: {[(k, len(v)) for k, v in categorized_places.items()]}")
                     except Exception as api_error:
                         logger.error(f"❌ [PLAN_A_GOOGLE_FAIL] Plan A Google Places API 실패: {api_error}")
-                        logger.info("🔄 [FALLBACK_TRIGGER] Google API 실패로 인한 Plan B 전환")
                         await self._notify_admin_plan_a_failure("Google Places API 호출 실패", str(api_error))
-                        return await self._fallback_to_legacy_recommendation(request)
+                        raise HTTPException(status_code=500, detail=f"Google Places API 호출 실패: {str(api_error)}")
                     
                     # 결과 데이터 후처리: 카테고리 라벨을 요청 언어로 변환
                     recommendations = self._convert_categories_by_language(
@@ -355,13 +354,29 @@ class PlaceRecommendationService:
                 except Exception as notify_error:
                     logger.error(f"❌ [NOTIFY_FAIL] 관리자 알림 실패: {notify_error}")
                 
-                # === 4단계: Plan B 폴백 ===
-                logger.info("🔄 [PLAN_B_START] Plan A 실패로 인한 Plan B 폴백 진행")
-                return await self._fallback_to_legacy_recommendation(request)
+                # Plan A 실패 시 에러 발생 (폴백 없음)
+                raise HTTPException(status_code=500, detail=f"추천 시스템 오류: {str(plan_a_error)}")
             
         except Exception as e:
             logger.error(f"❌ [SYSTEM_ERROR] 전체 시스템 오류: {e}")
-            await self._notify_admin_plan_b_failure("전체 시스템 오류", str(e))
+            # 관리자 알림 발송
+            try:
+                from app.services.email_service import email_service
+                await email_service.send_admin_notification(
+                    subject="추천 시스템 전체 오류",
+                    error_type="SYSTEM_ERROR",
+                    error_details=str(e),
+                    user_request={
+                        "city": request.city,
+                        "country": request.country,
+                        "total_duration": request.total_duration,
+                        "travelers_count": request.travelers_count,
+                        "travel_style": request.travel_style,
+                        "budget_range": request.budget_range
+                    }
+                )
+            except Exception as email_error:
+                logger.error(f"📧 [EMAIL_FAIL] 시스템 오류 알림 이메일 발송 실패: {email_error}")
             raise HTTPException(status_code=500, detail=f"장소 추천 시스템 오류: {str(e)}")
 
     async def _standardize_and_check_city(self, request: PlaceRecommendationRequest) -> Dict[str, Any]:
@@ -684,41 +699,7 @@ class PlaceRecommendationService:
             logger.error(f"❌ [SAVE_ERROR] 장소 저장 실패: {e}")
             return {}
 
-    async def _fallback_to_legacy_recommendation(self, request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
-        """Plan B: 기존 place_recommendation_v1 프롬프트 사용"""
-        try:
-            logger.info("🔄 [PLAN_B_START] Plan B 시작: place_recommendation_v1")
-            
-            # 간단한 폴백 응답 생성
-            fallback_places = [
-                {"name": "관광지 1", "category": "볼거리", "description": "기본 관광지"},
-                {"name": "맛집 1", "category": "먹거리", "description": "기본 맛집"},
-                {"name": "활동 1", "category": "즐길거리", "description": "기본 활동"},
-                {"name": "숙소 1", "category": "숙소", "description": "기본 숙소"}
-            ]
-            
-            recommendations = {}
-            for place in fallback_places:
-                category = place["category"]
-                if category not in recommendations:
-                    recommendations[category] = []
-                recommendations[category].append(place)
-            
-            return PlaceRecommendationResponse(
-                success=True,
-                city_id=0,
-                main_theme="Plan B 폴백",
-                recommendations=recommendations,
-                previously_recommended_count=0,
-                newly_recommended_count=len(fallback_places),
-                is_fallback=True,
-                fallback_reason="Plan A 실패로 인한 폴백"
-            )
-            
-        except Exception as e:
-            logger.error(f"❌ [PLAN_B_ERROR] Plan B 실행 실패: {e}")
-            await self._notify_admin_plan_b_failure("Plan B 전체 실패", str(e))
-            raise HTTPException(status_code=500, detail="모든 추천 시스템 실패")
+# 폴백 시스템 완전 제거 - Plan A 실패 시 에러만 발생
 
     async def _notify_admin_plan_a_failure(self, error_type: str, error_details: str):
         """Plan A 실패 시 관리자 알림"""
@@ -730,15 +711,7 @@ class PlaceRecommendationService:
         except Exception as e:
             logger.error(f"❌ [MAIL_FAIL] 관리자 알림 메일 발송 실패: {e}")
 
-    async def _notify_admin_plan_b_failure(self, error_type: str, error_details: str):
-        """Plan B 실패 시 긴급 관리자 알림"""
-        try:
-            logger.error("📧 [CRITICAL_MAIL] Plan B 실패 긴급 알림 메일 발송 시작")
-            # 실제 이메일 발송 로직은 email_service에서 처리
-            logger.error("📧 [CRITICAL_MAIL] Plan B 실패 긴급 알림 메일 발송 완료")
-            
-        except Exception as e:
-            logger.error(f"❌ [CRITICAL_MAIL_FAIL] 긴급 알림 메일 발송 실패: {e}")
+# Plan B 알림 메서드 제거 - 폴백 시스템 완전 삭제
 
 
 # 전역 서비스 인스턴스

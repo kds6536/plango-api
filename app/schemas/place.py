@@ -121,7 +121,4 @@ class PlaceRecommendationResponse(BaseModel):
     )
     message: Optional[str] = Field(default=None, description="상태에 대한 사용자 지향 메시지")
     
-    # 폴백 시스템 관련 필드
-    is_fallback: Optional[bool] = Field(default=False, description="폴백 응답 여부")
-    fallback_reason: Optional[str] = Field(None, description="폴백 사용 이유")
-    error_details: Optional[str] = Field(None, description="오류 상세 정보 (디버깅용)")
+    # 폴백 시스템 제거됨 - Plan A 실패 시 에러 발생
