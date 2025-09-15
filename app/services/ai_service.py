@@ -204,6 +204,32 @@ class AIService:
         """기본 단일 계획을 생성합니다"""
         return self._create_fallback_plan(plan_type, concept)
     
+    async def generate_response(self, prompt: str, max_tokens: int = 1200) -> str:
+        """장소 추천용 AI 응답 생성"""
+        try:
+            logger.info("AI 장소 추천 응답 생성 시작")
+            
+            response = await self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "당신은 전문 여행 플래너입니다. 사용자의 요청에 따라 장소 추천을 JSON 형태로 제공해주세요."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=max_tokens
+            )
+            
+            content = response.choices[0].message.content
+            logger.info("AI 장소 추천 응답 생성 완료")
+            return content
+            
+        except Exception as e:
+            logger.error(f"AI 장소 추천 응답 생성 실패: {str(e)}")
+            raise Exception(f"AI 서비스 오류: {str(e)}")
+
     def _create_fallback_plan(self, plan_type: str, concept: str) -> ItineraryPlan:
         """기본 계획을 생성합니다"""
         activity = ActivityItem(
