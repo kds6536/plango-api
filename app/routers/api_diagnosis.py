@@ -298,6 +298,103 @@ async def get_server_info():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"서버 정보 조회 실패: {str(e)}")
 
+@router.get("/environment")
+async def check_environment():
+    """Railway 환경 변수 및 API 키 상세 확인"""
+    try:
+        import os
+        from datetime import datetime
+        
+        # 환경 변수에서 직접 가져오기
+        backend_key = os.getenv("MAPS_PLATFORM_API_KEY_BACKEND")
+        frontend_key = os.getenv("GOOGLE_MAPS_API_KEY") 
+        unrestricted_key = os.getenv("GOOGLE_MAPS_UNRESTRICTED_KEY")
+        
+        # settings에서도 가져오기
+        settings_backend = getattr(settings, "MAPS_PLATFORM_API_KEY_BACKEND", None)
+        settings_frontend = getattr(settings, "GOOGLE_MAPS_API_KEY", None)
+        
+        env_info = {
+            "timestamp": datetime.now().isoformat(),
+            "environment": "production" if os.getenv("RAILWAY_ENVIRONMENT") else "development",
+            "railway_info": {
+                "environment": os.getenv("RAILWAY_ENVIRONMENT"),
+                "service_name": os.getenv("RAILWAY_SERVICE_NAME"),
+                "deployment_id": os.getenv("RAILWAY_DEPLOYMENT_ID")
+            },
+            "api_keys": {
+                "from_env": {
+                    "backend_key_exists": bool(backend_key),
+                    "frontend_key_exists": bool(frontend_key),
+                    "unrestricted_key_exists": bool(unrestricted_key),
+                    "backend_key_prefix": backend_key[:20] + "..." if backend_key else None,
+                    "frontend_key_prefix": frontend_key[:20] + "..." if frontend_key else None,
+                    "unrestricted_key_prefix": unrestricted_key[:20] + "..." if unrestricted_key else None,
+                    "keys_are_same": backend_key == frontend_key if backend_key and frontend_key else False
+                },
+                "from_settings": {
+                    "backend_key_exists": bool(settings_backend),
+                    "frontend_key_exists": bool(settings_frontend),
+                    "backend_key_prefix": settings_backend[:20] + "..." if settings_backend else None,
+                    "frontend_key_prefix": settings_frontend[:20] + "..." if settings_frontend else None,
+                    "keys_are_same": settings_backend == settings_frontend if settings_backend and settings_frontend else False
+                }
+            }
+        }
+        
+        return env_info
+        
+    except Exception as e:
+        logger.error(f"환경 확인 중 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"환경 확인 실패: {str(e)}")
+
+@router.get("/geocoding-test")
+async def test_geocoding():
+    """Railway에서 Geocoding API 직접 테스트"""
+    try:
+        from app.services.geocoding_service import GeocodingService
+        from app.services.api_key_manager import api_key_manager
+        from datetime import datetime
+        
+        # API 키 정보
+        best_key = api_key_manager.get_best_key_for_service("geocoding")
+        
+        result = {
+            "timestamp": datetime.now().isoformat(),
+            "api_key_info": {
+                "has_key": bool(best_key),
+                "key_prefix": best_key[:20] + "..." if best_key else None
+            },
+            "geocoding_test": {}
+        }
+        
+        if best_key:
+            # Geocoding 서비스 테스트
+            geocoding_service = GeocodingService()
+            
+            try:
+                # 간단한 서울 테스트
+                seoul_results = await geocoding_service.get_geocode_results("서울, 대한민국")
+                result["geocoding_test"]["seoul"] = {
+                    "success": True,
+                    "result_count": len(seoul_results),
+                    "first_result": seoul_results[0].get("formatted_address") if seoul_results else None
+                }
+            except Exception as geocoding_error:
+                result["geocoding_test"]["seoul"] = {
+                    "success": False,
+                    "error": str(geocoding_error),
+                    "error_type": type(geocoding_error).__name__
+                }
+        else:
+            result["geocoding_test"]["error"] = "No API key available"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Geocoding 테스트 중 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"Geocoding 테스트 실패: {str(e)}")
+
 @router.post("/test-specific-api")
 async def test_specific_api(api_name: str, test_data: Dict[str, Any] = None):
     """
