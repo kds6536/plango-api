@@ -150,73 +150,22 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             raise HTTPException(status_code=400, detail="여행자 수는 1명 이상이어야 합니다.")
 
         logger.info(f"📝 [REQUEST] 요청 데이터: {request.city}, {request.country}")
-
-        # --- [1단계] Geocoding 실행 ---
+        
+        # 프론트엔드에서 place_id가 제공된 경우 로깅
+        if hasattr(request, 'place_id') and request.place_id:
+            logger.info(f"📍 [PLACE_ID] 프론트엔드에서 제공된 place_id: {request.place_id}")
+        
+        # --- [1단계] 캐시 확인 및 서비스 초기화 ---
         try:
-            logger.info("  📍 [STEP_1_GEOCODING] Geocoding 시작...")
-            from app.services.geocoding_service import GeocodingService, UserInputError, SystemError
-            geocoding_service = GeocodingService()
-            location_query = f"{request.city}, {request.country}"
-            logger.info(f"  🌍 [GEOCODING_QUERY] 검색 쿼리: '{location_query}'")
-            
-            geocoding_results = await geocoding_service.get_geocode_results(location_query)
-            logger.info(f"  📊 [GEOCODING_RESULTS] 결과 {len(geocoding_results)}개 발견")
-            
-            # 동명 지역 감지 (상세 디버깅 추가)
-            logger.info(f"  🔍 [AMBIGUOUS_CHECK] 동명 지역 감지 시작...")
-            is_ambiguous = geocoding_service.is_ambiguous_location(geocoding_results)
-            logger.info(f"  🔍 [AMBIGUOUS_RESULT] is_ambiguous_location 결과: {is_ambiguous}")
-            
-            if is_ambiguous:
-                unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
-                options = geocoding_service.format_location_options(unique_results)
-                logger.info(f"  ⚠️ [AMBIGUOUS_LOCATION] 동명 지역 감지! {len(options)}개 선택지 반환")
-                logger.info(f"  📋 [OPTIONS_PREVIEW] 선택지: {[opt.get('display_name', 'Unknown') for opt in options[:3]]}")
-                
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error_code": "AMBIGUOUS_LOCATION",
-                        "options": options
-                    }
-                )
-            else:
-                logger.info(f"  ✅ [NOT_AMBIGUOUS] 동명 지역이 아님, 계속 진행")
-            
-            # 표준화된 위치 정보 추출
-            if geocoding_results and len(geocoding_results) > 0:
-                first_result = geocoding_results[0]
-                standardized_location = {
-                    'formatted_address': first_result.get('formatted_address', ''),
-                    'geometry': first_result.get('geometry', {}),
-                    'address_components': first_result.get('address_components', [])
-                }
-                logger.info(f"  ✅ [GEOCODING_SUCCESS] 위치 표준화 성공: {standardized_location['formatted_address']}")
-            else:
-                raise UserInputError(f"'{location_query}' 위치를 찾을 수 없습니다.")
-                
-        except UserInputError as e:
-            logger.warning(f"  ❌ [GEOCODING_FAIL] {e}")
-            raise HTTPException(status_code=400, detail=str(e))
-        except SystemError as e:
-            logger.error(f"  ❌ [GEOCODING_SYSTEM_ERROR] Geocoding 시스템 오류: {e}", exc_info=True)
-            # Geocoding 실패 시 이메일 1회 발송 후 종료
-            await send_admin_notification("Geocoding 실패", "GEOCODING_SYSTEM_ERROR", str(e), request.model_dump())
-            raise HTTPException(status_code=503, detail="위치 정보 서비스에 문제가 발생했습니다.")
-
-        # --- [2단계] Plan A 실행 ---
-        try:
-            logger.info("  🤖 [STEP_2_PLAN_A] Plan A (AI+Google) 추천 생성 시작...")
+            logger.info("  🤖 [STEP_1_PLAN_A] Plan A (AI+Google) 추천 생성 시작...")
             
             # 서비스 초기화
             service = get_place_recommendation_service()
             if service is None:
                 raise Exception("추천 서비스 초기화 실패")
             
-            # 서비스에 표준화된 위치 정보 전달
-            recommendations = await service.generate_place_recommendations_with_location(
-                request, standardized_location
-            )
+            # 프론트엔드에서 명확한 도시 정보를 받았으므로 바로 추천 생성
+            recommendations = await service.generate_place_recommendations(request)
             
             if not recommendations:
                 raise Exception("Plan A에서 충분한 추천 결과를 생성하지 못했습니다.")
@@ -225,9 +174,8 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             return recommendations
             
         except Exception as e:
-            # --- [3. Plan A 실패 시 처리] ---
-            # 이제 폴백이 없으므로, 에러를 로깅하고 이메일을 보낸 후 종료
-            logger.error(f"  ❌ [STEP_2_PLAN_A_FAIL] Plan A 실패: {e}", exc_info=True)
+            # --- [2. Plan A 실패 시 처리] ---
+            logger.error(f"  ❌ [STEP_1_PLAN_A_FAIL] Plan A 실패: {e}", exc_info=True)
             
             # [핵심] 이메일은 여기서 단 한 번만 보냅니다.
             await send_admin_notification("Plan A 실패", "PLAN_A_FAILURE", str(e), request.model_dump())
