@@ -132,13 +132,20 @@ class PlaceRecommendationService:
 
                 # 타임아웃 보호: AI 서비스 호출 (첫 번째)
                 try:
+                    logger.info("🤖 [AI_CALL_START] AI 서비스 호출 시작")
                     ai_raw = await asyncio.wait_for(
                         self.ai_service.generate_response(ai_prompt, max_tokens=1200),
                         timeout=60.0
                     )
+                    logger.info(f"🤖 [AI_CALL_SUCCESS] AI 서비스 호출 성공 (응답 길이: {len(ai_raw) if ai_raw else 0})")
                 except asyncio.TimeoutError:
                     logger.error("⏰ [AI_TIMEOUT_1] AI 서비스 호출 타임아웃 (60초)")
                     raise Exception("AI 서비스 응답 시간 초과")
+                except Exception as ai_error:
+                    logger.error(f"❌ [AI_CALL_ERROR] AI 서비스 호출 실패: {ai_error}")
+                    logger.error(f"📊 [AI_ERROR_TYPE] 에러 타입: {type(ai_error).__name__}")
+                    logger.error(f"📊 [AI_ERROR_MSG] 에러 메시지: {str(ai_error)}")
+                    raise Exception(f"AI 서비스 호출 실패: {str(ai_error)}")
                 
                 logger.info("🤖 [AI] search_strategy_v1 응답 수신")
                 
@@ -171,10 +178,8 @@ class PlaceRecommendationService:
                     except Exception:
                         logger.error("❌ [PLAN_A_LOG_FAIL] Plan A 로깅 중 추가 오류 발생", exc_info=True)
                     
-                    # Plan A 실패 시 에러 발생 (폴백 없음)
-                    await self._notify_admin_plan_a_failure("JSON 파싱 실패", 
-                                                          f"파싱 에러: {str(parse_err)}, 원본 응답 길이: {len(ai_raw) if ai_raw else 0}")
-                    raise HTTPException(status_code=500, detail=f"AI 응답 파싱 실패: {str(parse_err)}")
+                    # Plan A 실패 시 에러 발생 (폴백 없음) - 이메일은 라우터에서 처리
+                    raise Exception(f"AI 응답 파싱 실패: {str(parse_err)}")
 
                 status = (ai_result.get('status') or '').upper()
                 logger.info(f"🧠 [AI] 상태 판별: {status}")
@@ -288,8 +293,7 @@ class PlaceRecommendationService:
                         logger.info(f"✅ [PLAN_A_GOOGLE_SUCCESS] Plan A Google API 성공: {[(k, len(v)) for k, v in categorized_places.items()]}")
                     except Exception as api_error:
                         logger.error(f"❌ [PLAN_A_GOOGLE_FAIL] Plan A Google Places API 실패: {api_error}")
-                        await self._notify_admin_plan_a_failure("Google Places API 호출 실패", str(api_error))
-                        raise HTTPException(status_code=500, detail=f"Google Places API 호출 실패: {str(api_error)}")
+                        raise Exception(f"Google Places API 호출 실패: {str(api_error)}")
                     
                     # 결과 데이터 후처리: 카테고리 라벨을 요청 언어로 변환
                     recommendations = self._convert_categories_by_language(
@@ -351,36 +355,13 @@ class PlaceRecommendationService:
             except Exception as plan_a_error:
                 logger.error(f"❌ [PLAN_A_FAIL] Plan A 실행 실패: {plan_a_error}", exc_info=True)
                 
-                # Plan A 실패 시 관리자 알림
-                try:
-                    await self._notify_admin_plan_a_failure("Plan A 실행 실패", str(plan_a_error))
-                except Exception as notify_error:
-                    logger.error(f"❌ [NOTIFY_FAIL] 관리자 알림 실패: {notify_error}")
-                
-                # Plan A 실패 시 에러 발생 (폴백 없음)
-                raise HTTPException(status_code=500, detail=f"추천 시스템 오류: {str(plan_a_error)}")
+                # Plan A 실패 시 에러 발생 (폴백 없음) - 이메일은 라우터에서 처리
+                raise Exception(f"Plan A 실행 실패: {str(plan_a_error)}")
             
         except Exception as e:
             logger.error(f"❌ [SYSTEM_ERROR] 전체 시스템 오류: {e}")
-            # 관리자 알림 발송
-            try:
-                from app.services.email_service import email_service
-                await email_service.send_admin_notification(
-                    subject="추천 시스템 전체 오류",
-                    error_type="SYSTEM_ERROR",
-                    error_details=str(e),
-                    user_request={
-                        "city": request.city,
-                        "country": request.country,
-                        "total_duration": request.total_duration,
-                        "travelers_count": request.travelers_count,
-                        "travel_style": request.travel_style,
-                        "budget_range": request.budget_range
-                    }
-                )
-            except Exception as email_error:
-                logger.error(f"📧 [EMAIL_FAIL] 시스템 오류 알림 이메일 발송 실패: {email_error}")
-            raise HTTPException(status_code=500, detail=f"장소 추천 시스템 오류: {str(e)}")
+            # 이메일은 라우터에서 처리하므로 여기서는 에러만 발생
+            raise Exception(f"시스템 오류: {str(e)}")
 
     async def _standardize_and_check_city(self, request: PlaceRecommendationRequest) -> Dict[str, Any]:
         """도시명 표준화 및 중복 확인"""

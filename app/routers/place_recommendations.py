@@ -96,9 +96,24 @@ def get_place_recommendation_service():
             logger.info("✅ Supabase 서비스 초기화 완료")
             
             # AI 서비스 초기화 (EnhancedAIService 사용)
-            from app.services.enhanced_ai_service import EnhancedAIService
-            ai_service = EnhancedAIService()
-            logger.info("✅ Enhanced AI 서비스 초기화 완료")
+            try:
+                from app.services.enhanced_ai_service import EnhancedAIService
+                ai_service = EnhancedAIService()
+                logger.info("✅ Enhanced AI 서비스 초기화 완료")
+                
+                # AI 서비스 상태 확인
+                try:
+                    handler = await ai_service.get_active_handler()
+                    if handler:
+                        logger.info(f"✅ AI 핸들러 확인 완료: {type(handler).__name__}")
+                    else:
+                        logger.warning("⚠️ AI 핸들러가 None입니다. API 키 확인 필요")
+                except Exception as handler_error:
+                    logger.error(f"❌ AI 핸들러 확인 실패: {handler_error}")
+                    
+            except Exception as ai_init_error:
+                logger.error(f"❌ Enhanced AI 서비스 초기화 실패: {ai_init_error}")
+                raise Exception(f"AI 서비스 초기화 실패: {str(ai_init_error)}")
             
             # Google Places 서비스 초기화  
             google_places_service = GooglePlacesService()
@@ -151,7 +166,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         logger.info("📍 [STEP_1_GEOCODING] 1단계: 위치 표준화 및 동명 지역 감지 시작")
         
         geocoding_results = None
-        if not hasattr(request, 'place_id') or not request.place_id:
+        if not request.place_id:
             logger.info("📍 [PLAN_A_GEOCODING_CONDITION] place_id가 없으므로 Geocoding API 호출 진행")
             try:
                 logger.info("📍 [PLAN_A_GEOCODING_CALL] Plan A에서 실제 Geocoding API 호출 시작")
@@ -162,6 +177,24 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                 
                 geocoding_results = await geocoding_service.get_geocode_results(location_query)
                 logger.info(f"✅ [PLAN_A_GEOCODING_SUCCESS] Plan A Geocoding 결과 {len(geocoding_results)}개를 찾았습니다.")
+                
+                # 🚨 [핵심] 동명 지역이 있는 경우 즉시 선택지 반환 (Plan A 실행 전에)
+                if geocoding_service.is_ambiguous_location(geocoding_results):
+                    # 중복 제거된 결과로 선택지 생성
+                    unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
+                    options = geocoding_service.format_location_options(unique_results)
+                    logger.info(f"⚠️ [AMBIGUOUS_LOCATION] 동명 지역이 감지되어 사용자에게 선택지를 반환합니다: {request.city} - {len(options)}개 선택지")
+                    
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "error_code": "AMBIGUOUS_LOCATION",
+                            "message": f"'{request.city}'에 해당하는 지역이 여러 곳 있습니다. 하나를 선택해주세요.",
+                            "options": options
+                        }
+                    )
+                
+                logger.info("✅ [PLAN_A_GEOCODING_PASS] Plan A에서 동명 지역 문제가 없어, Plan A 실행을 계속합니다.")
                 
                 # 🚨 [핵심] 동명 지역이 있는 경우 즉시 선택지 반환 (Plan A 실행 전에)
                 if geocoding_service.is_ambiguous_location(geocoding_results):
@@ -231,6 +264,61 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             raise HTTPException(status_code=500, detail="추천 서비스 초기화 실패")
         logger.info("✅ [STEP_2_CACHE_SUCCESS] 서비스 초기화 완료")
 
+        # 🔍 캐시에서 기존 추천 데이터 확인 (광주 같은 경우 이미 데이터가 있을 수 있음)
+        if geocoding_results and len(geocoding_results) > 0:
+            # Geocoding 결과로부터 도시 정보 추출
+            first_result = geocoding_results[0]
+            components = first_result.get('address_components', [])
+            
+            # 도시명 추출
+            city_name = request.city
+            country_name = request.country
+            
+            for component in components:
+                types = component.get('types', [])
+                if 'locality' in types or 'administrative_area_level_1' in types:
+                    city_name = component.get('long_name', city_name)
+                elif 'country' in types:
+                    country_name = component.get('long_name', country_name)
+            
+            logger.info(f"🔍 [CACHE_CHECK] 캐시 확인: {city_name}, {country_name}")
+            
+            # Supabase에서 도시 ID 확인
+            try:
+                country_id = await service.supabase.get_or_create_country(country_name)
+                region_id = await service.supabase.get_or_create_region(country_id, "")
+                city_id = await service.supabase.get_or_create_city(region_id, city_name)
+                
+                # 캐시된 장소 확인
+                existing_places = await service.supabase.get_all_cached_places_by_city(city_id)
+                
+                if existing_places and len(existing_places) >= 15:
+                    logger.info(f"✅ [CACHE_HIT] 캐시에서 충분한 데이터 발견: {len(existing_places)}개")
+                    
+                    # 카테고리별로 분류
+                    categorized = {}
+                    for place in existing_places:
+                        category = place.get('category', '기타')
+                        if category not in categorized:
+                            categorized[category] = []
+                        categorized[category].append(place)
+                    
+                    return PlaceRecommendationResponse(
+                        success=True,
+                        city_id=city_id,
+                        city_name=city_name,
+                        country_name=country_name,
+                        main_theme="캐시 데이터",
+                        recommendations=categorized,
+                        previously_recommended_count=len(existing_places),
+                        newly_recommended_count=0
+                    )
+                else:
+                    logger.info(f"📊 [CACHE_INSUFFICIENT] 기존 데이터 부족: {len(existing_places) if existing_places else 0}개, Plan A 진행")
+                    
+            except Exception as cache_error:
+                logger.error(f"❌ [CACHE_ERROR] 캐시 확인 중 오류: {cache_error}")
+
         # ✅ 3단계: Plan A (신규 생성) - AI + Google Places
         logger.info("🚀 [STEP_3_PLAN_A] 3단계: Plan A (신규 추천 생성) 시작")
         try:
@@ -253,6 +341,7 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             # Plan A 실패 시 관리자 알림 + 에러 반환 (폴백 없음)
             logger.error("🚨 [NO_FALLBACK] Plan A 실패 - 폴백 시스템 비활성화됨, 에러 반환")
             
+            # 🚨 [중복 방지] 이메일은 라우터에서 한 번만 발송
             try:
                 email_success = await send_admin_notification(
                     subject="[PLANGO 긴급] Plan A 추천 시스템 완전 실패",
