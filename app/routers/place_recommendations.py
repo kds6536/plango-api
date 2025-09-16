@@ -162,11 +162,17 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             geocoding_results = await geocoding_service.get_geocode_results(location_query)
             logger.info(f"  📊 [GEOCODING_RESULTS] 결과 {len(geocoding_results)}개 발견")
             
-            # 동명 지역 감지
-            if geocoding_service.is_ambiguous_location(geocoding_results):
+            # 동명 지역 감지 (상세 디버깅 추가)
+            logger.info(f"  🔍 [AMBIGUOUS_CHECK] 동명 지역 감지 시작...")
+            is_ambiguous = geocoding_service.is_ambiguous_location(geocoding_results)
+            logger.info(f"  🔍 [AMBIGUOUS_RESULT] is_ambiguous_location 결과: {is_ambiguous}")
+            
+            if is_ambiguous:
                 unique_results = geocoding_service.remove_duplicate_results(geocoding_results)
                 options = geocoding_service.format_location_options(unique_results)
-                logger.info(f"  ⚠️ [AMBIGUOUS_LOCATION] 동명 지역 감지: {len(options)}개")
+                logger.info(f"  ⚠️ [AMBIGUOUS_LOCATION] 동명 지역 감지! {len(options)}개 선택지 반환")
+                logger.info(f"  📋 [OPTIONS_PREVIEW] 선택지: {[opt.get('display_name', 'Unknown') for opt in options[:3]]}")
+                
                 return JSONResponse(
                     status_code=400,
                     content={
@@ -174,6 +180,8 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
                         "options": options
                     }
                 )
+            else:
+                logger.info(f"  ✅ [NOT_AMBIGUOUS] 동명 지역이 아님, 계속 진행")
             
             # 표준화된 위치 정보 추출
             if geocoding_results and len(geocoding_results) > 0:

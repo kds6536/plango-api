@@ -39,7 +39,7 @@ async def test_geocoding_priority():
                 if data.get("error_code") == "AMBIGUOUS_LOCATION":
                     print("✅ [SUCCESS] Geocoding이 우선 실행되어 동명 지역을 감지했습니다!")
                     print(f"📋 [OPTIONS] 선택지 {len(data.get('options', []))}개:")
-                    for i, option in enumerate(data.get('options', [])[:3):
+                    for i, option in enumerate(data.get('options', [])[:3]):
                         print(f"  {i+1}. {option}")
                     return True
                 else:
