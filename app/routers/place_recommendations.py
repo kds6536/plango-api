@@ -101,15 +101,7 @@ def get_place_recommendation_service():
                 ai_service = EnhancedAIService()
                 logger.info("✅ Enhanced AI 서비스 초기화 완료")
                 
-                # AI 서비스 상태 확인
-                try:
-                    handler = await ai_service.get_active_handler()
-                    if handler:
-                        logger.info(f"✅ AI 핸들러 확인 완료: {type(handler).__name__}")
-                    else:
-                        logger.warning("⚠️ AI 핸들러가 None입니다. API 키 확인 필요")
-                except Exception as handler_error:
-                    logger.error(f"❌ AI 핸들러 확인 실패: {handler_error}")
+                # AI 서비스 상태는 실제 사용 시점에 확인
                     
             except Exception as ai_init_error:
                 logger.error(f"❌ Enhanced AI 서비스 초기화 실패: {ai_init_error}")
