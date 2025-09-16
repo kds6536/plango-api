@@ -17,7 +17,32 @@ from app.services.google_places_service import GooglePlacesService
 from app.services.geocoding_service import GeocodingService
 from app.services.email_service import email_service
 
+# Enhanced AI Service 의존성 주입을 위한 import
+try:
+    from app.services.enhanced_ai_service import enhanced_ai_service
+except ImportError:
+    enhanced_ai_service = None
+
 logger = logging.getLogger(__name__)
+
+# 의존성 주입 함수들
+async def get_active_ai_handler():
+    """
+    Enhanced AI Service에서 활성화된 AI 핸들러를 가져오는 의존성 주입 함수
+    """
+    try:
+        if enhanced_ai_service:
+            handler = await enhanced_ai_service.get_active_handler()
+            if handler:
+                logger.info("✅ [DI_SUCCESS] AI 핸들러 의존성 주입 성공")
+                return handler
+        
+        logger.warning("⚠️ [DI_FALLBACK] AI 핸들러를 가져올 수 없어 None 반환")
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ [DI_ERROR] AI 핸들러 의존성 주입 실패: {e}")
+        return None
 
 async def send_admin_notification(subject: str, error_type: str, error_details: str, user_request: dict) -> bool:
     """

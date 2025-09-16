@@ -92,39 +92,54 @@ class AdvancedItineraryService:
         self.ai_service = ai_service
         logger.info("AdvancedItineraryService 초기화 완료 - AI 핸들러 패턴 적용")
 
-    async def _get_ai_handler(self):
-        """Enhanced AI Service를 통해 활성화된 AI 핸들러 가져오기"""
+    async def _get_ai_handler(self, injected_handler=None):
+        """
+        AI 핸들러 가져오기 (의존성 주입 지원)
+        injected_handler가 제공되면 그것을 우선 사용
+        """
         logger.info("🔍🔍🔍 [GET_AI_HANDLER_START] AI 핸들러 생성 프로세스 시작")
         print("🔍🔍🔍 [GET_AI_HANDLER_START] AI 핸들러 생성 프로세스 시작")
         
-        # ===== 1단계: Enhanced AI Service 시도 =====
+        # ===== 0단계: 의존성 주입된 핸들러 우선 사용 =====
+        if injected_handler:
+            logger.info("✅ [DI_HANDLER] 의존성 주입된 AI 핸들러 사용")
+            print("✅ [DI_HANDLER] 의존성 주입된 AI 핸들러 사용")
+            return injected_handler
+        
+        # ===== 1단계: Enhanced AI Service 시도 (안전한 방식) =====
         try:
             logger.info("📊 [STEP_1] Enhanced AI Service 확인")
             print("📊 [STEP_1] Enhanced AI Service 확인")
             
             logger.info(f"📊 [ENHANCED_SERVICE_CHECK] enhanced_ai_service 존재: {enhanced_ai_service is not None}")
-            logger.info(f"📊 [ENHANCED_SERVICE_TYPE] enhanced_ai_service 타입: {type(enhanced_ai_service)}")
             print(f"📊 [ENHANCED_SERVICE_CHECK] enhanced_ai_service 존재: {enhanced_ai_service is not None}")
             
-            if enhanced_ai_service:
+            if enhanced_ai_service and hasattr(enhanced_ai_service, 'get_active_handler'):
                 logger.info("🔄 [ENHANCED_CALL] enhanced_ai_service.get_active_handler() 호출 시작")
                 print("🔄 [ENHANCED_CALL] enhanced_ai_service.get_active_handler() 호출 시작")
                 
-                handler = await enhanced_ai_service.get_active_handler()
-                
-                logger.info(f"✅ [ENHANCED_SUCCESS] Enhanced AI handler 가져오기 성공: {type(handler).__name__ if handler else 'None'}")
-                print(f"✅ [ENHANCED_SUCCESS] Enhanced AI handler 가져오기 성공: {type(handler).__name__ if handler else 'None'}")
-                
-                if handler:
-                    logger.info("🎉 [HANDLER_READY] Enhanced AI handler 준비 완료")
-                    print("🎉 [HANDLER_READY] Enhanced AI handler 준비 완료")
-                    return handler
-                else:
-                    logger.warning("⚠️ [ENHANCED_NULL] Enhanced AI handler가 None을 반환했습니다")
-                    print("⚠️ [ENHANCED_NULL] Enhanced AI handler가 None을 반환했습니다")
+                # 안전한 방식으로 호출
+                try:
+                    handler = await enhanced_ai_service.get_active_handler()
+                    
+                    logger.info(f"✅ [ENHANCED_SUCCESS] Enhanced AI handler 가져오기 성공: {type(handler).__name__ if handler else 'None'}")
+                    print(f"✅ [ENHANCED_SUCCESS] Enhanced AI handler 가져오기 성공: {type(handler).__name__ if handler else 'None'}")
+                    
+                    if handler:
+                        logger.info("🎉 [HANDLER_READY] Enhanced AI handler 준비 완료")
+                        print("🎉 [HANDLER_READY] Enhanced AI handler 준비 완료")
+                        return handler
+                    else:
+                        logger.warning("⚠️ [ENHANCED_NULL] Enhanced AI handler가 None을 반환했습니다")
+                        print("⚠️ [ENHANCED_NULL] Enhanced AI handler가 None을 반환했습니다")
+                        
+                except Exception as handler_error:
+                    logger.error(f"❌ [HANDLER_CALL_ERROR] get_active_handler 호출 실패: {handler_error}")
+                    print(f"❌ [HANDLER_CALL_ERROR] get_active_handler 호출 실패: {handler_error}")
+                    
             else:
-                logger.info("ℹ️ [NO_ENHANCED] enhanced_ai_service가 None입니다. 폴백으로 이동")
-                print("ℹ️ [NO_ENHANCED] enhanced_ai_service가 None입니다. 폴백으로 이동")
+                logger.info("ℹ️ [NO_ENHANCED] enhanced_ai_service가 None이거나 get_active_handler 메서드가 없습니다. 폴백으로 이동")
+                print("ℹ️ [NO_ENHANCED] enhanced_ai_service가 None이거나 get_active_handler 메서드가 없습니다. 폴백으로 이동")
                 
         except Exception as e:
             logger.error(f"❌ [ENHANCED_ERROR] Enhanced AI handler 가져오기 실패: {e}")
@@ -201,7 +216,7 @@ class AdvancedItineraryService:
             print(f"❌ [FALLBACK_ERROR] 폴백 AI 핸들러 생성 실패: {fallback_error}")
             return None
 
-    async def generate_recommendations_with_details(self, request: ItineraryRequest) -> List[PlaceData]:
+    async def generate_recommendations_with_details(self, request: ItineraryRequest, ai_handler=None) -> List[PlaceData]:
         """
         v6.0: 다중 목적지 지원 추천 생성
         """
@@ -251,7 +266,7 @@ class AdvancedItineraryService:
             # AI 브레인스토밍으로 키워드 생성
             logger.info(f"AI 브레인스토밍 시작: {city}")
             keywords_by_category = await self._step2_ai_brainstorming_v6(
-                city, country, request, destination_index
+                city, country, request, destination_index, ai_handler
             )
             logger.info(f"AI 브레인스토밍 완료: {city}, 키워드 수: {len(keywords_by_category) if keywords_by_category else 0}")
             
@@ -345,7 +360,7 @@ class AdvancedItineraryService:
             logger.error(f"기본 장소 생성 실패: {e}")
             return []
 
-    async def _step2_ai_brainstorming_v6(self, city: str, country: str, request: ItineraryRequest, destination_index: int) -> Dict[str, List[str]]:
+    async def _step2_ai_brainstorming_v6(self, city: str, country: str, request: ItineraryRequest, destination_index: int, ai_handler=None) -> Dict[str, List[str]]:
         """AI 브레인스토밍으로 카테고리별 키워드 생성"""
         try:
             logger.info(f"AI 브레인스토밍 시작: {city}, {country}")
@@ -479,7 +494,7 @@ JSON 형식으로 응답해주세요:
             logger.error(f"결과 처리 및 필터링 실패: {e}")
             return enhanced_places  # 실패 시 원본 반환
 
-    async def create_final_itinerary(self, places: List[PlaceData], constraints: Dict[str, Any] = None) -> OptimizeResponse:
+    async def create_final_itinerary(self, places: List[PlaceData], constraints: Dict[str, Any] = None, ai_handler=None) -> OptimizeResponse:
         """최종 일정 생성"""
         try:
             logger.info("=" * 100)
@@ -586,7 +601,7 @@ JSON 형식으로 응답해주세요:
             logger.info("🤖🤖🤖 [AI_HANDLER_PROCESS] AI 핸들러 생성 프로세스 시작")
             print("🤖🤖🤖 [AI_HANDLER_PROCESS] AI 핸들러 생성 프로세스 시작")
             
-            ai_handler = await self._get_ai_handler()
+            ai_handler = await self._get_ai_handler(ai_handler)
             
             logger.info("🔍 [HANDLER_VALIDATION] AI 핸들러 검증 시작")
             print("🔍 [HANDLER_VALIDATION] AI 핸들러 검증 시작")
@@ -1683,13 +1698,13 @@ $places_list
 }
 """
 
-    async def _step2_ai_brainstorming_v6(self, city: str, country: str, request: ItineraryRequest, destination_index: int):
+    async def _step2_ai_brainstorming_v6(self, city: str, country: str, request: ItineraryRequest, destination_index: int, ai_handler=None):
         """
         v6.0: AI 브레인스토밍 - 다중 목적지 지원
         """
         try:
             logger.info(f"AI 브레인스토밍 시작: {city}, {country}")
-            ai_handler = await self._get_ai_handler()
+            ai_handler = await self._get_ai_handler(ai_handler)
             logger.info(f"AI 핸들러 가져오기 완료: {type(ai_handler).__name__}")
             
             # 고정 프롬프트 규칙: 검색 전략은 search_strategy_v1, 일정 생성은 itinerary_generation
@@ -2024,7 +2039,7 @@ $places_list
         prompt = prompt_template_str.format(user_request_json=user_request_json)
         
         try:
-            handler = self._get_ai_handler()
+            handler = await self._get_ai_handler()
             logger.info(f"📜 [STEP_2_PROMPT] 2단계 AI에게 보낼 최종 프롬프트:\n{prompt}")
             content = await handler.get_completion(prompt)
             logger.info(f"🤖 [AI_RAW_RESPONSE] 2단계 AI 원본 응답: '{content}'")
@@ -2226,7 +2241,7 @@ $places_list
             places=all_places
         ) 
 
-    async def optimize_itinerary(self, request: OptimizeRequest) -> OptimizeResponse:
+    async def optimize_itinerary(self, request: OptimizeRequest, ai_handler=None) -> OptimizeResponse:
         """
         선택된 장소들을 구글 다이렉션 API로 최적화합니다
         """
@@ -2336,7 +2351,7 @@ $places_list
             places=place_data_list
         )
 
-    async def create_final_itinerary(self, places: List[PlaceData], constraints: Optional[Dict[str, Any]] = None) -> OptimizeResponse:
+    async def create_final_itinerary(self, places: List[PlaceData], constraints: Optional[Dict[str, Any]] = None, ai_handler=None) -> OptimizeResponse:
         """
         v6.0: 선택된 장소들을 Supabase 마스터 프롬프트와 AI로 최적화하여 최종 일정을 생성합니다.
         """

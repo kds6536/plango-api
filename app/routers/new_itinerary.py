@@ -19,6 +19,12 @@ from app.services.google_places_service import GooglePlacesService
 from app.services.dynamic_ai_service import DynamicAIService
 from app.config import settings
 
+# Enhanced AI Service 의존성 주입을 위한 import
+try:
+    from app.services.enhanced_ai_service import enhanced_ai_service
+except ImportError:
+    enhanced_ai_service = None
+
 router = APIRouter(
     prefix="/api/v1/itinerary",
     tags=["New Itinerary"],
@@ -26,6 +32,25 @@ router = APIRouter(
 
 # Supabase 클라이언트를 main.py에서 주입받을 변수
 supabase: Optional[Client] = None
+
+# 의존성 주입 함수들
+async def get_active_ai_handler():
+    """
+    Enhanced AI Service에서 활성화된 AI 핸들러를 가져오는 의존성 주입 함수
+    """
+    try:
+        if enhanced_ai_service:
+            handler = await enhanced_ai_service.get_active_handler()
+            if handler:
+                logging.info("✅ [DI_SUCCESS] AI 핸들러 의존성 주입 성공")
+                return handler
+        
+        logging.warning("⚠️ [DI_FALLBACK] AI 핸들러를 가져올 수 없어 None 반환")
+        return None
+        
+    except Exception as e:
+        logging.error(f"❌ [DI_ERROR] AI 핸들러 의존성 주입 실패: {e}")
+        return None
 
 # 서비스 인스턴스를 전역으로 관리하여 재사용
 # AdvancedItineraryService는 여러 서비스에 의존하므로 요청마다 생성하는 것은 비효율적
@@ -50,7 +75,8 @@ def get_itinerary_service():
 @router.post("/generate-recommendations", response_model=RecommendationResponse)
 async def generate_recommendations(
     request: ItineraryRequest,
-    service: AdvancedItineraryService = Depends(get_itinerary_service)
+    service: AdvancedItineraryService = Depends(get_itinerary_service),
+    ai_handler = Depends(get_active_ai_handler)
 ):
     """
     1단계: 사용자 입력을 기반으로 AI가 여행지 키워드를 추천하고, 
@@ -58,7 +84,7 @@ async def generate_recommendations(
     """
     try:
         logging.info(f"추천 생성 요청: {request.model_dump_json(indent=2)}")
-        places_data = await service.generate_recommendations_with_details(request)
+        places_data = await service.generate_recommendations_with_details(request, ai_handler)
         
         if not places_data:
             raise HTTPException(status_code=404, detail="추천 장소를 생성하지 못했습니다.")
@@ -73,7 +99,8 @@ async def generate_recommendations(
 @router.post("/optimize", response_model=OptimizeResponse)
 async def optimize_itinerary_v2(  # 함수명 변경으로 캐시 무효화
     payload: Dict[str, Any] = Body(...),
-    service: AdvancedItineraryService = Depends(get_itinerary_service)
+    service: AdvancedItineraryService = Depends(get_itinerary_service),
+    ai_handler = Depends(get_active_ai_handler)
 ):
     """
     2단계: 사용자가 선택한 장소 목록을 받아 AI가 최적의 경로와 일정을 생성하고,
@@ -180,7 +207,7 @@ async def optimize_itinerary_v2(  # 함수명 변경으로 캐시 무효화
         print("🔍🔍🔍 [ROUTER_TO_SERVICE_END]")
         logging.info("🔍🔍🔍 [ROUTER_TO_SERVICE_END]")
         
-        final_itinerary = await service.create_final_itinerary(places, constraints=constraints)
+        final_itinerary = await service.create_final_itinerary(places, constraints=constraints, ai_handler=ai_handler)
         
         print("🚨🚨🚨 create_final_itinerary RETURNED! 🚨🚨🚨")
         print(f"🔍 [FINAL_ITINERARY_TYPE] 반환된 final_itinerary 타입: {type(final_itinerary).__name__}")
