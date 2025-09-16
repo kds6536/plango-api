@@ -31,6 +31,184 @@ class PlaceRecommendationService:
         self.ai_service = ai_service
         self.google_places_service = google_places_service
 
+    async def generate_place_recommendations_with_location(self, request: PlaceRecommendationRequest, standardized_location: Dict[str, Any]) -> PlaceRecommendationResponse:
+        """
+        표준화된 위치 정보를 받아서 추천을 생성하는 새로운 메서드
+        """
+        try:
+            logger.info(f"🚀 [REQUEST_START] 장소 추천 요청: {request.city}, {request.country}")
+            logger.info(f"📍 [LOCATION_INFO] 표준화된 위치: {standardized_location.get('formatted_address', '')}")
+            
+            # 위치 정보에서 도시 정보 추출
+            components = standardized_location.get('address_components', [])
+            city_name = request.city
+            country_name = request.country
+            region_name = ""
+            
+            for component in components:
+                types = component.get('types', [])
+                long_name = component.get('long_name', '')
+                
+                if 'locality' in types:
+                    city_name = long_name
+                elif 'administrative_area_level_1' in types:
+                    region_name = long_name
+                elif 'country' in types:
+                    country_name = long_name
+            
+            logger.info(f"🏙️ [EXTRACTED_INFO] 추출된 정보 - 도시: {city_name}, 지역: {region_name}, 국가: {country_name}")
+            
+            # 도시 ID 확보
+            country_id = await self.supabase.get_or_create_country(country_name)
+            region_id = await self.supabase.get_or_create_region(country_id, region_name)
+            city_id = await self.supabase.get_or_create_city(region_id, city_name)
+            
+            logger.info(f"🆔 [CITY_ID] 도시 ID 확보: {city_id}")
+            
+            # 기존 추천 확인
+            existing_recommendations = await self._get_existing_recommendations_from_cache(city_id)
+            
+            if existing_recommendations and len(existing_recommendations) >= 15:
+                logger.info(f"✅ [CACHE_HIT] 캐시에서 충분한 데이터 발견: {len(existing_recommendations)}개")
+                categorized = {}
+                for place in existing_recommendations:
+                    category = place.get('category', '기타')
+                    if category not in categorized:
+                        categorized[category] = []
+                    categorized[category].append(place)
+                
+                return PlaceRecommendationResponse(
+                    success=True,
+                    city_id=city_id,
+                    city_name=city_name,
+                    country_name=country_name,
+                    main_theme="캐시 데이터",
+                    recommendations=categorized,
+                    previously_recommended_count=len(existing_recommendations),
+                    newly_recommended_count=0
+                )
+            
+            logger.info(f"📊 [CACHE_INSUFFICIENT] 기존 데이터 부족: {len(existing_recommendations) if existing_recommendations else 0}개, 새로운 추천 진행")
+            
+            # Plan A 실행
+            return await self._execute_plan_a(request, city_id, city_name, country_name, standardized_location)
+            
+        except Exception as e:
+            logger.error(f"❌ [SERVICE_ERROR] 서비스 오류: {e}", exc_info=True)
+            raise Exception(f"추천 서비스 오류: {str(e)}")
+
+    async def _execute_plan_a(self, request: PlaceRecommendationRequest, city_id: int, city_name: str, country_name: str, standardized_location: Dict[str, Any]) -> PlaceRecommendationResponse:
+        """
+        Plan A 실행: AI 키워드 생성 + Google Places API 검색
+        """
+        try:
+            logger.info("🤖 [PLAN_A_START] Plan A 실행 시작")
+            
+            # AI 키워드 생성
+            prompt_template = await self.supabase.get_master_prompt('search_strategy_v1')
+            existing_place_names = await self.supabase.get_existing_place_names(city_id)
+            
+            from string import Template
+            template = Template(prompt_template)
+            ai_prompt = template.safe_substitute(
+                city=city_name,
+                country=country_name,
+                total_duration=request.total_duration,
+                travelers_count=request.travelers_count,
+                budget_range=getattr(request, 'budget_range', '중간'),
+                travel_style=", ".join(request.travel_style) if request.travel_style else "없음",
+                special_requests=getattr(request, 'special_requests', None) or "없음",
+                existing_places=""
+            )
+            
+            logger.info("🤖 [AI_CALL_START] AI 키워드 생성 시작")
+            ai_raw = await asyncio.wait_for(
+                self.ai_service.generate_response(ai_prompt, max_tokens=1200),
+                timeout=60.0
+            )
+            logger.info(f"🤖 [AI_CALL_SUCCESS] AI 응답 수신 (길이: {len(ai_raw) if ai_raw else 0})")
+            
+            # AI 응답 파싱
+            try:
+                cleaned = self._extract_json_from_response(ai_raw)
+                ai_result = json.loads(cleaned)
+                logger.info("✅ [AI_PARSE_SUCCESS] AI 응답 파싱 성공")
+            except Exception as parse_err:
+                logger.error(f"❌ [AI_PARSE_FAIL] AI 응답 파싱 실패: {parse_err}")
+                logger.error(f"📝 [AI_RAW] 원본 응답: {ai_raw}")
+                raise Exception(f"AI 응답 파싱 실패: {str(parse_err)}")
+            
+            # 검색 쿼리 추출 및 정규화
+            raw_queries = ai_result.get('search_queries') or {}
+            search_queries = self._normalize_search_queries(raw_queries)
+            logger.info(f"🔍 [SEARCH_QUERIES] 생성된 검색 쿼리: {search_queries}")
+            
+            # Google Places API 호출 (상세 로깅 추가)
+            logger.info(f"  🔍 [PLACES_API_START] 생성된 키워드 {len(search_queries)}개로 Google Places 검색 시작")
+            
+            try:
+                categorized_places = await self._search_places_with_detailed_logging(
+                    search_queries, city_name, country_name, standardized_location
+                )
+                logger.info(f"  ✅ [PLACES_API_SUCCESS] Google Places 검색 완료: {[(k, len(v)) for k, v in categorized_places.items()]}")
+            except Exception as api_error:
+                logger.error(f"  ❌ [PLACES_API_FAIL] Google Places API 실패: {api_error}")
+                raise Exception(f"Google Places API 호출 실패: {str(api_error)}")
+            
+            # 결과 저장 및 응답 생성
+            if categorized_places:
+                save_result = await self._save_new_places(city_id, categorized_places)
+                logger.info(f"💾 [SAVE_SUCCESS] 새로운 장소 저장 완료: {save_result}")
+            
+            total_new_places = sum(len(places) for places in categorized_places.values())
+            
+            return PlaceRecommendationResponse(
+                success=True,
+                city_id=city_id,
+                city_name=city_name,
+                country_name=country_name,
+                main_theme="Plan A 성공",
+                recommendations=categorized_places,
+                previously_recommended_count=len(existing_place_names),
+                newly_recommended_count=total_new_places
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ [PLAN_A_ERROR] Plan A 실행 오류: {e}", exc_info=True)
+            raise Exception(f"Plan A 실행 실패: {str(e)}")
+
+    async def _search_places_with_detailed_logging(self, search_queries: Dict[str, str], city_name: str, country_name: str, standardized_location: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        상세 로깅이 포함된 Google Places API 검색
+        """
+        all_results = {}
+        
+        for category, keyword in search_queries.items():
+            try:
+                # 검색할 쿼리 로깅
+                search_query = f"{keyword} in {standardized_location.get('formatted_address', f'{city_name}, {country_name}')}"
+                logger.info(f"    - 카테고리: {category}")
+                logger.info(f"    - 쿼리: '{search_query}'")
+                
+                # 실제 API 호출
+                places_result = await self.google_places_service.search_places(search_query)
+                
+                if places_result and len(places_result) > 0:
+                    logger.info(f"    - ✅ 결과: {len(places_result)}개 찾음")
+                    all_results[category] = places_result
+                else:
+                    logger.warning(f"    - ⚠️ 결과 없음")
+                    all_results[category] = []
+                    
+            except Exception as e:
+                # [핵심] 어떤 쿼리에서 어떤 에러가 났는지 정확히 로깅
+                logger.error(f"    - ❌ Google Places API 호출 실패! 카테고리: {category}, 쿼리: '{search_query}', 에러: {e}")
+                # 하나의 키워드가 실패해도 계속 진행
+                all_results[category] = []
+                continue
+        
+        return all_results
+
     async def generate_place_recommendations(self, request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
         """
         메인 추천 생성 함수
