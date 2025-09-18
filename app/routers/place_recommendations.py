@@ -167,8 +167,15 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
             if service is None:
                 raise Exception("추천 서비스 초기화 실패")
             
-            # 프론트엔드에서 명확한 도시 정보를 받았으므로 바로 추천 생성
-            recommendations = await service.generate_place_recommendations(request)
+            # place_id가 있으면 특별 처리, 없으면 기존 방식
+            if hasattr(request, 'place_id') and request.place_id:
+                logger.info("🎯 [PLACE_ID_ROUTE] place_id가 있으므로 직접 추천 생성")
+                # place_id가 있는 경우 바로 Plan A 실행
+                recommendations = await service.generate_place_recommendations(request)
+            else:
+                logger.info("🔄 [LEGACY_ROUTE] place_id가 없으므로 기존 방식으로 처리")
+                # 기존 방식 (Geocoding 포함)
+                recommendations = await service.generate_place_recommendations(request)
             
             if not recommendations:
                 raise Exception("Plan A에서 충분한 추천 결과를 생성하지 못했습니다.")

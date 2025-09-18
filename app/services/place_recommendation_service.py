@@ -219,18 +219,50 @@ class PlaceRecommendationService:
         try:
             logger.info(f"🚀 [REQUEST_START] 장소 추천 요청: {request.city}, {request.country}")
             
-            # === 1단계: 표준화 및 도시 ID 확보 ===
-            logger.info("🔍 [STANDARDIZE] 도시명 표준화 및 ID 확보 시작")
+            # === 0단계: place_id 확인 ===
+            if hasattr(request, 'place_id') and request.place_id:
+                logger.info(f"🎯 [PLACE_ID_DETECTED] place_id 감지: {request.place_id}")
+                logger.info("⚡ [SKIP_GEOCODING] place_id가 있으므로 Geocoding 및 동명 지역 확인을 건너뜁니다")
+                
+                # place_id가 있으면 바로 도시 ID 생성
+                try:
+                    country_id = await self.supabase.get_or_create_country(request.country)
+                    region_id = await self.supabase.get_or_create_region(country_id, "")
+                    city_id = await self.supabase.get_or_create_city(region_id, request.city)
+                    logger.info(f"✅ [DIRECT_CITY_ID] place_id 기반 도시 ID 생성: {city_id}")
+                    
+                    # 바로 Plan A로 이동
+                    standardized_result = {
+                        'status': 'SUCCESS',
+                        'city_id': city_id,
+                        'standardized_info': {
+                            'country': request.country,
+                            'city': request.city
+                        }
+                    }
+                except Exception as e:
+                    logger.error(f"❌ [PLACE_ID_ERROR] place_id 처리 실패: {e}")
+                    # place_id 처리 실패 시 기존 방식으로 폴백
+                    logger.info("🔄 [FALLBACK_TO_GEOCODING] place_id 처리 실패, 기존 방식으로 폴백")
+                    standardized_result = await asyncio.wait_for(
+                        self._standardize_and_check_city(request), 
+                        timeout=30.0
+                    )
+            else:
+                logger.info("ℹ️ [NO_PLACE_ID] place_id가 없음, 기존 Geocoding 방식 사용")
+                
+                # === 1단계: 표준화 및 도시 ID 확보 ===
+                logger.info("🔍 [STANDARDIZE] 도시명 표준화 및 ID 확보 시작")
             
-            # 타임아웃 보호: 표준화 단계 (더 짧은 타임아웃)
-            try:
-                standardized_result = await asyncio.wait_for(
-                    self._standardize_and_check_city(request), 
-                    timeout=30.0
-                )
-            except asyncio.TimeoutError:
-                logger.error("⏰ [STANDARDIZE_TIMEOUT] 표준화 단계 타임아웃 (30초)")
-                raise HTTPException(status_code=500, detail="도시 정보 처리 시간 초과")
+                # 타임아웃 보호: 표준화 단계 (더 짧은 타임아웃)
+                try:
+                    standardized_result = await asyncio.wait_for(
+                        self._standardize_and_check_city(request), 
+                        timeout=30.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("⏰ [STANDARDIZE_TIMEOUT] 표준화 단계 타임아웃 (30초)")
+                    raise HTTPException(status_code=500, detail="도시 정보 처리 시간 초과")
             
             if standardized_result['status'] == 'AMBIGUOUS':
                 logger.info("⚠️ [AMBIGUOUS] 동명 도시 감지, 사용자 선택 필요")
