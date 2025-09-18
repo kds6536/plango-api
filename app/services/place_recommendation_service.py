@@ -119,6 +119,13 @@ class PlaceRecommendationService:
                 categorized_places = await self._search_places_with_detailed_logging(
                     search_queries, request.city, request.country, {}
                 )
+                
+                # 각 카테고리당 10개로 제한
+                for category in categorized_places:
+                    if len(categorized_places[category]) > 10:
+                        categorized_places[category] = categorized_places[category][:10]
+                        logger.info(f"🔢 [LIMIT_APPLIED] {category} 카테고리를 10개로 제한")
+                
                 logger.info(f"✅ [DIRECT_PLACES_SUCCESS] Google Places 검색 완료: {[(k, len(v)) for k, v in categorized_places.items()]}")
             except Exception as api_error:
                 logger.error(f"❌ [DIRECT_PLACES_FAIL] Google Places API 실패: {api_error}")
@@ -564,6 +571,13 @@ class PlaceRecommendationService:
                             country=normalized_country,
                             language_code=(getattr(request, 'language_code', None) or 'ko')
                         )
+                        
+                        # 각 카테고리당 10개로 제한 (추가 보장)
+                        for category in categorized_places:
+                            if len(categorized_places[category]) > 10:
+                                categorized_places[category] = categorized_places[category][:10]
+                                logger.info(f"🔢 [LIMIT_APPLIED] {category} 카테고리를 10개로 제한")
+                        
                         logger.info(f"✅ [PLAN_A_GOOGLE_SUCCESS] Plan A Google API 성공: {[(k, len(v)) for k, v in categorized_places.items()]}")
                     except Exception as api_error:
                         logger.error(f"❌ [PLAN_A_GOOGLE_FAIL] Plan A Google Places API 실패: {api_error}")

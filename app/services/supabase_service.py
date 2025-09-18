@@ -49,6 +49,10 @@ class SupabaseService:
             response = self.client.table('cities').select('*').ilike('name', f'%{city_name}%').execute()
             
             cities = []
+            if not response or not response.data:
+                logger.warning(f"도시 검색 결과가 없습니다: {city_name}")
+                return []
+                
             for city in response.data:
                 # 별도로 country와 region 정보 조회
                 country_name = "Unknown"
@@ -89,6 +93,10 @@ class SupabaseService:
             response = self.client.table('cached_places').select('*').eq('city_id', city_id).execute()
             
             places = []
+            if not response or not response.data:
+                logger.warning(f"캐시된 장소가 없습니다: city_id={city_id}")
+                return []
+                
             for place in response.data:
                 place_data = {
                     'place_id': place.get('place_id'),
