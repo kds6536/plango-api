@@ -152,11 +152,14 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         logger.info(f"📝 [REQUEST] 요청 데이터: {request.city}, {request.country}")
         
         # --- [1단계] place_id 확인 및 처리 ---
+        logger.info(f"🔍 [DEBUG_REQUEST] 전체 요청 데이터: {request.model_dump()}")
+        
         if hasattr(request, 'place_id') and request.place_id:
             logger.info(f"✅ [PLACE_ID_PROVIDED] 프론트엔드에서 place_id 제공됨: {request.place_id}")
             logger.info("🚀 [SKIP_GEOCODING] place_id가 있으므로 Geocoding을 건너뛰고 바로 추천 생성 진행")
         else:
             logger.info("ℹ️ [NO_PLACE_ID] place_id가 없음, 기존 방식으로 처리")
+            logger.info(f"🔍 [DEBUG_PLACE_ID] request.place_id 값: {getattr(request, 'place_id', 'ATTRIBUTE_NOT_FOUND')}")
         
         # --- [2단계] 캐시 확인 및 서비스 초기화 ---
         try:
