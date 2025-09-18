@@ -97,6 +97,55 @@ class PlaceRecommendationService:
             logger.error(f"❌ [SERVICE_ERROR] 서비스 오류: {e}", exc_info=True)
             raise Exception(f"추천 서비스 오류: {str(e)}")
 
+    async def _execute_direct_plan_a(self, request: PlaceRecommendationRequest, city_id: int) -> PlaceRecommendationResponse:
+        """
+        place_id가 있을 때 AI 분석 없이 바로 Plan A 실행
+        """
+        try:
+            logger.info("🚀 [DIRECT_PLAN_A_START] place_id 기반 직접 Plan A 실행 시작")
+            
+            # 기본 검색 쿼리 생성 (AI 없이)
+            search_queries = {
+                "볼거리": f"tourist attractions in {request.city}",
+                "먹거리": f"restaurants in {request.city}",
+                "즐길거리": f"activities entertainment in {request.city}",
+                "숙소": f"hotels accommodation in {request.city}"
+            }
+            
+            logger.info(f"🔍 [DIRECT_QUERIES] 직접 생성된 검색 쿼리: {search_queries}")
+            
+            # Google Places API 호출
+            try:
+                categorized_places = await self._search_places_with_detailed_logging(
+                    search_queries, request.city, request.country, {}
+                )
+                logger.info(f"✅ [DIRECT_PLACES_SUCCESS] Google Places 검색 완료: {[(k, len(v)) for k, v in categorized_places.items()]}")
+            except Exception as api_error:
+                logger.error(f"❌ [DIRECT_PLACES_FAIL] Google Places API 실패: {api_error}")
+                raise Exception(f"Google Places API 호출 실패: {str(api_error)}")
+            
+            # 결과 저장 및 응답 생성
+            if categorized_places:
+                save_result = await self._save_new_places(city_id, categorized_places)
+                logger.info(f"💾 [DIRECT_SAVE_SUCCESS] 새로운 장소 저장 완료: {save_result}")
+            
+            total_new_places = sum(len(places) for places in categorized_places.values())
+            
+            return PlaceRecommendationResponse(
+                success=True,
+                city_id=city_id,
+                city_name=request.city,
+                country_name=request.country,
+                main_theme="Direct Plan A (place_id 기반)",
+                recommendations=categorized_places,
+                previously_recommended_count=0,
+                newly_recommended_count=total_new_places
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ [DIRECT_PLAN_A_ERROR] Direct Plan A 실행 오류: {e}", exc_info=True)
+            raise Exception(f"Direct Plan A 실행 실패: {str(e)}")
+
     async def _execute_plan_a(self, request: PlaceRecommendationRequest, city_id: int, city_name: str, country_name: str, standardized_location: Dict[str, Any]) -> PlaceRecommendationResponse:
         """
         Plan A 실행: AI 키워드 생성 + Google Places API 검색
@@ -212,8 +261,9 @@ class PlaceRecommendationService:
     async def generate_place_recommendations(self, request: PlaceRecommendationRequest) -> PlaceRecommendationResponse:
         """
         메인 추천 생성 함수
-        1순위: 캐시 확인
-        2순위: Plan A (search_strategy_v1)
+        1순위: place_id 확인 (있으면 바로 추천 생성)
+        2순위: 캐시 확인
+        3순위: Plan A (search_strategy_v1)
         Plan A 실패 시 에러 발생 (폴백 없음)
         """
         try:
@@ -222,47 +272,61 @@ class PlaceRecommendationService:
             # === 0단계: place_id 확인 ===
             if hasattr(request, 'place_id') and request.place_id:
                 logger.info(f"🎯 [PLACE_ID_DETECTED] place_id 감지: {request.place_id}")
-                logger.info("⚡ [SKIP_GEOCODING] place_id가 있으므로 Geocoding 및 동명 지역 확인을 건너뜁니다")
+                logger.info("⚡ [SKIP_ALL_CHECKS] place_id가 있으므로 모든 검증을 건너뛰고 바로 추천 생성")
                 
-                # place_id가 있으면 바로 도시 ID 생성
+                # place_id가 있으면 바로 도시 ID 생성하고 추천 생성
                 try:
                     country_id = await self.supabase.get_or_create_country(request.country)
                     region_id = await self.supabase.get_or_create_region(country_id, "")
                     city_id = await self.supabase.get_or_create_city(region_id, request.city)
                     logger.info(f"✅ [DIRECT_CITY_ID] place_id 기반 도시 ID 생성: {city_id}")
                     
-                    # 바로 Plan A로 이동
-                    standardized_result = {
-                        'status': 'SUCCESS',
-                        'city_id': city_id,
-                        'standardized_info': {
-                            'country': request.country,
-                            'city': request.city
-                        }
-                    }
+                    # 캐시 확인
+                    existing_recommendations = await self._get_existing_recommendations_from_cache(city_id)
+                    
+                    if existing_recommendations and len(existing_recommendations) >= 15:
+                        logger.info(f"✅ [CACHE_HIT] 캐시에서 충분한 데이터 발견: {len(existing_recommendations)}개")
+                        categorized = {}
+                        for place in existing_recommendations:
+                            category = place.get('category', '기타')
+                            if category not in categorized:
+                                categorized[category] = []
+                            categorized[category].append(place)
+                        
+                        return PlaceRecommendationResponse(
+                            success=True,
+                            city_id=city_id,
+                            city_name=request.city,
+                            country_name=request.country,
+                            main_theme="캐시 데이터",
+                            recommendations=categorized,
+                            previously_recommended_count=len(existing_recommendations),
+                            newly_recommended_count=0
+                        )
+                    
+                    # 캐시가 부족하면 바로 Plan A 실행 (AI 분석 없이)
+                    logger.info("📊 [DIRECT_PLAN_A] place_id 기반으로 바로 Plan A 실행")
+                    return await self._execute_direct_plan_a(request, city_id)
+                    
                 except Exception as e:
                     logger.error(f"❌ [PLACE_ID_ERROR] place_id 처리 실패: {e}")
                     # place_id 처리 실패 시 기존 방식으로 폴백
                     logger.info("🔄 [FALLBACK_TO_GEOCODING] place_id 처리 실패, 기존 방식으로 폴백")
-                    standardized_result = await asyncio.wait_for(
-                        self._standardize_and_check_city(request), 
-                        timeout=30.0
-                    )
-            else:
-                logger.info("ℹ️ [NO_PLACE_ID] place_id가 없음, 기존 Geocoding 방식 사용")
-                
-                # === 1단계: 표준화 및 도시 ID 확보 ===
-                logger.info("🔍 [STANDARDIZE] 도시명 표준화 및 ID 확보 시작")
             
-                # 타임아웃 보호: 표준화 단계 (더 짧은 타임아웃)
-                try:
-                    standardized_result = await asyncio.wait_for(
-                        self._standardize_and_check_city(request), 
-                        timeout=30.0
-                    )
-                except asyncio.TimeoutError:
-                    logger.error("⏰ [STANDARDIZE_TIMEOUT] 표준화 단계 타임아웃 (30초)")
-                    raise HTTPException(status_code=500, detail="도시 정보 처리 시간 초과")
+            logger.info("ℹ️ [LEGACY_FLOW] place_id가 없거나 실패, 기존 방식 사용")
+            
+            # === 1단계: 표준화 및 도시 ID 확보 ===
+            logger.info("🔍 [STANDARDIZE] 도시명 표준화 및 ID 확보 시작")
+        
+            # 타임아웃 보호: 표준화 단계 (더 짧은 타임아웃)
+            try:
+                standardized_result = await asyncio.wait_for(
+                    self._standardize_and_check_city(request), 
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                logger.error("⏰ [STANDARDIZE_TIMEOUT] 표준화 단계 타임아웃 (30초)")
+                raise HTTPException(status_code=500, detail="도시 정보 처리 시간 초과")
             
             if standardized_result['status'] == 'AMBIGUOUS':
                 logger.info("⚠️ [AMBIGUOUS] 동명 도시 감지, 사용자 선택 필요")
