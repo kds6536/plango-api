@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 from typing import Dict, Any
 from app.schemas.place import PlaceRecommendationRequest, PlaceRecommendationResponse
-from app.services.place_recommendation_service import place_recommendation_service, PlaceRecommendationService
+from app.services.place_recommendation_service_v2 import PlaceRecommendationServiceV2
 from app.services.supabase_service import SupabaseService
 from app.services.ai_service import AIService
 from app.services.google_places_service import GooglePlacesService
@@ -74,69 +74,66 @@ async def send_admin_notification(subject: str, error_type: str, error_details: 
 router = APIRouter(prefix="/api/v1/place-recommendations", tags=["Place Recommendations v6.0"])
 
 # 서비스 인스턴스 초기화
+place_recommendation_service_v2 = None
+
 def get_place_recommendation_service():
-    """PlaceRecommendationService 인스턴스를 반환하는 의존성 함수"""
-    global place_recommendation_service
-    if place_recommendation_service is None:
+    """PlaceRecommendationServiceV2 인스턴스를 반환하는 의존성 함수"""
+    global place_recommendation_service_v2
+    if place_recommendation_service_v2 is None:
         try:
-            # 필요한 서비스들 초기화
-            from app.config import settings
-            from supabase import create_client
+            logger.info("🔧 [V2] PlaceRecommendationServiceV2 초기화 시작")
             
-            logger.info("🔧 PlaceRecommendationService 초기화 시작")
-            
-            # Supabase 서비스 초기화 (자체적으로 클라이언트 생성)
+            # Supabase 서비스 초기화
             supabase_service = SupabaseService()
-            logger.info("✅ Supabase 서비스 초기화 완료")
+            logger.info("✅ [V2] Supabase 서비스 초기화 완료")
             
-            # AI 서비스 초기화 (EnhancedAIService 사용)
+            # AI 서비스 초기화
             try:
                 from app.services.enhanced_ai_service import EnhancedAIService
                 ai_service = EnhancedAIService()
-                logger.info("✅ Enhanced AI 서비스 초기화 완료")
-                
-                # AI 서비스 상태는 실제 사용 시점에 확인
-                    
+                logger.info("✅ [V2] Enhanced AI 서비스 초기화 완료")
             except Exception as ai_init_error:
-                logger.error(f"❌ Enhanced AI 서비스 초기화 실패: {ai_init_error}")
+                logger.error(f"❌ [V2] Enhanced AI 서비스 초기화 실패: {ai_init_error}")
                 raise Exception(f"AI 서비스 초기화 실패: {str(ai_init_error)}")
             
             # Google Places 서비스 초기화  
             google_places_service = GooglePlacesService()
-            logger.info("✅ Google Places 서비스 초기화 완료")
+            logger.info("✅ [V2] Google Places 서비스 초기화 완료")
             
-            # PlaceRecommendationService 초기화
-            place_recommendation_service = PlaceRecommendationService(
+            # PlaceRecommendationServiceV2 초기화
+            place_recommendation_service_v2 = PlaceRecommendationServiceV2(
                 supabase=supabase_service,
                 ai_service=ai_service,
                 google_places_service=google_places_service
             )
             
-            logger.info("✅ PlaceRecommendationService 초기화 완료")
+            logger.info("✅ [V2] PlaceRecommendationServiceV2 초기화 완료")
             
         except Exception as e:
-            logger.error(f"❌ PlaceRecommendationService 초기화 실패: {e}")
-            # 폴백: None 반환하여 에러 처리
+            logger.error(f"❌ [V2] PlaceRecommendationServiceV2 초기화 실패: {e}")
             return None
     
-    return place_recommendation_service
+    return place_recommendation_service_v2
 
 
 @router.post("/generate", response_model=PlaceRecommendationResponse)
 async def generate_place_recommendations(request: PlaceRecommendationRequest):
     """
-    통합 솔루션: 장소 추천 생성 (v7.0)
+    최적화된 장소 추천 생성 (v2.0)
     
-    실행 순서:
-    1. Geocoding 우선 실행 (동명 지역 감지)
-    2. Plan A 실행 (AI + Google Places)
-    3. 실패 시 단일 에러 처리 (이메일 1회 발송)
+    전제: 프론트엔드에서 항상 Google Places Autocomplete를 통해 place_id 제공
+    
+    흐름:
+    1. place_id 검증
+    2. 캐시 확인
+    3. AI 키워드 생성
+    4. Google Places 검색
+    5. 결과 반환
     """
-    logger.info("🚀 [START] 추천 생성 API 시작")
-    standardized_location = None
+    logger.info("🚀 [V2_START] 최적화된 추천 생성 API 시작")
     
     try:
-        # 요청 데이터 검증
+        # 기본 요청 데이터 검증
         if not request.city or not request.city.strip():
             raise HTTPException(status_code=400, detail="도시명이 필요합니다.")
         
@@ -149,62 +146,28 @@ async def generate_place_recommendations(request: PlaceRecommendationRequest):
         if request.travelers_count <= 0:
             raise HTTPException(status_code=400, detail="여행자 수는 1명 이상이어야 합니다.")
 
-        logger.info(f"📝 [REQUEST] 요청 데이터: {request.city}, {request.country}")
+        logger.info(f"📝 [V2_REQUEST] 요청 데이터: {request.city}, {request.country}, place_id: {getattr(request, 'place_id', 'None')}")
         
-        # --- [1단계] place_id 확인 및 처리 ---
-        logger.info(f"🔍 [DEBUG_REQUEST] 전체 요청 데이터: {request.model_dump()}")
+        # 서비스 초기화
+        service = get_place_recommendation_service()
+        if service is None:
+            raise HTTPException(status_code=500, detail="서비스 초기화 실패")
         
-        if hasattr(request, 'place_id') and request.place_id:
-            logger.info(f"✅ [PLACE_ID_PROVIDED] 프론트엔드에서 place_id 제공됨: {request.place_id}")
-            logger.info("🚀 [SKIP_GEOCODING] place_id가 있으므로 Geocoding을 건너뛰고 바로 추천 생성 진행")
-        else:
-            logger.info("ℹ️ [NO_PLACE_ID] place_id가 없음, 기존 방식으로 처리")
-            logger.info(f"🔍 [DEBUG_PLACE_ID] request.place_id 값: {getattr(request, 'place_id', 'ATTRIBUTE_NOT_FOUND')}")
+        # V2 서비스로 추천 생성
+        recommendations = await service.generate_place_recommendations(request)
         
-        # --- [2단계] 캐시 확인 및 서비스 초기화 ---
-        try:
-            logger.info("  🤖 [STEP_1_PLAN_A] Plan A (AI+Google) 추천 생성 시작...")
-            
-            # 서비스 초기화
-            service = get_place_recommendation_service()
-            if service is None:
-                raise Exception("추천 서비스 초기화 실패")
-            
-            # place_id가 있으면 특별 처리, 없으면 기존 방식
-            if hasattr(request, 'place_id') and request.place_id:
-                logger.info("🎯 [PLACE_ID_ROUTE] place_id가 있으므로 직접 추천 생성")
-                # place_id가 있는 경우 바로 Plan A 실행
-                recommendations = await service.generate_place_recommendations(request)
-            else:
-                logger.info("🔄 [LEGACY_ROUTE] place_id가 없으므로 기존 방식으로 처리")
-                # 기존 방식 (Geocoding 포함)
-                recommendations = await service.generate_place_recommendations(request)
-            
-            if not recommendations:
-                raise Exception("Plan A에서 충분한 추천 결과를 생성하지 못했습니다.")
-                
-            logger.info("  ✅ [PLAN_A_SUCCESS] Plan A 추천 생성 성공!")
-            return recommendations
-            
-        except Exception as e:
-            # --- [2. Plan A 실패 시 처리] ---
-            logger.error(f"  ❌ [STEP_1_PLAN_A_FAIL] Plan A 실패: {e}", exc_info=True)
-            
-            # [핵심] 이메일은 여기서 단 한 번만 보냅니다.
-            await send_admin_notification("Plan A 실패", "PLAN_A_FAILURE", str(e), request.model_dump())
-            
-            raise HTTPException(status_code=500, detail="추천 생성 중 오류가 발생했습니다.")
-
-    except HTTPException as he:
-        # 이미 처리된 HTTP 예외는 그대로 전달
-        raise he
+        logger.info("✅ [V2_SUCCESS] 최적화된 추천 생성 완료!")
+        return recommendations
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ [UNEXPECTED_ERROR] 예상치 못한 오류: {e}", exc_info=True)
+        logger.error(f"❌ [V2_ERROR] 추천 생성 실패: {e}", exc_info=True)
         
-        # 예상치 못한 오류에 대한 이메일 발송
-        await send_admin_notification("시스템 오류", "UNEXPECTED_ERROR", str(e), request.model_dump())
+        # 관리자 알림 발송
+        await send_admin_notification("V2 추천 생성 실패", "V2_GENERATION_FAILURE", str(e), request.model_dump())
         
-        raise HTTPException(status_code=500, detail="시스템 오류가 발생했습니다.")
+        raise HTTPException(status_code=500, detail="추천 생성 중 오류가 발생했습니다.")
 
 
 @router.get("/health")
@@ -219,12 +182,15 @@ async def place_recommendations_health_check():
         if service is None:
             return {
                 "status": "degraded",
-                "service": "Place Recommendations v6.0",
+                "service": "Place Recommendations v2.0 (Optimized)",
                 "supabase_connected": False,
                 "error": "Service initialization failed",
                 "features": {
-                    "duplicate_prevention": False,
-                    "dynamic_prompts": False,
+                    "google_places_autocomplete_required": False,
+                    "simplified_architecture": False,
+                    "no_geocoding_needed": False,
+                    "no_ambiguous_handling": False,
+                    "ai_powered_keywords": False,
                     "db_caching": False,
                     "google_places_enrichment": False
                 }
@@ -239,11 +205,14 @@ async def place_recommendations_health_check():
         
         return {
             "status": "healthy",
-            "service": "Place Recommendations v6.0",
+            "service": "Place Recommendations v2.0 (Optimized)",
             "supabase_connected": supabase_connected,
             "features": {
-                "duplicate_prevention": True,
-                "dynamic_prompts": True,
+                "google_places_autocomplete_required": True,
+                "simplified_architecture": True,
+                "no_geocoding_needed": True,
+                "no_ambiguous_handling": True,
+                "ai_powered_keywords": True,
                 "db_caching": True,
                 "google_places_enrichment": True
             }
@@ -253,7 +222,7 @@ async def place_recommendations_health_check():
         logger.error(f"헬스체크 실패: {e}")
         return {
             "status": "unhealthy",
-            "service": "Place Recommendations v6.0",
+            "service": "Place Recommendations v2.0 (Optimized)",
             "error": str(e),
             "supabase_connected": False
         }
@@ -262,7 +231,7 @@ async def place_recommendations_health_check():
 @router.get("/stats/{city_id}")
 async def get_city_recommendation_stats(
     city_id: int,
-    service: PlaceRecommendationService = Depends(get_place_recommendation_service)
+    service: PlaceRecommendationServiceV2 = Depends(get_place_recommendation_service)
 ):
     """
     특정 도시의 추천 통계 조회
@@ -299,7 +268,7 @@ async def get_city_recommendation_stats(
 @router.post("/test-prompt-generation")
 async def test_prompt_generation(
     request: PlaceRecommendationRequest,
-    service: PlaceRecommendationService = Depends(get_place_recommendation_service)
+    service: PlaceRecommendationServiceV2 = Depends(get_place_recommendation_service)
 ):
     """
     개발용: 고도화(Plan A) → 폴백(Plan B) 흐름으로 실제 추천 결과를 테스트합니다.
