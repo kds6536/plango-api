@@ -1705,6 +1705,13 @@ $places_list
         try:
             logger.info(f"AI 브레인스토밍 시작: {city}, {country}")
             ai_handler = await self._get_ai_handler(ai_handler)
+            
+            # AI 핸들러 검증
+            if not ai_handler:
+                logger.error(f"❌ [AI_HANDLER_NULL] AI 핸들러를 가져올 수 없습니다: {city}")
+                logger.info(f"🔄 [FALLBACK] 폴백 키워드 사용: {city}")
+                return self._get_fallback_keywords(city)
+            
             logger.info(f"AI 핸들러 가져오기 완료: {type(ai_handler).__name__}")
             
             # 고정 프롬프트 규칙: 검색 전략은 search_strategy_v1, 일정 생성은 itinerary_generation
