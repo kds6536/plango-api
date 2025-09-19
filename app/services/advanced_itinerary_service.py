@@ -223,6 +223,14 @@ class AdvancedItineraryService:
         try:
             logger.info(f"v6.0 다중 목적지 추천 생성 시작: {len(request.destinations)}개 목적지")
             
+            # [핵심 수정] AI 핸들러를 함수 시작 시 무조건 생성
+            logger.info("🤖 AI 핸들러 생성 시작...")
+            ai_handler = await self._get_ai_handler(ai_handler)
+            if not ai_handler:
+                logger.error("❌ AI 핸들러 생성 실패")
+                raise Exception("AI 서비스 핸들러를 초기화할 수 없습니다.")
+            logger.info(f"✅ AI 핸들러 생성 완료: {type(ai_handler).__name__}")
+            
             all_places = []
             
             for i, destination in enumerate(request.destinations):
@@ -230,7 +238,7 @@ class AdvancedItineraryService:
                 
                 # 각 목적지별로 추천 생성
                 destination_places = await self._generate_recommendations_for_destination(
-                    destination, request, i+1
+                    destination, request, i+1, ai_handler
                 )
                 
                 logger.info(f"목적지 {i+1} 결과: {len(destination_places)}개 장소")
@@ -251,7 +259,7 @@ class AdvancedItineraryService:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def _generate_recommendations_for_destination(
-        self, destination, request: ItineraryRequest, destination_index: int
+        self, destination, request: ItineraryRequest, destination_index: int, ai_handler=None
     ) -> List[PlaceData]:
         """
         단일 목적지에 대한 추천 생성
